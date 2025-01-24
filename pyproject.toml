@@ -11,7 +11,6 @@ authors = [
 requires-python = ">=3.10"
 dependencies = [
     "mdtraj==1.9.9",
-    "openmm==8.2.0",
     "torch_geometric==2.6.1",
     "torch==2.4.0",
     "torchvision",
@@ -29,7 +28,10 @@ dev = [
     "pytest-cov",
     "pre-commit",
 ]
-
+md = [
+    "openmm==8.2.0",
+    "pdb2pqr==3.4.1"
+]
 
 [tool.black]
 line-length = 100

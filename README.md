@@ -46,6 +46,39 @@ If you are using our code or model, please consider citing our work:
 }
 ```
 
+## Side-chain reconstruction and MD-relaxation
+BioEmu outputs structures in backbone frame representation.
+To reconstruct the side-chains, several tools are available. 
+As an example, we provide a script to conduct side-chain reconstruction with HPacker (https://github.com/gvisani/hpacker), and provide an interface for running a short molecular dynamics (MD) equilibration.
+HPacker is a method for protein side-chain packing based on holographic rotationally equivariant convolutional neural networks (https://arxiv.org/abs/2311.09312).
+
+This code is experimental and is provided for research purposes only. Further testing/development are needed before considering its application in real-world scenarios or production environments.
+
+### Install side-chain reconstruction tools
+Clone and install the HPacker code and other dependencies with
+```bash
+./setup_sidechain_relax.sh
+```
+
+This will install some additional dependences for running MD relaxation in the `bioemu` environment. It will also install HPacker in a separate conda environment called `hpacker`.
+
+### Use side-chain reconstruction tools
+Inside the `bioemu` enviroment, run side-chain reconstruction with:
+```bash
+python src/bioemu/sidechain_relax.py --pdb-path path/to/topology.pdb --xtc-path path/to/samples.xtc
+```
+By default, side-chain reconstruction and local energy minimization are performed (no full MD integration for efficiency reasons).
+Note that the runtime of this code scales with the size of the system.
+We suggest running this code on a selection of samples rather than the full set.
+
+There are two other options:
+- To only run side-chain reconstruction without MD equilibration, add `--no-md-equil`.
+- To run a short NVT equilibration (0.1 ns), add `--md-protocol nvt_equil`
+
+To see the full list of options, call `python src/bioemu/sidechain_relax.py --help`.
+
+The script saves reconstructed all-heavy-atom structures in `samples_sidechain_rec.{pdb,xtc}` and MD-equilibrated structures in `samples_md_equil.{pdb,xtc}` (filename to be altered with `--outname other_name`).
+
 ## Third-party code
 The code in the `openfold` subdirectory is copied from [openfold](https://github.com/aqlaboratory/openfold) with minor modifications. The modifications are described in the relevant source files.
 ## Get in touch
