@@ -11,6 +11,9 @@ on:
 jobs:
   linux:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
     strategy:
       matrix:
         python-version: ['3.10']
@@ -20,25 +23,46 @@ jobs:
     name: Linux py ${{ matrix.python-version }} tests
     steps:
     - uses: actions/checkout@v2
-    - run: |
+    - uses: actions/setup-dotnet@v4
+      with:
+        dotnet-version: '8.x'
+    - name: Set environment
+      run: |
         set -e
         wget -O "${HOME}/mambaforge.sh" "https://github.com/conda-forge/miniforge/releases/latest/download/Miniforge3-$(uname)-$(uname -m).sh"
         bash "${HOME}/mambaforge.sh" -b -p "${HOME}/conda"
         source "${HOME}/conda/etc/profile.d/conda.sh"
         conda env create --file environment.yml --name bioemu
         conda activate bioemu
-        uv pip install -e .
-        uv pip install pytest pre-commit
-      name: set environment
-    - run: |
+        uv pip install -e ".[dev,md]"
+    - name: Check style
+      run: |
         set -e
         source "${HOME}/conda/etc/profile.d/conda.sh"
         conda activate bioemu
         pre-commit run --all-files
-      name: check style
-    - run: |
+    - name: Run tests
+      run: |
         set -e
         source "${HOME}/conda/etc/profile.d/conda.sh"
         conda activate bioemu
-        pytest tests/
-      name: run tests
+        coverage run --source=bioemu -m pytest tests
+        coverage xml  # produces coverage.xml file
+        coverage html # produces htmlcov directory
+    - name: Upload code coverage report
+      uses: actions/upload-artifact@v4
+      with:
+        name: code-coverage-html
+        path: htmlcov
+    - name: Create code coverage markdown report
+      run: |
+        dotnet tool install -g dotnet-reportgenerator-globaltool
+        reportgenerator -reports:coverage.xml -targetdir:coveragereport -reporttypes:'MarkdownSummaryGithub'
+    - name: Write to job summary
+      run: cat coveragereport/SummaryGithub.md >> $GITHUB_STEP_SUMMARY
+    - name: Add comment to PR # Only applicable if 'MarkdownSummaryGithub' or one of the other Markdown report types is generated
+      if: github.event_name == 'pull_request'
+      run: gh pr comment $PR_NUMBER --body-file coveragereport/SummaryGithub.md
+      env:
+        GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        PR_NUMBER: ${{ github.event.number }}
