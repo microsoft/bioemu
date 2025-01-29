@@ -14,7 +14,7 @@ tags:
 # BioEmu
 
 BioEmu is a large-scale deep learning model for efficient prediction of biomolecular equilibrium structure ensembles.
-The model is being released together with its companion BioEmu 1.0 Benchmark dataset (github.com/microsoft/bioemu-benchmarks).
+The model is being released together with its companion BioEmu Benchmark (github.com/microsoft/bioemu-benchmarks).
 
 ## Model Details
 
@@ -36,7 +36,7 @@ Please refer to the [BioEmu](https://www.biorxiv.org/content/10.1101/2024.12.05.
 
 ### Available Models
 
-|                    | bioemu-v1.0.0   |
+|                    | bioemu-v1.0   |
 | ------------------ | --------------------- |
 | Training Data Size | 161k structures (AFDB), 216 ms MD simulations, 19k dG measurements |
 | Model Parameters   | 31M                  |
@@ -133,7 +133,7 @@ The model does not support generation of new protein sequences as it is designed
 The model is intended for research and experimental purposes. Further testing/development are needed before considering its application in real-world scenarios.
 
 ## Bias, Risks, and Limitations
-Our model has been trained on a large variety of structurally resolved proteins, so it inherits the biases of this data (see BioEmu 1.0 Benchmark dataset for more details, (github.com/microsoft/bioemu-benchmarks).
+Our model has been trained on a large variety of structurally resolved proteins, so it inherits the biases of this data (see [manuscript](https://www.biorxiv.org/content/10.1101/2024.12.05.626885) for details).
 The current model has low prediction quality for protein-protein interactions, including multi-chain proteins, and does not feature explicit interactions with other chemical entities like small molecules.
 Besides experimental data, the model is trained on synthetic data, which is predictions of AlphaFold2 and molecular dynamics simulations. 
 We expect that the approximations of these models are propagated to BioEmu.
