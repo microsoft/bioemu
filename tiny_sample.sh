@@ -6,7 +6,7 @@ SCRIPT_DIR=$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )
 
 # Generate samples for a tiny sequence.
 
-CHECKPOINT_DIR=$SCRIPT_DIR/checkpoints/2024-10-24-finetuned-amber-dg
+CHECKPOINT_DIR=$SCRIPT_DIR/checkpoints/bioemu-v1.0
 MODEL_CONFIG_PATH=$CHECKPOINT_DIR/config.yaml
 CKPT_PATH=$CHECKPOINT_DIR/ema_checkpoint.ckpt
 OUTPUT_DIR=$HOME/bioemu-output

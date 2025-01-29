@@ -65,7 +65,7 @@ This will install some additional dependences for running MD relaxation in the `
 ### Use side-chain reconstruction tools
 Inside the `bioemu` enviroment, run side-chain reconstruction with:
 ```bash
-python src/bioemu/sidechain_relax.py --pdb-path path/to/topology.pdb --xtc-path path/to/samples.xtc
+python -m bioemu.sidechain_relax --pdb-path path/to/topology.pdb --xtc-path path/to/samples.xtc
 ```
 By default, side-chain reconstruction and local energy minimization are performed (no full MD integration for efficiency reasons).
 Note that the runtime of this code scales with the size of the system.
@@ -75,7 +75,7 @@ There are two other options:
 - To only run side-chain reconstruction without MD equilibration, add `--no-md-equil`.
 - To run a short NVT equilibration (0.1 ns), add `--md-protocol nvt_equil`
 
-To see the full list of options, call `python src/bioemu/sidechain_relax.py --help`.
+To see the full list of options, call `python -m bioemu.sidechain_relax --help`.
 
 The script saves reconstructed all-heavy-atom structures in `samples_sidechain_rec.{pdb,xtc}` and MD-equilibrated structures in `samples_md_equil.{pdb,xtc}` (filename to be altered with `--outname other_name`).
 
