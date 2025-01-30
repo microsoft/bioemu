@@ -1,4 +1,10 @@
 
+<h1>
+<p align="center">
+    <img src="assets/emu.png" alt="BioEmu logo" width="600"/>
+</p>
+</h1>
+
 [![DOI:10.1101/2024.12.05.626885](https://zenodo.org/badge/DOI/10.1101/2024.12.05.626885.svg)](https://doi.org/10.1101/2024.12.05.626885)
 [![Requires Python 3.10+](https://img.shields.io/badge/Python-3.10+-blue.svg?logo=python&logoColor=white)](https://python.org/downloads)
 
