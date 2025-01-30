@@ -101,6 +101,8 @@ def get_colabfold_embeds(seq: str, cache_embeds_dir: StrPath | None) -> tuple[St
     colabfold_env["PATH"] += ":" + os.path.join(
         colabfold_dir, "localcolabfold", "colabfold-conda", "bin"
     )
+    # Delete MPLBACKEND to avoid matplotlib issues when running in jupyter notebook
+    colabfold_env.pop("MPLBACKEND", None)
 
     with tempfile.TemporaryDirectory() as tempdir:
         fasta_file = os.path.join(tempdir, f"{seqsha}.fasta")
