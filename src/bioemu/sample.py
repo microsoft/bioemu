@@ -22,7 +22,8 @@ from .convert_chemgraph import save_pdb_and_xtc
 from .get_embeds import get_colabfold_embeds
 from .models import DiGConditionalScoreModel
 from .sde_lib import SDE
-from .utils import parse_sequence
+from .seq_io import parse_sequence, write_fasta
+from .utils import count_samples_in_output_dir, format_npz_samples_filename
 
 logger = logging.getLogger(__name__)
 
@@ -46,7 +47,7 @@ def main(
         model_config_path: Path to the model config, defining score model architecture and the corruption process the model was trained with.
         denoiser_config_path: Path to the denoiser config, defining the denoising process.
         sequence: Amino acid sequence for which to generate samples or a path to a .fasta file.
-        num_samples: Number of samples to generate.
+        num_samples: Number of samples to generate. If `output_dir` already contains samples, this function will only generate additional samples necessary to reach the specified `num_samples`.
         batch_size_100: Batch size you can manage for a sequence of length 100. The batch size will be calculated from this, assuming
            that the memory requirement to compute each sample scales quadratically with the sequence length.
         output_dir: Directory to save the samples. Each batch of samples will initially be dumped as .npz files. Once all batches are sampled, they will be converted to .xtc and .pdb.
@@ -65,6 +66,16 @@ def main(
     # Parse FASTA file if sequence is a file path
     sequence = parse_sequence(sequence)
 
+    fasta_path = output_dir / "sequence.fasta"
+    if fasta_path.is_file():
+        if parse_sequence(fasta_path) != sequence:
+            raise ValueError(
+                f"{fasta_path} already exists, but contains a sequence different from {sequence}!"
+            )
+    else:
+        # Save FASTA file in output_dir
+        write_fasta([sequence], fasta_path)
+
     model_state = torch.load(ckpt_path, map_location="cpu", weights_only=True)
     score_model: DiGConditionalScoreModel = hydra.utils.instantiate(model_config["score_model"])
     score_model.load_state_dict(model_state)
@@ -79,14 +90,15 @@ def main(
         batch_size = 1
     logger.info(f"Using batch size {batch_size}")
 
-    for seed in range(0, num_samples, batch_size):
+    existing_num_samples = count_samples_in_output_dir(output_dir)
+    logger.info(f"Found {existing_num_samples} previous samples in {output_dir}.")
+    for seed in range(existing_num_samples, num_samples, batch_size):
         n = min(batch_size, num_samples - seed)
-        npz_path = output_dir / f"batch_{seed}_{n}.npz"
+        npz_path = output_dir / format_npz_samples_filename(seed, n)
         if npz_path.exists():
-            # Skip if already there, so you can resume sampling if it crashes.
-            logger.info(f"Skipping {npz_path}")
-            continue
-
+            raise ValueError(
+                f"Not sure why {npz_path} already exists when so far only {existing_num_samples} samples have been generated."
+            )
         logger.info(f"Sampling {seed=}")
         batch = generate_batch(
             score_model=score_model,
@@ -98,9 +110,12 @@ def main(
             cache_embeds_dir=cache_embeds_dir,
         )
         batch = {k: v.cpu().numpy() for k, v in batch.items()}
-        np.savez(npz_path, **batch)
+        np.savez(npz_path, **batch, sequence=sequence)
 
     samples_files = sorted(list(output_dir.glob("batch_*.npz")))
+    sequences = [np.load(f)["sequence"].item() for f in samples_files]
+    if set(sequences) != {sequence}:
+        raise ValueError(f"Expected all sequences to be {sequence}, but got {set(sequences)}")
     positions = torch.tensor(np.concatenate([np.load(f)["pos"] for f in samples_files]))
     node_orientations = torch.tensor(
         np.concatenate([np.load(f)["node_orientations"] for f in samples_files])
