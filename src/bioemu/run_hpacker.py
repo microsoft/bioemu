@@ -23,6 +23,10 @@ def _hpacker(protein_pdb_in: str, protein_pdb_out: str) -> None:
 
 
 if __name__ == "__main__":
-    import sys
+    import argparse
 
-    _hpacker(sys.argv[1], sys.argv[2])
+    parser = argparse.ArgumentParser()
+    parser.add_argument("protein_pdb_in", help="Input PDB file with backbone only.")
+    parser.add_argument("protein_pdb_out", help="Output PDB file with sidechains reconstructed.")
+    args = parser.parse_args()
+    _hpacker(args.protein_pdb_in, args.protein_pdb_out)
