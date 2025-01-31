@@ -34,3 +34,15 @@ def write_fasta(sequences: list[str | SeqRecord], fasta_file: StrPath) -> None:
 def read_fasta(fasta_file: StrPath) -> list[SeqRecord]:
     with open(fasta_file) as f:
         return list(SeqIO.parse(f, "fasta"))
+
+
+def parse_sequence(sequence: StrPath) -> str:
+    """Parse sequence if sequence is a file path. Otherwise just return the input."""
+    try:
+        if Path(sequence).is_file():
+            rec = read_fasta(sequence)[0]
+            return str(rec.seq)
+    except OSError:
+        # is_file() failed because the file name is too long.
+        pass
+    return str(sequence)
