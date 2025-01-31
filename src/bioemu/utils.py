@@ -3,7 +3,7 @@
 
 from pathlib import Path
 
-from Bio import SeqIO
+from .seq_io import read_fasta
 
 
 def parse_sequence(sequence: str) -> str:
@@ -14,5 +14,5 @@ def parse_sequence(sequence: str) -> str:
     except OSError:
         # is_file() failed because the file name is too long.
         return sequence
-    rec = list(SeqIO.parse(sequence, "fasta"))[0]
+    rec = read_fasta(sequence)[0]
     return str(rec.seq)

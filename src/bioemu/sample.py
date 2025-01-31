@@ -22,6 +22,7 @@ from .convert_chemgraph import save_pdb_and_xtc
 from .get_embeds import get_colabfold_embeds
 from .models import DiGConditionalScoreModel
 from .sde_lib import SDE
+from .seq_io import write_fasta
 from .utils import parse_sequence
 
 logger = logging.getLogger(__name__)
@@ -64,6 +65,9 @@ def main(
 
     # Parse FASTA file if sequence is a file path
     sequence = parse_sequence(sequence)
+
+    # Save FASTA file in output_dir
+    write_fasta([sequence], output_dir / "sequence.fasta")
 
     model_state = torch.load(ckpt_path, map_location="cpu", weights_only=True)
     score_model: DiGConditionalScoreModel = hydra.utils.instantiate(model_config["score_model"])
