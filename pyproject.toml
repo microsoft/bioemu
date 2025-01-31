@@ -30,7 +30,7 @@ dev = [
 ]
 md = [
     "openmm==8.2.0",
-    "pdb2pqr==3.4.1"
+    "pdb2pqr==3.7.1"
 ]
 
 [tool.black]
