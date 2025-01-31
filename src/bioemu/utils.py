@@ -21,10 +21,7 @@ def parse_sequence(sequence: str) -> str:
 def format_npz_samples_filename(start_id: int, num_samples: int) -> str:
     """Format the filename for the samples npz file."""
     # no good way to find a width that works for all cases. Just guessing that 1000000 should be large enough.
-    digits = len(str(1000000))
-    start_id_padded = str(start_id).zfill(digits)
-    end_id_padded = str(start_id + num_samples).zfill(digits)
-    return f"batch_{start_id_padded}_{end_id_padded}.npz"
+    return f"batch_{start_id:07d}_{start_id + num_samples:07d}.npz"
 
 
 def count_samples_in_output_dir(output_dir: Path) -> int:

@@ -36,9 +36,7 @@ def _run_hpacker(protein_pdb_in: str, protein_pdb_out: str) -> None:
     result = subprocess.run(
         [
             HPACKER_PYTHONBIN,
-            os.path.abspath(
-                os.path.join(os.path.dirname(__file__), "run_hpacker.py")
-            ),
+            os.path.abspath(os.path.join(os.path.dirname(__file__), "run_hpacker.py")),
             protein_pdb_in,
             protein_pdb_out,
         ]
