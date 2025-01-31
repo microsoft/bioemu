@@ -8,7 +8,7 @@ SCRIPT_DIR=$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )
 
 CHECKPOINT_DIR=$SCRIPT_DIR/checkpoints/bioemu-v1.0
 MODEL_CONFIG_PATH=$CHECKPOINT_DIR/config.yaml
-CKPT_PATH=$CHECKPOINT_DIR/ema_checkpoint.ckpt
+CKPT_PATH=$CHECKPOINT_DIR/checkpoint.ckpt
 OUTPUT_DIR=$HOME/bioemu-output
 DENOISER_CONFIG_PATH=$SCRIPT_DIR/configs/denoiser/dpm.yaml 
 
