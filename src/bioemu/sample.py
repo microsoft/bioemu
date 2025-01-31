@@ -22,7 +22,8 @@ from .convert_chemgraph import save_pdb_and_xtc
 from .get_embeds import get_colabfold_embeds
 from .models import DiGConditionalScoreModel
 from .sde_lib import SDE
-from .utils import count_samples_in_output_dir, format_npz_samples_filename, parse_sequence
+from .seq_io import parse_sequence, write_fasta
+from .utils import count_samples_in_output_dir, format_npz_samples_filename
 
 logger = logging.getLogger(__name__)
 
@@ -64,6 +65,16 @@ def main(
 
     # Parse FASTA file if sequence is a file path
     sequence = parse_sequence(sequence)
+
+    fasta_path = output_dir / "sequence.fasta"
+    if fasta_path.is_file():
+        if parse_sequence(fasta_path) != sequence:
+            raise ValueError(
+                f"{fasta_path} already exists, but contains a sequence different from {sequence}!"
+            )
+    else:
+        # Save FASTA file in output_dir
+        write_fasta([sequence], fasta_path)
 
     model_state = torch.load(ckpt_path, map_location="cpu", weights_only=True)
     score_model: DiGConditionalScoreModel = hydra.utils.instantiate(model_config["score_model"])
