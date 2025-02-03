@@ -1,7 +1,7 @@
 
 <h1>
 <p align="center">
-    <img src="assets/emu.png" alt="BioEmu logo" width="600"/>
+    <img src="assets/emu_transparent.png" alt="BioEmu logo" width="600"/>
 </p>
 </h1>
 
