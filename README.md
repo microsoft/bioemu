@@ -40,7 +40,7 @@ If you installed `bioemu` in a conda environment named `bioemu` (which is the de
 
 You can sample structures for a given protein sequence using the script `sample.py`. See `tiny_sample.sh` for an example invocation.
 
-Sampling times will depend on sequence length and available infrastructure. The following table gives estimated times for collecting 1000 samples on an A100 GPU with 80 GB VRAM for sequences of different lengths:
+Sampling times will depend on sequence length and available infrastructure. The following table gives times for collecting 1000 samples measured on an A100 GPU with 80 GB VRAM for sequences of different lengths (using a `batch_size_100=20` setting in `sample.py`):
  | sequence length | time / min |
  | --------------: | ---------: |
  |             100 |          4 |
