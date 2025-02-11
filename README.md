@@ -40,17 +40,19 @@ If you installed `bioemu` in a conda environment named `bioemu` (which is the de
 
 You can sample structures for a given protein sequence using the script `sample.py`. See `tiny_sample.sh` for an example invocation.
 
-## Reproducing results from the preprint
-You can use this code together with code from [bioemu-benchmarks](https://github.com/microsoft/bioemu-benchmarks) to approximately reproduce results from our [preprint](https://www.biorxiv.org/content/10.1101/2024.12.05.626885v1).
-
-The `bioemu-v1.0` checkpoint contains the model weights used to produce the results in the preprint. Due to simplifications made in the embedding computation and a more efficient sampler, the results obtained with this code are not identical but consistent with the statistics shown in the preprint, i.e., mode coverage and free energy errors averaged over the proteins in a test set. Results for individual proteins may differ.
-
-The following table contains estimates of the sampling times on an A100 GPU with 80 GB VRAM for 1000 samples for sequences of different lengths:
+Sampling times will depend on sequence length and available infrastructure. The following table gives estimated times for collecting 1000 samples on an A100 GPU with 80 GB VRAM for sequences of different lengths:
  | sequence length | time / min |
  | --------------: | ---------: |
  |             100 |          4 |
  |             300 |         40 |
  |             600 |        150 |
+
+
+## Reproducing results from the preprint
+You can use this code together with code from [bioemu-benchmarks](https://github.com/microsoft/bioemu-benchmarks) to approximately reproduce results from our [preprint](https://www.biorxiv.org/content/10.1101/2024.12.05.626885v1).
+
+The `bioemu-v1.0` checkpoint contains the model weights used to produce the results in the preprint. Due to simplifications made in the embedding computation and a more efficient sampler, the results obtained with this code are not identical but consistent with the statistics shown in the preprint, i.e., mode coverage and free energy errors averaged over the proteins in a test set. Results for individual proteins may differ.
+
 
 ## Citation
 If you are using our code or model, please consider citing our work:
