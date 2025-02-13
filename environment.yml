@@ -6,7 +6,7 @@ channels:
 - pyg
 dependencies:
 - pip=23.3
-- python=3.12.0
+- python>=3.10
 - mdtraj=1.9.9 # pip install is not reliable because mdtraj needs zlib, which pip won't install if missing.
 - pyg=2.6.1
 - pytorch::pytorch=2.4.0
