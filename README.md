@@ -36,9 +36,18 @@ git lfs pull
 Run `setup.sh` to create a conda environment named 'bioemu' with bioemu and its dependencies installed.  `setup.sh` will install and patch [ColabFold](https://github.com/sokrypton/ColabFold), create a conda environment called 'bioemu' with some installed dependencies that pip does not handle, and then pip-install the `bioemu` package inside the conda environment.
 
 ## Sampling structures
-If you installed `bioemu` in a conda environment named `bioemu` (which is the default if you run `setup.sh` as described above) then you will first need to `conda activate bioemu`.
+You can sample structures for a given protein sequence using the script `sample.py`:
+```
+python -m bioemu.sample --ckpt_path PATH/TO/CHECKPOINT \
+                        --model_config_path PATH/TO/MODEL/CONFIG \
+						--denoiser_config_path PATH/TO/DENOISER/CONFIG \
+						--sequence SEQUENCE \
+						--num_samples NUM_SAMPLES \
+						--batch_size_100 BATCH_SIZE_100 \
+						--output_dir OUTPUT_DIR
+```
 
-You can sample structures for a given protein sequence using the script `sample.py`. See `tiny_sample.sh` for an example invocation.
+ See `tiny_sample.sh` for an example invocation.
 
 Sampling times will depend on sequence length and available infrastructure. The following table gives times for collecting 1000 samples measured on an A100 GPU with 80 GB VRAM for sequences of different lengths (using a `batch_size_100=20` setting in `sample.py`):
  | sequence length | time / min |
