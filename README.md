@@ -40,11 +40,11 @@ You can sample structures for a given protein sequence using the script `sample.
 ```
 python -m bioemu.sample --ckpt_path PATH/TO/CHECKPOINT \
                         --model_config_path PATH/TO/MODEL/CONFIG \
-						--denoiser_config_path PATH/TO/DENOISER/CONFIG \
-						--sequence SEQUENCE \
-						--num_samples NUM_SAMPLES \
-						--batch_size_100 BATCH_SIZE_100 \
-						--output_dir OUTPUT_DIR
+		        --denoiser_config_path PATH/TO/DENOISER/CONFIG \
+		        --sequence SEQUENCE \
+		        --num_samples NUM_SAMPLES \
+		        --batch_size_100 BATCH_SIZE_100 \
+		        --output_dir OUTPUT_DIR
 ```
 
  See `tiny_sample.sh` for an example invocation.
