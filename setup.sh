@@ -18,13 +18,13 @@ else
 fi
 
 # Create conda env. You may be able to skip the conda steps if zlib and python>=3.10 are already installed.
-CONDA_PREFIX=$(conda info --base)
 CURRENT_ENV_NAME=$(basename ${CONDA_PREFIX})
+CONDA_BASE=$(conda info --base)
 
 if [ $UPDATE_ENV -eq 1 ]; then # Force update of current environment (to install in base env on notebooks like Colab)
   conda env update --name ${CURRENT_ENV_NAME} --file ${SCRIPT_DIR}/environment.yml --prune
 else # try install from scratch
-  if [ -d $CONDA_PREFIX/envs/$BIOEMU_ENV_NAME ]; then
+  if [ -d $CONDA_BASE/envs/$BIOEMU_ENV_NAME ]; then
     echo "${BIOEMU_ENV_NAME} env already exists"
   else
     conda env create -f $SCRIPT_DIR/environment.yml -n $BIOEMU_ENV_NAME
