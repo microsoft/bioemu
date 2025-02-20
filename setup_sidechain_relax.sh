@@ -10,7 +10,7 @@ eval "$(conda shell.bash hook)"
 conda activate $BIOEMU_ENV_NAME
 
 # install additional dependencies into bioemu
-pip install '.[md]'
+pip install -e '.[md]'
 
 # clone and install the hpacker code. This will install into a separate environment
 cd $SCRIPT_DIR/../
@@ -19,7 +19,8 @@ conda create -n $HPACKER_ENV_NAME --no-default-packages -y
 conda activate $HPACKER_ENV_NAME
 conda env update -f hpacker/env.yaml -n $HPACKER_ENV_NAME
 
-pip install hpacker
+# non-editable installation seems broken
+pip install -e hpacker/
 
 set +x
 echo "PLEASE NOTE:"
