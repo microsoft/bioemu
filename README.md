@@ -24,6 +24,11 @@ This repository contains inference code and model weights.
 - [Get in touch](#get-in-touch)
 
 ## Installation
+To install the BioEmu code, clone this repository:
+```bash
+git clone git@github.com:microsoft/bioemu.git
+cd bioemu/
+```
 
 Run `setup.sh` to create a conda environment named 'bioemu' with bioemu and its dependencies installed.  `setup.sh` will install and patch [ColabFold](https://github.com/sokrypton/ColabFold), create a conda environment called 'bioemu' with some installed dependencies that pip does not handle, and then pip-install the `bioemu` package inside the conda environment.
 
