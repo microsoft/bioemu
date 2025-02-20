@@ -6,7 +6,11 @@ BIOEMU_ENV_NAME="bioemu"
 UPDATE_ENV="${UPDATE_ENV:-0}"
 
 # Set up colabfold
-export COLABFOLD_DIR=$HOME/.localcolabfold # Where colabfold will be installed
+if [ -z "$COLABFOLD_DIR" ]; then
+  echo "COLABFOLD_DIR not set. Setting to $HOME/.localcolabfold"
+  export COLABFOLD_DIR=$HOME/.localcolabfold
+fi
+
 if [ -f $COLABFOLD_DIR/localcolabfold/colabfold-conda/bin/colabfold_batch ]; then
   echo "colabfold already installed in $COLABFOLD_DIR/localcolabfold/colabfold-conda/bin/colabfold_batch"
 else
