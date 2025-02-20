@@ -24,6 +24,11 @@ This repository contains inference code and model weights.
 - [Get in touch](#get-in-touch)
 
 ## Installation
+To install the BioEmu code, clone this repository:
+```bash
+git clone git@github.com:microsoft/bioemu.git
+cd bioemu/
+```
 
 We use git-LFS to store model weights. If you do not already have git-LFS installed, follow the instructions at https://github.com/git-lfs/git-lfs/blob/main/INSTALLING.md, e.g.
 ```
