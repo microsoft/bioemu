@@ -1,7 +1,7 @@
 
 <h1>
 <p align="center">
-    <img src="assets/emu.png" alt="BioEmu logo" width="600"/>
+    <img src="assets/emu.png" alt="BioEmu logo" width="300"/>
 </p>
 </h1>
 
@@ -51,8 +51,10 @@ python -m bioemu.sample --ckpt_path PATH/TO/CHECKPOINT \
 		        --batch_size_100 BATCH_SIZE_100 \
 		        --output_dir OUTPUT_DIR
 ```
-
- See `tiny_sample.sh` for an example invocation.
+You can omit some arguments if you want to use the default checkpoint and denoising settings. For example, to run a tiny test do:
+```
+python -m bioemu.sample --sequence GYDPETGTWG --num_samples 10 --output_dir ~/test-chignolin
+```
 
 Sampling times will depend on sequence length and available infrastructure. The following table gives times for collecting 1000 samples measured on an A100 GPU with 80 GB VRAM for sequences of different lengths (using a `batch_size_100=20` setting in `sample.py`):
  | sequence length | time / min |

@@ -27,7 +27,9 @@ def test_generate_batch(tmp_path):
     sdes = {"node_orientations": DiGSO3SDE(), "pos": CosineVPSDE()}
     batch_size = 2
     seed = 42
-    with open(os.path.join(os.path.dirname(__file__), "../configs/denoiser/dpm.yaml")) as f:
+    with open(
+        os.path.join(os.path.dirname(__file__), "../src/bioemu/config/denoiser/dpm.yaml")
+    ) as f:
         denoiser_config = yaml.safe_load(f)
     denoiser = hydra.utils.instantiate(denoiser_config)
 

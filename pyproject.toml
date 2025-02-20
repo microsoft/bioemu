@@ -157,3 +157,8 @@ extend-safe-fixes = [
 ]
 exclude=["openfold"]
 
+[tool.setuptools]
+include-package-data = true
+
+[tool.setuptools.packages.find]
+where = ["src"]

@@ -27,16 +27,20 @@ from .utils import count_samples_in_output_dir, format_npz_samples_filename
 
 logger = logging.getLogger(__name__)
 
+DEFAULT_CHECKPOINT_PATH = Path(__file__).parent / "checkpoints/bioemu-v1.0/checkpoint.ckpt"
+DEFAULT_MODEL_CONFIG_PATH = Path(__file__).parent / "checkpoints/bioemu-v1.0/config.yaml"
+DEFAULT_DENOISER_CONFIG_PATH = Path(__file__).parent / "config/denoiser/dpm.yaml"
+
 
 @torch.no_grad()
 def main(
-    ckpt_path: str | Path,
-    model_config_path: str | Path,
-    denoiser_config_path: str | Path,
     sequence: str,
     num_samples: int,
-    batch_size_100: int,
     output_dir: str | Path,
+    batch_size_100: int = 10,
+    ckpt_path: str | Path = DEFAULT_CHECKPOINT_PATH,
+    model_config_path: str | Path = DEFAULT_MODEL_CONFIG_PATH,
+    denoiser_config_path: str | Path = DEFAULT_DENOISER_CONFIG_PATH,
     cache_embeds_dir: str | Path | None = None,
 ) -> None:
     """
@@ -84,11 +88,15 @@ def main(
     with open(denoiser_config_path) as f:
         denoiser_config = yaml.safe_load(f)
     denoiser = hydra.utils.instantiate(denoiser_config)
+
+    logger.info(
+        f"Sampling {num_samples} structures for sequence of length {len(sequence)} residues..."
+    )
     batch_size = int(batch_size_100 * (100 / len(sequence)) ** 2)
     if batch_size == 0:
         logger.warning(f"Sequence {sequence} may be too long. Attempting with batch_size = 1.")
         batch_size = 1
-    logger.info(f"Using batch size {batch_size}")
+    logger.info(f"Using batch size {min(batch_size, num_samples)}")
 
     existing_num_samples = count_samples_in_output_dir(output_dir)
     logger.info(f"Found {existing_num_samples} previous samples in {output_dir}.")
@@ -112,6 +120,7 @@ def main(
         batch = {k: v.cpu().numpy() for k, v in batch.items()}
         np.savez(npz_path, **batch, sequence=sequence)
 
+    logger.info("Converting samples to .pdb and .xtc...")
     samples_files = sorted(list(output_dir.glob("batch_*.npz")))
     sequences = [np.load(f)["sequence"].item() for f in samples_files]
     if set(sequences) != {sequence}:
@@ -127,6 +136,7 @@ def main(
         xtc_path=output_dir / "samples.xtc",
         sequence=sequence,
     )
+    logger.info(f"Completed. Your samples are in {output_dir}.")
 
 
 def generate_batch(
