@@ -74,10 +74,10 @@ Clone and install the HPacker code and other dependencies with
 ./setup_sidechain_relax.sh
 ```
 
-This will install some additional dependences for running MD relaxation in the `bioemu` environment. It will also install HPacker in a separate conda environment called `hpacker`.
+This will install some additional dependencies for running MD relaxation in the `bioemu` environment. It will also install HPacker in a separate conda environment called `hpacker`.
 
 ### Use side-chain reconstruction tools
-Inside the `bioemu` enviroment, run side-chain reconstruction with:
+Inside the `bioemu` environment, run side-chain reconstruction with:
 ```bash
 python -m bioemu.sidechain_relax --pdb-path path/to/topology.pdb --xtc-path path/to/samples.xtc
 ```
