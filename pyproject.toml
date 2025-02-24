@@ -10,7 +10,7 @@ authors = [
 ]
 requires-python = ">=3.10"
 dependencies = [
-    "mdtraj==1.9.9",
+    "mdtraj>=1.9.9",
     "torch_geometric==2.6.1",
     "torch==2.4.0",
     "torchvision",
