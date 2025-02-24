@@ -1,17 +1,16 @@
 # Copyright (c) Microsoft Corporation.
 # Licensed under the MIT License.
 import hashlib
+import logging
 import os
 import shutil
 import subprocess
 import tempfile
 from pathlib import Path
-import logging
 
 from Bio import SeqIO
 from Bio.Seq import Seq
 from Bio.SeqRecord import SeqRecord
-
 
 StrPath = str | os.PathLike
 logger = logging.getLogger(__name__)
@@ -63,7 +62,9 @@ def ensure_colabfold_install(colabfold_dir: StrPath) -> None:
         logger.info(f"Colabfold not present under {colabfold_dir}. Installing...")
         os.makedirs(colabfold_dir, exist_ok=True)
         _install = subprocess.run(
-            ["bash", COLABFOLD_INSTALL_SCRIPT, colabfold_dir], stdout=subprocess.PIPE, stderr=subprocess.STDOUT
+            ["bash", COLABFOLD_INSTALL_SCRIPT, colabfold_dir],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
         )
 
 
