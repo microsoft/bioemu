@@ -15,7 +15,7 @@ dependencies = [
     "torch==2.4.0",
     "torchvision",
     "modelcif==0.7",
-    "bio==1.7.1",
+    "bio>=1.5.9",
     "fire==0.7.0",
     "huggingface-hub",
     "hydra-core",
@@ -163,3 +163,6 @@ include-package-data = true
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.setuptools.package-data]
+"*" = ["*.patch", "*.sh", "*.md"]
