@@ -36,7 +36,7 @@ pip install bioemu
 
 
 ## Sampling structures
-You can sample structures for a given protein sequence using the `sample` mdoule. To run a tiny test using the default model parameters and denoising settings:
+You can sample structures for a given protein sequence using the `sample` module. To run a tiny test using the default model parameters and denoising settings:
 ```
 python -m bioemu.sample --sequence GYDPETGTWG --num_samples 10 --output_dir ~/test-chignolin
 ```
