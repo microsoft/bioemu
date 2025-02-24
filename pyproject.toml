@@ -21,6 +21,7 @@ dependencies = [
     "hydra-core",
     "dm-tree",
     "stackprinter",
+    "typer"
 ]
 
 [project.optional-dependencies]
