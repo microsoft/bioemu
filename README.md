@@ -32,6 +32,12 @@ You can sample structures for a given protein sequence using the script `sample.
 ```
 python -m bioemu.sample --sequence GYDPETGTWG --num_samples 10 --output_dir ~/test-chignolin
 ```
+You can also call the main function of `sample.py` directly from your python code:
+```
+from bioemu.sample import main as sample
+sample(sequence="GYDPETGTWG", num_samples=10, output_dir="~/test-chignolin")
+```
+
 The model parameters will be automatically downloaded from [huggingface](https://huggingface.co/microsoft/bioemu). See [sample.py](./src/bioemu/sample.py) for more options.
 
 Sampling times will depend on sequence length and available infrastructure. The following table gives times for collecting 1000 samples measured on an A100 GPU with 80 GB VRAM for sequences of different lengths (using a `batch_size_100=20` setting in `sample.py`):
