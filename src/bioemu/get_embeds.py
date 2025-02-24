@@ -48,16 +48,18 @@ def _get_colabfold_install_dir() -> StrPath:
     return os.getenv("COLABFOLD_DIR", os.path.join(os.path.expanduser("~"), ".localcolabfold"))
 
 
-def ensure_colabfold_install(colabfold_dir: StrPath) -> None:
+def ensure_colabfold_install(colabfold_dir: StrPath) -> str:
     """
-    Ensures localcolabfold is installed under `colabfold_dir`
+    Ensures localcolabfold is installed under `colabfold_dir`. Returns path
+    to directory where colabfold executables are placed
     """
     colabfold_batch_exec = os.path.join(
         colabfold_dir, "localcolabfold", "colabfold-conda", "bin", "colabfold_batch"
     )
+    colabfold_bin_dir = os.path.dirname(colabfold_batch_exec)
     if os.path.exists(colabfold_batch_exec):
         # Colabfold present
-        return None
+        pass
     else:
         logger.info(f"Colabfold not present under {colabfold_dir}. Installing...")
         os.makedirs(colabfold_dir, exist_ok=True)
@@ -66,6 +68,8 @@ def ensure_colabfold_install(colabfold_dir: StrPath) -> None:
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
         )
+        assert _install.returncode == 0
+    return colabfold_bin_dir
 
 
 def _get_default_embeds_dir() -> StrPath:
@@ -121,12 +125,10 @@ def get_colabfold_embeds(seq: str, cache_embeds_dir: StrPath | None) -> tuple[St
 
     # If we don't already have embeds, run colabfold
     colabfold_dir = _get_colabfold_install_dir()
-    ensure_colabfold_install(colabfold_dir=colabfold_dir)
+    colabfold_bin_dir = ensure_colabfold_install(colabfold_dir=colabfold_dir)
 
     colabfold_env = os.environ.copy()
-    colabfold_env["PATH"] += ":" + os.path.join(
-        colabfold_dir, "localcolabfold", "colabfold-conda", "bin"
-    )
+    colabfold_env["PATH"] += ":" + colabfold_bin_dir
     # Delete MPLBACKEND to avoid matplotlib issues when running in jupyter notebook
     colabfold_env.pop("MPLBACKEND", None)
 
