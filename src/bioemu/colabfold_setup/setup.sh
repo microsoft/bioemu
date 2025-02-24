@@ -7,11 +7,6 @@ SCRIPT_DIR=$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )
 # Set COLABFOLD_DIR to ~/.localcolabfold if dir not passed as first arg
 COLABFOLD_DIR="${1:-"~/.localcolabfold"}"
 
-# Check whether colabfold installed in COLABFOLD_DIR, otherwise download install script from
-# localcolabfold repo
-
-[ "$(ls -A ${COLABFOLD_DIR})" ] && echo "Potential colabfold installation found in ${COLABFOLD_DIR}. Exiting... " && exit 1 || echo "No colabfold installation found in ${COLABFOLD_DIR}. Proceeding..."
-
 echo "Setting up colabfold..."
 mkdir -p ${COLABFOLD_DIR}
 wget "https://raw.githubusercontent.com/YoshitakaMo/localcolabfold/5fc8775114b637b5672234179c50e694ab057db4/install_colabbatch_linux.sh" -O ${COLABFOLD_DIR}/install_colabbatch_linux.sh
