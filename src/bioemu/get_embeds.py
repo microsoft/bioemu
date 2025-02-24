@@ -49,14 +49,10 @@ def _get_colabfold_install_dir() -> StrPath:
     return os.getenv("COLABFOLD_DIR", os.path.join(os.path.expanduser("~"), ".localcolabfold"))
 
 
-def ensure_colabfold_install(colabfold_dir: StrPath | None = None) -> None:
+def ensure_colabfold_install(colabfold_dir: StrPath) -> None:
     """
     Ensures localcolabfold is installed under `colabfold_dir`
     """
-    if colabfold_dir is None:
-        # Attempt to get from env variable
-        colabfold_dir = os.getenv("COLABFOLD_DIR", DEFAULT_COLABFOLD_DIR)
-
     colabfold_batch_exec = os.path.join(
         colabfold_dir, "localcolabfold", "colabfold-conda", "bin", "colabfold_batch"
     )
@@ -65,8 +61,9 @@ def ensure_colabfold_install(colabfold_dir: StrPath | None = None) -> None:
         return None
     else:
         logger.info(f"Colabfold not present under {colabfold_dir}. Installing...")
+        os.makedirs(colabfold_dir, exist_ok=True)
         _install = subprocess.run(
-            ["bash", COLABFOLD_INSTALL_SCRIPT], stdout=subprocess.PIPE, stderr=subprocess.STDOUT
+            ["bash", COLABFOLD_INSTALL_SCRIPT, colabfold_dir], stdout=subprocess.PIPE, stderr=subprocess.STDOUT
         )
 
 

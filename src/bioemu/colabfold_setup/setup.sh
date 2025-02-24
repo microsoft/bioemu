@@ -4,13 +4,8 @@ set -ex
 
 SCRIPT_DIR=$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )
 
-# Set COLABFOLD_DIR to ~/.localcolabfold if env var not set
-
-if [[ -z "${COLABFOLD_DIR}" ]]; then
-  COLABFOLD_DIR=~/.localcolabfold
-else
-  COLABFOLD_DIR="${COLABFOLD_DIR}"
-fi
+# Set COLABFOLD_DIR to ~/.localcolabfold if dir not passed as first arg
+COLABFOLD_DIR="${1:-"~/.localcolabfold"}"
 
 # Check whether colabfold installed in COLABFOLD_DIR, otherwise download install script from
 # localcolabfold repo
