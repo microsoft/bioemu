@@ -25,13 +25,25 @@ This repository contains inference code and model weights.
 
 ## Installation
 
-Run `setup.sh` to create a conda environment named 'bioemu' with bioemu and its dependencies installed.  `setup.sh` will install and patch [ColabFold](https://github.com/sokrypton/ColabFold), create a conda environment called 'bioemu' with some installed dependencies that pip does not handle, and then pip-install the `bioemu` package inside the conda environment.
+bioemu is provided as pip-installable package:
+
+```bash
+pip install bioemu
+```
 
 ## Sampling structures
-You can sample structures for a given protein sequence using the script `sample.py`. To run a tiny test using the default model parameters and denoising settings:
+You can sample structures for a given protein sequence using the `sample` mdoule. To run a tiny test using the default model parameters and denoising settings:
 ```
 python -m bioemu.sample --sequence GYDPETGTWG --num_samples 10 --output_dir ~/test-chignolin
 ```
+
+Alternatively, you can use the Python API:
+
+```python
+from bioemu.sample import main as sample
+sample(sequence='GYDPETGTWG', num_samples=10, output_dir='~/test_chignolin')
+```
+
 The model parameters will be automatically downloaded from [huggingface](https://huggingface.co/microsoft/bioemu). See [sample.py](./src/bioemu/sample.py) for more options.
 
 Sampling times will depend on sequence length and available infrastructure. The following table gives times for collecting 1000 samples measured on an A100 GPU with 80 GB VRAM for sequences of different lengths (using a `batch_size_100=20` setting in `sample.py`):
