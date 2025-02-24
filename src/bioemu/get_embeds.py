@@ -6,12 +6,21 @@ import shutil
 import subprocess
 import tempfile
 from pathlib import Path
+import logging
 
 from Bio import SeqIO
 from Bio.Seq import Seq
 from Bio.SeqRecord import SeqRecord
 
+
 StrPath = str | os.PathLike
+logger = logging.getLogger(__name__)
+
+
+DEFAULT_COLABFOLD_DIR = os.path.join(os.path.expanduser("~"), ".localcolabfold")
+COLABFOLD_INSTALL_SCRIPT = os.path.join(
+    os.path.dirname(os.path.realpath(__file__)), "colabfold_setup", "setup.sh"
+)
 
 
 def shahexencode(s: str) -> str:
@@ -38,6 +47,27 @@ def write_fasta(seqs: list[str], fasta_file: StrPath, ids: list[str] | None = No
 def _get_colabfold_install_dir() -> StrPath:
     """Returns the directory where colabfold is installed"""
     return os.getenv("COLABFOLD_DIR", os.path.join(os.path.expanduser("~"), ".localcolabfold"))
+
+
+def ensure_colabfold_install(colabfold_dir: StrPath | None = None) -> None:
+    """
+    Ensures localcolabfold is installed under `colabfold_dir`
+    """
+    if colabfold_dir is None:
+        # Attempt to get from env variable
+        colabfold_dir = os.getenv("COLABFOLD_DIR", DEFAULT_COLABFOLD_DIR)
+
+    colabfold_batch_exec = os.path.join(
+        colabfold_dir, "localcolabfold", "colabfold-conda", "bin", "colabfold_batch"
+    )
+    if os.path.exists(colabfold_batch_exec):
+        # Colabfold present
+        return None
+    else:
+        logger.info(f"Colabfold not present under {colabfold_dir}. Installing...")
+        _install = subprocess.run(
+            ["bash", COLABFOLD_INSTALL_SCRIPT], stdout=subprocess.PIPE, stderr=subprocess.STDOUT
+        )
 
 
 def _get_default_embeds_dir() -> StrPath:
@@ -93,9 +123,7 @@ def get_colabfold_embeds(seq: str, cache_embeds_dir: StrPath | None) -> tuple[St
 
     # If we don't already have embeds, run colabfold
     colabfold_dir = _get_colabfold_install_dir()
-    assert os.path.exists(
-        colabfold_dir
-    ), f"Colabfold installation not found under {colabfold_dir}. Did you run setup.sh?"
+    ensure_colabfold_install(colabfold_dir=colabfold_dir)
 
     colabfold_env = os.environ.copy()
     colabfold_env["PATH"] += ":" + os.path.join(
