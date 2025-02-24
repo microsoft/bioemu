@@ -31,6 +31,10 @@ bioemu is provided as pip-installable package:
 pip install bioemu
 ```
 
+> [!NOTE]
+> The first time `bioemu` is used to sample structures, it will also need to setup Colabfold on the side. This process can take ~5-10 mins.
+
+
 ## Sampling structures
 You can sample structures for a given protein sequence using the `sample` mdoule. To run a tiny test using the default model parameters and denoising settings:
 ```
