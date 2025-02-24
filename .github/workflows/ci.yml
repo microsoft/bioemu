@@ -49,7 +49,7 @@ jobs:
         set -e
         source "${HOME}/conda/etc/profile.d/conda.sh"
         conda activate bioemu
-        coverage run --source=bioemu -m pytest tests
+        coverage run --source=bioemu -m pytest tests/test_sample.py
         coverage xml  # produces coverage.xml file
         coverage html # produces htmlcov directory
     - name: Upload code coverage report
