@@ -31,7 +31,6 @@ def test_get_colabfold_embeds(tmp_path):
     cache_embeds_dir = tmp_path / "cache"
 
     with patch("bioemu.get_embeds.run_colabfold", side_effect=mock_run_colabfold):
-        os.environ["COLABFOLD_DIR"] = str(tmp_path)
         result_single, result_pair = get_colabfold_embeds(seq, cache_embeds_dir)
 
     seqsha = shahexencode(seq)

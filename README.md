@@ -24,14 +24,29 @@ This repository contains inference code and model weights.
 - [Get in touch](#get-in-touch)
 
 ## Installation
+bioemu is provided as a pip-installable package:
 
-Run `setup.sh` to create a conda environment named 'bioemu' with bioemu and its dependencies installed.  `setup.sh` will install and patch [ColabFold](https://github.com/sokrypton/ColabFold), create a conda environment called 'bioemu' with some installed dependencies that pip does not handle, and then pip-install the `bioemu` package inside the conda environment.
+```bash
+pip install bioemu
+```
+
+> [!NOTE]
+> The first time `bioemu` is used to sample structures, it will also need to setup Colabfold on the side. This process can take ~5-10 mins. By default, Colabfold is installed on `~/.localcolabfold` - if you want this changed please set the `COLABFOLD_DIR` environment variable before running the code for the first time.
+
 
 ## Sampling structures
-You can sample structures for a given protein sequence using the script `sample.py`. To run a tiny test using the default model parameters and denoising settings:
+You can sample structures for a given protein sequence using the `sample` module. To run a tiny test using the default model parameters and denoising settings:
 ```
 python -m bioemu.sample --sequence GYDPETGTWG --num_samples 10 --output_dir ~/test-chignolin
 ```
+
+Alternatively, you can use the Python API:
+
+```python
+from bioemu.sample import main as sample
+sample(sequence='GYDPETGTWG', num_samples=10, output_dir='~/test_chignolin')
+```
+
 The model parameters will be automatically downloaded from [huggingface](https://huggingface.co/microsoft/bioemu). See [sample.py](./src/bioemu/sample.py) for more options.
 
 Sampling times will depend on sequence length and available infrastructure. The following table gives times for collecting 1000 samples measured on an A100 GPU with 80 GB VRAM for sequences of different lengths (using a `batch_size_100=20` setting in `sample.py`):
@@ -69,12 +84,13 @@ HPacker is a method for protein side-chain packing based on holographic rotation
 This code is experimental and is provided for research purposes only. Further testing/development are needed before considering its application in real-world scenarios or production environments.
 
 ### Install side-chain reconstruction tools
-Clone and install the HPacker code and other dependencies with
+From the environment where `bioemu` is currently installed, please run:
+
 ```bash
 ./setup_sidechain_relax.sh
 ```
 
-This will install some additional dependences for running MD relaxation in the `bioemu` environment. It will also install HPacker in a separate conda environment called `hpacker`.
+This will install some additional dependencies in the current environment, and HPacker in a separate conda environment named `hpacker`.
 
 ### Use side-chain reconstruction tools
 Inside the `bioemu` enviroment, run side-chain reconstruction with:
