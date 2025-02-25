@@ -65,7 +65,8 @@ jobs:
       run: cat coveragereport/SummaryGithub.md >> $GITHUB_STEP_SUMMARY
     - name: Add comment to PR # Only applicable if 'MarkdownSummaryGithub' or one of the other Markdown report types is generated
       if: github.event_name == 'pull_request'
-      run: gh pr comment $PR_NUMBER --body-file coveragereport/SummaryGithub.md
+      run: gh pr commmmment $PR_NUMBER --body-file coveragereport/SummaryGithub.md
       env:
         GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         PR_NUMBER: ${{ github.event.number }}
+      continue-on-error: true
