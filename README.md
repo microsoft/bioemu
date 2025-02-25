@@ -90,12 +90,13 @@ HPacker is a method for protein side-chain packing based on holographic rotation
 This code is experimental and is provided for research purposes only. Further testing/development are needed before considering its application in real-world scenarios or production environments.
 
 ### Install side-chain reconstruction tools
-Clone and install the HPacker code and other dependencies with
+From the environment where `bioemu` is currently installed, please run:
+
 ```bash
 ./setup_sidechain_relax.sh
 ```
 
-This will install some additional dependences for running MD relaxation in the `bioemu` environment. It will also install HPacker in a separate conda environment called `hpacker`.
+This will install some additional dependencies in the current environment, and HPacker in a separate conda environment named `hpacker`.
 
 ### Use side-chain reconstruction tools
 Inside the `bioemu` enviroment, run side-chain reconstruction with:
