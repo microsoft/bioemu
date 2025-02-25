@@ -4,11 +4,11 @@ set -ex
 HPACKER_ENV_NAME="hpacker"
 
 # install additional dependencies into bioemu
-# pip install 'bioemu[md]'
+pip install 'bioemu[md]'
 
 # clone and install the hpacker code. This will install into a separate environment
-# git clone https://github.com/gvisani/hpacker.git
-# conda create -n $HPACKER_ENV_NAME --no-default-packages -y
+git clone https://github.com/gvisani/hpacker.git
+conda create -n $HPACKER_ENV_NAME --no-default-packages -y
 eval "$(conda shell.bash hook)"
 conda activate $HPACKER_ENV_NAME
 conda env update -f hpacker/env.yaml -n $HPACKER_ENV_NAME
