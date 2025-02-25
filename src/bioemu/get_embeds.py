@@ -128,7 +128,7 @@ def get_colabfold_embeds(seq: str, cache_embeds_dir: StrPath | None) -> tuple[St
     colabfold_bin_dir = ensure_colabfold_install(colabfold_dir=colabfold_dir)
 
     colabfold_env = os.environ.copy()
-    colabfold_env["PATH"] += ":" + colabfold_bin_dir
+    colabfold_env["PATH"] = f'{colabfold_bin_dir}:{colabfold_env["PATH"]}'
     # Delete MPLBACKEND to avoid matplotlib issues when running in jupyter notebook
     colabfold_env.pop("MPLBACKEND", None)
 
