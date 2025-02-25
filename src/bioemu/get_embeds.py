@@ -1,6 +1,7 @@
 # Copyright (c) Microsoft Corporation.
 # Licensed under the MIT License.
 import hashlib
+import logging
 import os
 import shutil
 import subprocess
@@ -12,6 +13,13 @@ from Bio.Seq import Seq
 from Bio.SeqRecord import SeqRecord
 
 StrPath = str | os.PathLike
+logger = logging.getLogger(__name__)
+
+
+DEFAULT_COLABFOLD_DIR = os.path.join(os.path.expanduser("~"), ".localcolabfold")
+COLABFOLD_INSTALL_SCRIPT = os.path.join(
+    os.path.dirname(os.path.realpath(__file__)), "colabfold_setup", "setup.sh"
+)
 
 
 def shahexencode(s: str) -> str:
@@ -38,6 +46,30 @@ def write_fasta(seqs: list[str], fasta_file: StrPath, ids: list[str] | None = No
 def _get_colabfold_install_dir() -> StrPath:
     """Returns the directory where colabfold is installed"""
     return os.getenv("COLABFOLD_DIR", os.path.join(os.path.expanduser("~"), ".localcolabfold"))
+
+
+def ensure_colabfold_install(colabfold_dir: StrPath) -> str:
+    """
+    Ensures localcolabfold is installed under `colabfold_dir`. Returns path
+    to directory where colabfold executables are placed
+    """
+    colabfold_batch_exec = os.path.join(
+        colabfold_dir, "localcolabfold", "colabfold-conda", "bin", "colabfold_batch"
+    )
+    colabfold_bin_dir = os.path.dirname(colabfold_batch_exec)
+    if os.path.exists(colabfold_batch_exec):
+        # Colabfold present
+        pass
+    else:
+        logger.info(f"Colabfold not present under {colabfold_dir}. Installing...")
+        os.makedirs(colabfold_dir, exist_ok=True)
+        _install = subprocess.run(
+            ["bash", COLABFOLD_INSTALL_SCRIPT, colabfold_dir],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+        )
+        assert _install.returncode == 0
+    return colabfold_bin_dir
 
 
 def _get_default_embeds_dir() -> StrPath:
@@ -93,14 +125,10 @@ def get_colabfold_embeds(seq: str, cache_embeds_dir: StrPath | None) -> tuple[St
 
     # If we don't already have embeds, run colabfold
     colabfold_dir = _get_colabfold_install_dir()
-    assert os.path.exists(
-        colabfold_dir
-    ), f"Colabfold installation not found under {colabfold_dir}. Did you run setup.sh?"
+    colabfold_bin_dir = ensure_colabfold_install(colabfold_dir=colabfold_dir)
 
     colabfold_env = os.environ.copy()
-    colabfold_env["PATH"] += ":" + os.path.join(
-        colabfold_dir, "localcolabfold", "colabfold-conda", "bin"
-    )
+    colabfold_env["PATH"] = f'{colabfold_bin_dir}:{colabfold_env["PATH"]}'
     # Delete MPLBACKEND to avoid matplotlib issues when running in jupyter notebook
     colabfold_env.pop("MPLBACKEND", None)
 

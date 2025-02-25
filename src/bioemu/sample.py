@@ -10,6 +10,7 @@ from pathlib import Path
 import hydra
 import numpy as np
 import stackprinter
+from huggingface_hub import hf_hub_download
 
 stackprinter.set_excepthook(style="darkbg2")
 
@@ -27,9 +28,33 @@ from .utils import count_samples_in_output_dir, format_npz_samples_filename
 
 logger = logging.getLogger(__name__)
 
-DEFAULT_CHECKPOINT_PATH = Path(__file__).parent / "checkpoints/bioemu-v1.0/checkpoint.ckpt"
-DEFAULT_MODEL_CONFIG_PATH = Path(__file__).parent / "checkpoints/bioemu-v1.0/config.yaml"
 DEFAULT_DENOISER_CONFIG_PATH = Path(__file__).parent / "config/denoiser/dpm.yaml"
+
+
+def maybe_download_checkpoint(
+    *,
+    model_name: str | None,
+    ckpt_path: str | Path | None = None,
+    model_config_path: str | Path | None = None,
+) -> tuple[str, str]:
+    """If ckpt_path and model config_path are specified, return them, else download named model from huggingface.
+    Returns:
+        tuple[str, str]: path to checkpoint, path to model config
+    """
+    if ckpt_path is not None:
+        assert model_config_path is not None, "Must provide model_config_path if ckpt_path is set."
+        return str(ckpt_path), str(model_config_path)
+    assert model_name is not None
+    assert (
+        model_config_path is None
+    ), f"Named model {model_name} comes with its own config. Do not provide model_config_path."
+    ckpt_path = hf_hub_download(
+        repo_id="microsoft/bioemu", filename=f"checkpoints/{model_name}/checkpoint.ckpt"
+    )
+    model_config_path = hf_hub_download(
+        repo_id="microsoft/bioemu", filename=f"checkpoints/{model_name}/config.yaml"
+    )
+    return str(ckpt_path), str(model_config_path)
 
 
 @torch.no_grad()
@@ -38,8 +63,9 @@ def main(
     num_samples: int,
     output_dir: str | Path,
     batch_size_100: int = 10,
-    ckpt_path: str | Path = DEFAULT_CHECKPOINT_PATH,
-    model_config_path: str | Path = DEFAULT_MODEL_CONFIG_PATH,
+    model_name: str | None = "bioemu-v1.0",
+    ckpt_path: str | Path | None = None,
+    model_config_path: str | Path | None = None,
     denoiser_config_path: str | Path = DEFAULT_DENOISER_CONFIG_PATH,
     cache_embeds_dir: str | Path | None = None,
 ) -> None:
@@ -47,18 +73,25 @@ def main(
     Generate samples for a specified sequence, using a trained model.
 
     Args:
-        ckpt_path: Path to the model checkpoint.
-        model_config_path: Path to the model config, defining score model architecture and the corruption process the model was trained with.
-        denoiser_config_path: Path to the denoiser config, defining the denoising process.
         sequence: Amino acid sequence for which to generate samples or a path to a .fasta file.
         num_samples: Number of samples to generate. If `output_dir` already contains samples, this function will only generate additional samples necessary to reach the specified `num_samples`.
-        batch_size_100: Batch size you can manage for a sequence of length 100. The batch size will be calculated from this, assuming
-           that the memory requirement to compute each sample scales quadratically with the sequence length.
         output_dir: Directory to save the samples. Each batch of samples will initially be dumped as .npz files. Once all batches are sampled, they will be converted to .xtc and .pdb.
+        batch_size_100: Batch size you'd use for a sequence of length 100. The batch size will be calculated from this, assuming
+           that the memory requirement to compute each sample scales quadratically with the sequence length.
+        model_name: Name of pretrained model to use. The model will be retrieved from huggingface. If not set,
+           this defaults to `bioemu-v1.0`. If this is set, you do not need to provide `ckpt_path` or `model_config_path`.
+        ckpt_path: Path to the model checkpoint. If this is set, `model_name` will be ignored.
+        model_config_path: Path to the model config, defining score model architecture and the corruption process the model was trained with.
+           Only required if `ckpt_path` is set.
+        denoiser_config_path: Path to the denoiser config, defining the denoising process.
         cache_embeds_dir: Directory to store MSA embeddings. If not set, this defaults to `COLABFOLD_DIR/embeds_cache`.
     """
-    output_dir = Path(output_dir)
+    output_dir = Path(output_dir).expanduser().resolve()
     output_dir.mkdir(parents=True, exist_ok=True)  # Fail fast if output_dir is non-writeable
+
+    ckpt_path, model_config_path = maybe_download_checkpoint(
+        model_name=model_name, ckpt_path=ckpt_path, model_config_path=model_config_path
+    )
 
     assert os.path.isfile(ckpt_path), f"Checkpoint {ckpt_path} not found"
     assert os.path.isfile(model_config_path), f"Model config {model_config_path} not found"

@@ -30,31 +30,30 @@ git clone git@github.com:microsoft/bioemu.git
 cd bioemu/
 ```
 
-We use git-LFS to store model weights. If you do not already have git-LFS installed, follow the instructions at https://github.com/git-lfs/git-lfs/blob/main/INSTALLING.md, e.g.
-```
-curl -s https://packagecloud.io/install/repositories/github/git-lfs/script.deb.sh | sudo bash
-sudo apt-get install git-lfs
-git lfs install
-git lfs pull
+bioemu is provided as pip-installable package:
+
+```bash
+pip install bioemu
 ```
 
-Run `setup.sh` to create a conda environment named 'bioemu' with bioemu and its dependencies installed.  `setup.sh` will install and patch [ColabFold](https://github.com/sokrypton/ColabFold), create a conda environment called 'bioemu' with some installed dependencies that pip does not handle, and then pip-install the `bioemu` package inside the conda environment.
+> [!NOTE]
+> The first time `bioemu` is used to sample structures, it will also need to setup Colabfold on the side. This process can take ~5-10 mins. By default, Colabfold is installed on `~/.localcolabfold` - if you want this changed please set the `COLABFOLD_DIR` environment variable before running the code for the first time.
+
 
 ## Sampling structures
-You can sample structures for a given protein sequence using the script `sample.py`:
-```
-python -m bioemu.sample --ckpt_path PATH/TO/CHECKPOINT \
-                        --model_config_path PATH/TO/MODEL/CONFIG \
-		        --denoiser_config_path PATH/TO/DENOISER/CONFIG \
-		        --sequence SEQUENCE \
-		        --num_samples NUM_SAMPLES \
-		        --batch_size_100 BATCH_SIZE_100 \
-		        --output_dir OUTPUT_DIR
-```
-You can omit some arguments if you want to use the default checkpoint and denoising settings. For example, to run a tiny test do:
+You can sample structures for a given protein sequence using the `sample` module. To run a tiny test using the default model parameters and denoising settings:
 ```
 python -m bioemu.sample --sequence GYDPETGTWG --num_samples 10 --output_dir ~/test-chignolin
 ```
+
+Alternatively, you can use the Python API:
+
+```python
+from bioemu.sample import main as sample
+sample(sequence='GYDPETGTWG', num_samples=10, output_dir='~/test_chignolin')
+```
+
+The model parameters will be automatically downloaded from [huggingface](https://huggingface.co/microsoft/bioemu). See [sample.py](./src/bioemu/sample.py) for more options.
 
 Sampling times will depend on sequence length and available infrastructure. The following table gives times for collecting 1000 samples measured on an A100 GPU with 80 GB VRAM for sequences of different lengths (using a `batch_size_100=20` setting in `sample.py`):
  | sequence length | time / min |
@@ -74,11 +73,11 @@ The `bioemu-v1.0` checkpoint contains the model weights used to produce the resu
 If you are using our code or model, please consider citing our work:
 ```bibtex
 @article {BioEmu2024,
-	author = {Lewis, Sarah and Hempel, Tim and Jim{\'e}nez-Luna, Jos{\'e} and Gastegger, Michael and Xie, Yu and Foong, Andrew Y. K. and Satorras, Victor Garc{\'\i}a and Abdin, Osama and Veeling, Bastiaan S. and Zaporozhets, Iryna and Chen, Yaoyi and Yang, Soojung and Schneuing, Arne and Nigam, Jigyasa and Barbero, Federico and Stimper, Vincent and Campbell, Andrew and Yim, Jason and Lienen, Marten and Shi, Yu and Zheng, Shuxin and Schulz, Hannes and Munir, Usman and Clementi, Cecilia and No{\'e}, Frank},
-	title = {Scalable emulation of protein equilibrium ensembles with generative deep learning},
-	year = {2024},
-	doi = {10.1101/2024.12.05.626885},
-	journal = {bioRxiv}
+    author = {Lewis, Sarah and Hempel, Tim and Jim{\'e}nez-Luna, Jos{\'e} and Gastegger, Michael and Xie, Yu and Foong, Andrew Y. K. and Satorras, Victor Garc{\'\i}a and Abdin, Osama and Veeling, Bastiaan S. and Zaporozhets, Iryna and Chen, Yaoyi and Yang, Soojung and Schneuing, Arne and Nigam, Jigyasa and Barbero, Federico and Stimper, Vincent and Campbell, Andrew and Yim, Jason and Lienen, Marten and Shi, Yu and Zheng, Shuxin and Schulz, Hannes and Munir, Usman and Clementi, Cecilia and No{\'e}, Frank},
+    title = {Scalable emulation of protein equilibrium ensembles with generative deep learning},
+    year = {2024},
+    doi = {10.1101/2024.12.05.626885},
+    journal = {bioRxiv}
 }
 ```
 

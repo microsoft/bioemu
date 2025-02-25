@@ -36,8 +36,6 @@ def test_generate_batch(tmp_path):
     # Mock the run_colabfold function
     with patch("bioemu.get_embeds.run_colabfold", side_effect=mock_run_colabfold):
         # cache_embeds_dir could be None when input to get_colabfold_embeds
-        # Need to set up COLABFOLD_DIR so get_colabfold_embeds can create the dir
-        os.environ["COLABFOLD_DIR"] = str(tmp_path)
         batch = generate_batch(
             score_model=mock_score_model,
             sequence=sequence,
