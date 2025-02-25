@@ -34,7 +34,7 @@ def test_generate_batch(tmp_path):
     denoiser = hydra.utils.instantiate(denoiser_config)
 
     # Mock the run_colabfold function
-    with patch("bioemu.get_embeds.run_colabfold", side_effect=mock_run_colabfold):
+    with patch("bioemu.get_embeds.run_colabfold", side_effect=mock_run_colabfold), patch("bioemu.get_embeds.ensure_colabfold_install"):
         # cache_embeds_dir could be None when input to get_colabfold_embeds
         batch = generate_batch(
             score_model=mock_score_model,
