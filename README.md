@@ -32,7 +32,7 @@ pip install bioemu
 ```
 
 > [!NOTE]
-> The first time `bioemu` is used to sample structures, it will also need to setup Colabfold on the side. This process can take ~5-10 mins.
+> The first time `bioemu` is used to sample structures, it will also need to setup Colabfold on the side. This process can take ~5-10 mins. By default, Colabfold is installed on `~/.localcolabfold` - if you want this changed please set the `COLABFOLD_DIR` environment variable before running the code for the first time.
 
 
 ## Sampling structures
