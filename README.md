@@ -24,13 +24,7 @@ This repository contains inference code and model weights.
 - [Get in touch](#get-in-touch)
 
 ## Installation
-To install the BioEmu code, clone this repository:
-```bash
-git clone git@github.com:microsoft/bioemu.git
-cd bioemu/
-```
-
-bioemu is provided as pip-installable package:
+bioemu is provided as a pip-installable package:
 
 ```bash
 pip install bioemu
