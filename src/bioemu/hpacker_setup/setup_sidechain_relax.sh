@@ -13,4 +13,4 @@ conda activate $HPACKER_ENV_NAME
 conda env update -f ${HPACKER_REPO_DIR}/env.yaml -n $HPACKER_ENV_NAME
 
 # non-editable installation seems broken
-pip install -e hpacker/
+pip install -e ${HPACKER_REPO_DIR}/
