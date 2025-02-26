@@ -77,36 +77,46 @@ def _get_default_embeds_dir() -> StrPath:
     return os.path.join(_get_colabfold_install_dir(), "embeds_cache")
 
 
-def run_colabfold(input_file: StrPath, res_dir: StrPath, colabfold_env: dict[str, str]) -> int:
+def run_colabfold(
+    input_file: StrPath,
+    res_dir: StrPath,
+    colabfold_env: dict[str, str],
+    msa_host_url: str | None = None,
+) -> int:
     """
     Runs colabfold.
     Args:
         input_file: Input file path. It can be either a fasta or a3m file.
         res_dir: Directory to store results.
         colabfold_env: Environment variables for colabfold.
+        msa_host_url: MSA host URL. If None, defaults to the colabfold default.
     """
-    return subprocess.call(
-        [
-            "colabfold_batch",
-            input_file,
-            res_dir,
-            "--num-models",
-            "1",
-            "--model-order",
-            "3",
-            "--model-type",
-            "alphafold2",
-            "--num-recycle",
-            "0",
-            "--save-single-representations",
-            "--save-pair-representations",
-        ],
-        env=colabfold_env,
-    )
+
+    cmd = [
+        "colabfold_batch",
+        input_file,
+        res_dir,
+        "--num-models",
+        "1",
+        "--model-order",
+        "3",
+        "--model-type",
+        "alphafold2",
+        "--num-recycle",
+        "0",
+        "--save-single-representations",
+        "--save-pair-representations",
+    ]
+    if msa_host_url is not None:
+        cmd.extend(["--host-url", msa_host_url])
+    return subprocess.call(cmd, env=colabfold_env)
 
 
 def get_colabfold_embeds(
-    seq: str, cache_embeds_dir: StrPath | None, msa_file: StrPath | None = None
+    seq: str,
+    cache_embeds_dir: StrPath | None,
+    msa_file: StrPath | None = None,
+    msa_host_url: str | None = None,
 ) -> tuple[StrPath, StrPath]:
     """
     Uses colabfold to retrieve embeddings for a given sequence. If the embeddings are already stored under `cache_embeds_dir`,
@@ -157,7 +167,7 @@ def get_colabfold_embeds(
             res = run_colabfold(msa_file, res_dir, colabfold_env)
             embed_prefix = Path(msa_file).stem
         else:
-            res = run_colabfold(fasta_file, res_dir, colabfold_env)
+            res = run_colabfold(fasta_file, res_dir, colabfold_env, msa_host_url)
             embed_prefix = f"{seqsha}__unknown_description_"
         assert res == 0, "Failed to run colabfold_batch"
 

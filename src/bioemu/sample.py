@@ -69,6 +69,7 @@ def main(
     denoiser_config_path: str | Path = DEFAULT_DENOISER_CONFIG_PATH,
     cache_embeds_dir: str | Path | None = None,
     msa_file: str | Path | None = None,
+    msa_host_url: str | None = None,
 ) -> None:
     """
     Generate samples for a specified sequence, using a trained model.
@@ -86,6 +87,8 @@ def main(
            Only required if `ckpt_path` is set.
         denoiser_config_path: Path to the denoiser config, defining the denoising process.
         cache_embeds_dir: Directory to store MSA embeddings. If not set, this defaults to `COLABFOLD_DIR/embeds_cache`.
+        msa_file: Path to an MSA A3M file. If not set, this defaults to using colabfold to generate an MSA.
+        msa_host_url: MSA server URL. If not set, this defaults to collabfold's remote server.
     """
     output_dir = Path(output_dir).expanduser().resolve()
     output_dir.mkdir(parents=True, exist_ok=True)  # Fail fast if output_dir is non-writeable
@@ -151,6 +154,7 @@ def main(
             denoiser=denoiser,
             cache_embeds_dir=cache_embeds_dir,
             msa_file=msa_file,
+            msa_host_url=msa_host_url,
         )
         batch = {k: v.cpu().numpy() for k, v in batch.items()}
         np.savez(npz_path, **batch, sequence=sequence)
@@ -183,6 +187,7 @@ def generate_batch(
     denoiser: Callable,
     cache_embeds_dir: str | Path | None,
     msa_file: str | Path | None = None,
+    msa_host_url: str | None = None,
 ) -> dict[str, torch.Tensor]:
     """Generate one batch of samples, using GPU if available.
 
@@ -194,6 +199,7 @@ def generate_batch(
         batch_size: Batch size.
         seed: Random seed.
         msa_file: Optional path to an MSA A3M file.
+        msa_host_url: MSA server URL for colabfold.
     """
 
     torch.manual_seed(seed)
@@ -201,7 +207,10 @@ def generate_batch(
 
     # Pass msa_file to get_colabfold_embeds
     single_embeds_file, pair_embeds_file = get_colabfold_embeds(
-        seq=sequence, cache_embeds_dir=cache_embeds_dir, msa_file=msa_file
+        seq=sequence,
+        cache_embeds_dir=cache_embeds_dir,
+        msa_file=msa_file,
+        msa_host_url=msa_host_url,
     )
     single_embeds = np.load(single_embeds_file)
     pair_embeds = np.load(pair_embeds_file)
