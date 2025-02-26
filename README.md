@@ -24,7 +24,7 @@ This repository contains inference code and model weights.
 - [Get in touch](#get-in-touch)
 
 ## Installation
-bioemu is provided as a pip-installable package:
+bioemu is provided as a Linux-only pip-installable package:
 
 ```bash
 pip install bioemu

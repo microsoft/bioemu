@@ -69,3 +69,4 @@ jobs:
       env:
         GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         PR_NUMBER: ${{ github.event.number }}
+      continue-on-error: true # workflow triggered by PRs from external forks cannot comment
