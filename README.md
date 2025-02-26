@@ -81,6 +81,11 @@ BioEmu outputs structures in backbone frame representation. To reconstruct the s
 > [!WARNING]
 > This code is experimental and is provided for research purposes only. Further testing/development are needed before considering its application in real-world scenarios or production environments.
 
+Install optional dependencies:
+
+```bash
+pip install bioemu[md]
+```
 
 You can compute side-chain reconstructions via the `bioemu.sidechains_relax` module:
 ```bash

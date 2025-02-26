@@ -3,8 +3,6 @@ set -ex
 
 HPACKER_ENV_NAME=$1
 
-# install additional dependencies into bioemu
-pip install 'bioemu[md]'
 
 # clone and install the hpacker code. This will install into a separate environment
 git clone https://github.com/gvisani/hpacker.git
