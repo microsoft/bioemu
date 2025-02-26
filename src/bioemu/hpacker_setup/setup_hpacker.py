@@ -6,11 +6,16 @@ HPACKER_INSTALL_SCRIPT = os.path.join(
     os.path.dirname(os.path.realpath(__file__)), "setup_sidechain_relax.sh"
 )
 HPACKER_DEFAULT_ENVNAME = "hpacker"
+HPACKER_DEFAULT_REPO_DIR = os.path.join(os.path.expanduser("~"), ".hpacker")
 
 logger = logging.getLogger(__name__)
 
+# We need an .hpacker dir
 
-def ensure_hpacker_install(envname: str = HPACKER_DEFAULT_ENVNAME) -> None:
+
+def ensure_hpacker_install(
+    envname: str = HPACKER_DEFAULT_ENVNAME, repo_dir: str = HPACKER_DEFAULT_REPO_DIR
+) -> None:
     """
     Ensures hpacker and its dependencies are installed under conda environment
     named `envname`
@@ -22,7 +27,7 @@ def ensure_hpacker_install(envname: str = HPACKER_DEFAULT_ENVNAME) -> None:
     if envname not in conda_envs:
         logger.info("Setting up hpacker dependencies...")
         _install = subprocess.run(
-            ["bash", HPACKER_INSTALL_SCRIPT, envname],
+            ["bash", HPACKER_INSTALL_SCRIPT, envname, repo_dir],
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
         )
