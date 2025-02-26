@@ -68,6 +68,7 @@ def main(
     model_config_path: str | Path | None = None,
     denoiser_config_path: str | Path = DEFAULT_DENOISER_CONFIG_PATH,
     cache_embeds_dir: str | Path | None = None,
+    msa_file: str | Path | None = None,
 ) -> None:
     """
     Generate samples for a specified sequence, using a trained model.
@@ -149,6 +150,7 @@ def main(
             seed=seed,
             denoiser=denoiser,
             cache_embeds_dir=cache_embeds_dir,
+            msa_file=msa_file,
         )
         batch = {k: v.cpu().numpy() for k, v in batch.items()}
         np.savez(npz_path, **batch, sequence=sequence)
@@ -180,6 +182,7 @@ def generate_batch(
     seed: int,
     denoiser: Callable,
     cache_embeds_dir: str | Path | None,
+    msa_file: str | Path | None = None,
 ) -> dict[str, torch.Tensor]:
     """Generate one batch of samples, using GPU if available.
 
@@ -190,13 +193,15 @@ def generate_batch(
         embeddings_file: Path to embeddings file.
         batch_size: Batch size.
         seed: Random seed.
+        msa_file: Optional path to an MSA A3M file.
     """
 
     torch.manual_seed(seed)
     n = len(sequence)
 
+    # Pass msa_file to get_colabfold_embeds
     single_embeds_file, pair_embeds_file = get_colabfold_embeds(
-        seq=sequence, cache_embeds_dir=cache_embeds_dir
+        seq=sequence, cache_embeds_dir=cache_embeds_dir, msa_file=msa_file
     )
     single_embeds = np.load(single_embeds_file)
     pair_embeds = np.load(pair_embeds_file)
