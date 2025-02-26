@@ -26,14 +26,8 @@ def run_one_md_nointegration(
     return run_one_md(frame, only_energy_minimization=only_energy_minimization, simtime_ns=0.0)
 
 
-def _ensure_hpacker_mock():
-    """Skip hpacker install on CI"""
-    pass
-
-
 @patch("bioemu.sidechain_relax._run_hpacker", _run_hpacker_mock)
 @patch("bioemu.sidechain_relax.run_one_md", run_one_md_nointegration)
-@patch("bioemu.hpacker_setup.setup_hpacker.ensure_hpacker_install", _ensure_hpacker_mock)
 def test_mdrelax_integration(tmp_path):
     """integration test for md-relaxation pipeline
     assert that structure does not diverge too much from original sample
@@ -42,7 +36,6 @@ def test_mdrelax_integration(tmp_path):
     samples_xtc = tmp_path / "samples.xtc"
     sample = mdtraj.load_pdb(samples_pdb)
     sample.save_xtc(samples_xtc)
-
     main(
         samples_xtc,
         samples_pdb,

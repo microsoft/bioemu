@@ -14,12 +14,17 @@ import openmm.unit as u
 import typer
 from tqdm.auto import tqdm
 
-from bioemu.hpacker_setup.setup_hpacker import HPACKER_DEFAULT_ENVNAME, ensure_hpacker_install
+from bioemu.hpacker_setup.setup_hpacker import (
+    HPACKER_DEFAULT_ENVNAME,
+    HPACKER_DEFAULT_REPO_DIR,
+    ensure_hpacker_install,
+)
 from bioemu.md_utils import get_propka_protonation
 
 logger = logging.getLogger(__name__)
 
 HPACKER_ENVNAME = os.getenv("HPACKER_ENV_NAME", HPACKER_DEFAULT_ENVNAME)
+HPACKER_REPO_DIR = os.getenv("HPACKER_REPO_DIR", HPACKER_DEFAULT_REPO_DIR)
 HPACKER_PYTHONBIN = os.path.join(
     os.path.abspath(os.path.join(os.environ["CONDA_PREFIX"], "..")),
     HPACKER_ENVNAME,
@@ -35,6 +40,9 @@ class MDProtocol(str, Enum):
 
 def _run_hpacker(protein_pdb_in: str, protein_pdb_out: str) -> None:
     """run hpacker in its environment."""
+    # make sure that hpacker env is set up
+    ensure_hpacker_install(envname=HPACKER_ENVNAME, repo_dir=HPACKER_REPO_DIR)
+
     result = subprocess.run(
         [
             HPACKER_PYTHONBIN,
@@ -59,8 +67,6 @@ def reconstruct_sidechains(traj: mdtraj.Trajectory) -> mdtraj.Trajectory:
     Returns:
         trajectory with reconstructed side-chains
     """
-    # make sure that hpacker env is set up
-    ensure_hpacker_install(envname=HPACKER_ENVNAME)
 
     # side-chain reconstruction expects backbone and no CB atoms (suppresses warning)
     traj_bb = traj.atom_slice(traj.top.select("backbone"))

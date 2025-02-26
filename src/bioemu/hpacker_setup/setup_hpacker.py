@@ -10,8 +10,6 @@ HPACKER_DEFAULT_REPO_DIR = os.path.join(os.path.expanduser("~"), ".hpacker")
 
 logger = logging.getLogger(__name__)
 
-# We need an .hpacker dir
-
 
 def ensure_hpacker_install(
     envname: str = HPACKER_DEFAULT_ENVNAME, repo_dir: str = HPACKER_DEFAULT_REPO_DIR
