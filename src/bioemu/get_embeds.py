@@ -12,7 +12,7 @@ from Bio import SeqIO
 from Bio.Seq import Seq
 from Bio.SeqRecord import SeqRecord
 
-StrPath = str | os.PathLike
+StrPath = str | os.PathLike | Path
 logger = logging.getLogger(__name__)
 
 
@@ -79,7 +79,7 @@ def _get_default_embeds_dir() -> StrPath:
 
 def run_colabfold(input_file: StrPath, res_dir: StrPath, colabfold_env: dict[str, str]) -> int:
     """
-    Runs colabfold. 
+    Runs colabfold.
     Args:
         input_file: Input file path. It can be either a fasta or a3m file.
         res_dir: Directory to store results.
@@ -105,25 +105,27 @@ def run_colabfold(input_file: StrPath, res_dir: StrPath, colabfold_env: dict[str
     )
 
 
-def get_colabfold_embeds(seq: str, cache_embeds_dir: StrPath | None, msa_file: StrPath | None = None) -> tuple[StrPath, StrPath]:
+def get_colabfold_embeds(
+    seq: str, cache_embeds_dir: StrPath | None, msa_file: StrPath | None = None
+) -> tuple[StrPath, StrPath]:
     """
     Uses colabfold to retrieve embeddings for a given sequence. If the embeddings are already stored under `cache_embeds_dir`,
     the cached embeddings are returned. Otherwise, colabfold is used to compute the embeddings and they are saved under `cache_embeds_dir`.
     Optionally uses an MSA A3M file if provided.
-    
+
     Args:
         seq: Protein sequence to query
         cache_embeds_dir: Cache directory where embeddings will be stored. If None, defaults to a child of the colabfold install directory.
-        msa_file: MSA A3M file to use as input. If None, the sequence is used as input.        
-    
+        msa_file: MSA A3M file to use as input. If None, the sequence is used as input.
+
     Returns:
         Tuple of paths to single and pair embeddings.
     """
     seqsha = shahexencode(seq)
 
     # Setup embedding cache
-    cache_embeds_dir = os.path.expanduser(cache_embeds_dir) or _get_default_embeds_dir()
-    os.makedirs(cache_embeds_dir, exist_ok=True)
+    cache_embeds_dir = cache_embeds_dir or _get_default_embeds_dir()
+    os.makedirs(os.path.expanduser(cache_embeds_dir), exist_ok=True)
 
     # Check whether embeds have already been computed
     single_rep_file = os.path.join(cache_embeds_dir, f"{seqsha}_single.npy")
@@ -148,8 +150,10 @@ def get_colabfold_embeds(seq: str, cache_embeds_dir: StrPath | None, msa_file: S
         os.makedirs(res_dir)
         write_fasta(seqs=[seq], fasta_file=fasta_file, ids=[seqsha])
         if msa_file is not None:
-            logger.warning("Using user provided MSAs. This might result in suboptimal performance of model generated distributions!")
-            msa_file = os.path.expanduser(msa_file)
+            logger.warning(
+                "Using user provided MSAs. This might result in suboptimal performance of model generated distributions!"
+            )
+            msa_file = Path(msa_file).expanduser()
             res = run_colabfold(msa_file, res_dir, colabfold_env)
             embed_prefix = Path(msa_file).stem
         else:
