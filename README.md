@@ -76,27 +76,20 @@ If you are using our code or model, please consider citing our work:
 ```
 
 ## Side-chain reconstruction and MD-relaxation
-BioEmu outputs structures in backbone frame representation.
-To reconstruct the side-chains, several tools are available. 
-As an example, we provide a script to conduct side-chain reconstruction with HPacker (https://github.com/gvisani/hpacker), and provide an interface for running a short molecular dynamics (MD) equilibration.
-HPacker is a method for protein side-chain packing based on holographic rotationally equivariant convolutional neural networks (https://arxiv.org/abs/2311.09312).
+BioEmu outputs structures in backbone frame representation. To reconstruct the side-chains, several tools are available. As an example, we interface with HPacker (https://github.com/gvisani/hpacker) to conduct side-chain reconstruction, and also provide basic tooling for running a short molecular dynamics (MD) equilibration.
 
-This code is experimental and is provided for research purposes only. Further testing/development are needed before considering its application in real-world scenarios or production environments.
+> [!WARNING]
+> This code is experimental and is provided for research purposes only. Further testing/development are needed before considering its application in real-world scenarios or production environments.
 
-### Install side-chain reconstruction tools
-From the environment where `bioemu` is currently installed, please run:
 
-```bash
-./setup_sidechain_relax.sh
-```
-
-This will install some additional dependencies in the current environment, and HPacker in a separate conda environment named `hpacker`.
-
-### Use side-chain reconstruction tools
-Inside the `bioemu` enviroment, run side-chain reconstruction with:
+You can compute side-chain reconstructions via the `bioemu.sidechains_relax` module:
 ```bash
 python -m bioemu.sidechain_relax --pdb-path path/to/topology.pdb --xtc-path path/to/samples.xtc
 ```
+
+> [!NOTE]
+> The first time this module is invoked, it will attempt to install `hpacker` and its dependencies into a separate `hpacker` conda environment. If you wish for it to be installed in a different location, please set the `HPACKER_ENVNAME` environment variable before using this module for the first time.
+
 By default, side-chain reconstruction and local energy minimization are performed (no full MD integration for efficiency reasons).
 Note that the runtime of this code scales with the size of the system.
 We suggest running this code on a selection of samples rather than the full set.
