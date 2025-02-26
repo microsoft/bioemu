@@ -88,7 +88,7 @@ def main(
         denoiser_config_path: Path to the denoiser config, defining the denoising process.
         cache_embeds_dir: Directory to store MSA embeddings. If not set, this defaults to `COLABFOLD_DIR/embeds_cache`.
         msa_file: Path to an MSA A3M file. If not set, this defaults to using colabfold to generate an MSA.
-        msa_host_url: MSA server URL. If not set, this defaults to collabfold's remote server.
+        msa_host_url: MSA server URL. If not set, this defaults to colabfold's remote server.
     """
     output_dir = Path(output_dir).expanduser().resolve()
     output_dir.mkdir(parents=True, exist_ok=True)  # Fail fast if output_dir is non-writeable
