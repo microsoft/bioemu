@@ -8,6 +8,7 @@ HPACKER_INSTALL_SCRIPT = os.path.join(
 HPACKER_DEFAULT_ENVNAME = "hpacker"
 HPACKER_DEFAULT_REPO_DIR = os.path.join(os.path.expanduser("~"), ".hpacker")
 
+logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger(__name__)
 
 
