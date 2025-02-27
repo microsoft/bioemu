@@ -91,7 +91,7 @@ def run_colabfold(
             the MSA in the .a3m file will be used instead.
         res_dir: Directory to store results.
         colabfold_env: Environment variables for colabfold.
-        msa_host_url: MSA host URL. If None, defaults to the colabfold default.
+        msa_host_url: MSA host URL. If None, defaults to the colabfold default, which is a remote server.
     """
 
     assert str(input_file).endswith(".fasta") or str(input_file).endswith(".a3m")
