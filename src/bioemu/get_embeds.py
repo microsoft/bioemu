@@ -12,7 +12,7 @@ from Bio import SeqIO
 from Bio.Seq import Seq
 from Bio.SeqRecord import SeqRecord
 
-StrPath = str | os.PathLike | Path
+StrPath = str | os.PathLike
 logger = logging.getLogger(__name__)
 
 
@@ -86,11 +86,15 @@ def run_colabfold(
     """
     Runs colabfold.
     Args:
-        input_file: Input file path. It can be either a fasta or a3m file.
+        input_file: Input file path. It can be either a fasta or a3m file. If it is a .fasta file,
+            colabfold will retrieve an MSA from an MSA server. If it is a .a3m file,
+            the MSA in the .a3m file will be used instead.
         res_dir: Directory to store results.
         colabfold_env: Environment variables for colabfold.
         msa_host_url: MSA host URL. If None, defaults to the colabfold default.
     """
+
+    assert str(input_file).endswith(".fasta") or str(input_file).endswith(".a3m")
 
     cmd = [
         "colabfold_batch",
