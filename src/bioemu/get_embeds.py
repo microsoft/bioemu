@@ -14,6 +14,7 @@ from Bio.SeqRecord import SeqRecord
 
 StrPath = str | os.PathLike
 logger = logging.getLogger(__name__)
+logger.setLevel(logging.DEBUG)
 
 
 DEFAULT_COLABFOLD_DIR = os.path.join(os.path.expanduser("~"), ".localcolabfold")
@@ -68,7 +69,9 @@ def ensure_colabfold_install(colabfold_dir: StrPath) -> str:
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
         )
-        assert _install.returncode == 0
+        assert (
+            _install.returncode == 0
+        ), f"Something went wrong during colabfold install: {_install.stdout.decode()}"
     return colabfold_bin_dir
 
 
