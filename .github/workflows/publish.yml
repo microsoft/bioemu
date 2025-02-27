@@ -33,6 +33,8 @@ jobs:
       - name: Build
         run: |
           python -m build
+          python -m wheel tags --platform-tag linux-x86_64 dist/*any.whl
+          rm dist/*any.whl
 
       - name: Publish
         uses: pypa/gh-action-pypi-publish@release/v1
