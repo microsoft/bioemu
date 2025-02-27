@@ -139,7 +139,8 @@ def get_colabfold_embeds(
 
     # Setup embedding cache
     cache_embeds_dir = cache_embeds_dir or _get_default_embeds_dir()
-    os.makedirs(os.path.expanduser(cache_embeds_dir), exist_ok=True)
+    cache_embeds_dir = os.path.expanduser(cache_embeds_dir)
+    os.makedirs(cache_embeds_dir, exist_ok=True)
 
     # Check whether embeds have already been computed
     single_rep_file = os.path.join(cache_embeds_dir, f"{seqsha}_single.npy")
