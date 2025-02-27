@@ -23,6 +23,8 @@ dependencies = [
     "stackprinter",
     "typer"
 ]
+readme = "README.md"
+
 
 [project.optional-dependencies]
 dev = [
