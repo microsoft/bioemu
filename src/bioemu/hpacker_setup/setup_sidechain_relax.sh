@@ -12,5 +12,5 @@ eval "$(conda shell.bash hook)"
 conda activate $HPACKER_ENV_NAME
 conda env update -f ${HPACKER_REPO_DIR}/env.yaml -n $HPACKER_ENV_NAME
 
-# non-editable installation seems broken
+# non-editable installation seems broken (https://github.com/gvisani/hpacker/issues/2)
 pip install -e ${HPACKER_REPO_DIR}/
