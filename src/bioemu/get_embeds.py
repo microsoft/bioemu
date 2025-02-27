@@ -89,7 +89,7 @@ def run_colabfold(
         input_file: Input file path. It can be either a fasta or a3m file.
         res_dir: Directory to store results.
         colabfold_env: Environment variables for colabfold.
-        msa_host_url: MSA host URL. If None, defaults to the colabfold default.
+        msa_host_url: MSA host URL. If None, defaults to the colabfold default, which is a remote server.
     """
 
     cmd = [
