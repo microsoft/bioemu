@@ -13,8 +13,6 @@ from Bio.Seq import Seq
 from Bio.SeqRecord import SeqRecord
 
 StrPath = str | os.PathLike
-logger = logging.getLogger(__name__)
-logger.setLevel(logging.DEBUG)
 
 
 DEFAULT_COLABFOLD_DIR = os.path.join(os.path.expanduser("~"), ".localcolabfold")
@@ -54,6 +52,9 @@ def ensure_colabfold_install(colabfold_dir: StrPath) -> str:
     Ensures localcolabfold is installed under `colabfold_dir`. Returns path
     to directory where colabfold executables are placed
     """
+    logger = logging.getLogger(__name__)
+    logger.setLevel(logging.DEBUG)
+
     colabfold_batch_exec = os.path.join(
         colabfold_dir, "localcolabfold", "colabfold-conda", "bin", "colabfold_batch"
     )
