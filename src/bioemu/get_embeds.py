@@ -167,6 +167,9 @@ def get_colabfold_embeds(
             logger.warning(
                 "Using user provided MSAs. This might result in suboptimal performance of model generated distributions!"
             )
+            logger.info(
+                "BioEmu has been using MSAs from the ColabFold MSA server, or following https://github.com/sokrypton/ColabFold?tab=readme-ov-file#generating-msas-for-large-scale-structurecomplex-predictions. If your MSA is generated differently, the generated results could be different."
+            )
             msa_file = Path(msa_file).expanduser()
             res = run_colabfold(msa_file, res_dir, colabfold_env)
             embed_prefix = Path(msa_file).stem
