@@ -205,7 +205,6 @@ def generate_batch(
     torch.manual_seed(seed)
     n = len(sequence)
 
-    # Pass msa_file to get_colabfold_embeds
     single_embeds_file, pair_embeds_file = get_colabfold_embeds(
         seq=sequence,
         cache_embeds_dir=cache_embeds_dir,
