@@ -25,7 +25,6 @@ dependencies = [
 ]
 readme = "README.md"
 
-
 [project.optional-dependencies]
 dev = [
     "pytest", # For developers
