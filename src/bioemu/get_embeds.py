@@ -81,43 +81,69 @@ def _get_default_embeds_dir() -> StrPath:
     return os.path.join(_get_colabfold_install_dir(), "embeds_cache")
 
 
-def run_colabfold(fasta_file: StrPath, res_dir: StrPath, colabfold_env: dict[str, str]) -> int:
-    return subprocess.call(
-        [
-            "colabfold_batch",
-            fasta_file,
-            res_dir,
-            "--num-models",
-            "1",
-            "--model-order",
-            "3",
-            "--model-type",
-            "alphafold2",
-            "--num-recycle",
-            "0",
-            "--save-single-representations",
-            "--save-pair-representations",
-        ],
-        env=colabfold_env,
-    )
+def run_colabfold(
+    input_file: StrPath,
+    res_dir: StrPath,
+    colabfold_env: dict[str, str],
+    msa_host_url: str | None = None,
+) -> int:
+    """
+    Runs colabfold.
+    Args:
+        input_file: Input file path. It can be either a fasta or a3m file. If it is a .fasta file,
+            colabfold will retrieve an MSA from an MSA server. If it is a .a3m file,
+            the MSA in the .a3m file will be used instead.
+        res_dir: Directory to store results.
+        colabfold_env: Environment variables for colabfold.
+        msa_host_url: MSA host URL. If None, defaults to the colabfold default, which is a remote server.
+    """
+
+    assert str(input_file).endswith(".fasta") or str(input_file).endswith(".a3m")
+
+    cmd = [
+        "colabfold_batch",
+        input_file,
+        res_dir,
+        "--num-models",
+        "1",
+        "--model-order",
+        "3",
+        "--model-type",
+        "alphafold2",
+        "--num-recycle",
+        "0",
+        "--save-single-representations",
+        "--save-pair-representations",
+    ]
+    if msa_host_url is not None:
+        cmd.extend(["--host-url", msa_host_url])
+    return subprocess.call(cmd, env=colabfold_env)
 
 
-def get_colabfold_embeds(seq: str, cache_embeds_dir: StrPath | None) -> tuple[StrPath, StrPath]:
+def get_colabfold_embeds(
+    seq: str,
+    cache_embeds_dir: StrPath | None,
+    msa_file: StrPath | None = None,
+    msa_host_url: str | None = None,
+) -> tuple[StrPath, StrPath]:
     """
     Uses colabfold to retrieve embeddings for a given sequence. If the embeddings are already stored under `cache_embeds_dir`,
     the cached embeddings are returned. Otherwise, colabfold is used to compute the embeddings and they are saved under `cache_embeds_dir`.
+    Optionally uses an MSA A3M file if provided.
 
     Args:
         seq: Protein sequence to query
         cache_embeds_dir: Cache directory where embeddings will be stored. If None, defaults to a child of the colabfold install directory.
+        msa_file: MSA A3M file to use as input. If None, the sequence is used as input.
 
     Returns:
-        Path to resulting single and pair embeddings
+        Tuple of paths to single and pair embeddings.
     """
     seqsha = shahexencode(seq)
 
     # Setup embedding cache
     cache_embeds_dir = cache_embeds_dir or _get_default_embeds_dir()
+    cache_embeds_dir = os.path.expanduser(cache_embeds_dir)
     os.makedirs(cache_embeds_dir, exist_ok=True)
 
     # Check whether embeds have already been computed
@@ -125,6 +151,7 @@ def get_colabfold_embeds(seq: str, cache_embeds_dir: StrPath | None) -> tuple[St
     pair_rep_file = os.path.join(cache_embeds_dir, f"{seqsha}_pair.npy")
 
     if os.path.exists(single_rep_file) and os.path.exists(pair_rep_file):
+        logger.info(f"Using cached embeddings in {cache_embeds_dir}.")
         return single_rep_file, pair_rep_file
 
     # If we don't already have embeds, run colabfold
@@ -141,16 +168,28 @@ def get_colabfold_embeds(seq: str, cache_embeds_dir: StrPath | None) -> tuple[St
         res_dir = os.path.join(tempdir, "results")
         os.makedirs(res_dir)
         write_fasta(seqs=[seq], fasta_file=fasta_file, ids=[seqsha])
-        res = run_colabfold(fasta_file, res_dir, colabfold_env)
+        if msa_file is not None:
+            logger.info(
+                "Using user provided MSAs. This might result in suboptimal performance of model generated distributions!\n"
+                "BioEmu has been using MSAs from the ColabFold MSA server, or following:\n"
+                "https://github.com/sokrypton/ColabFold?tab=readme-ov-file#generating-msas-for-large-scale-structurecomplex-predictions.\n"
+                "If your MSA is generated differently, the generated results could be different."
+            )
+            msa_file = Path(msa_file).expanduser()
+            res = run_colabfold(msa_file, res_dir, colabfold_env)
+            embed_prefix = Path(msa_file).stem
+        else:
+            res = run_colabfold(fasta_file, res_dir, colabfold_env, msa_host_url)
+            embed_prefix = f"{seqsha}__unknown_description_"
         assert res == 0, "Failed to run colabfold_batch"
 
         single_rep_tempfile = os.path.join(
             res_dir,
-            f"{seqsha}__unknown_description__single_repr_evo_rank_001_alphafold2_model_3_seed_000.npy",
+            f"{embed_prefix}_single_repr_evo_rank_001_alphafold2_model_3_seed_000.npy",
         )
         pair_rep_tempfile = os.path.join(
             res_dir,
-            f"{seqsha}__unknown_description__pair_repr_evo_rank_001_alphafold2_model_3_seed_000.npy",
+            f"{embed_prefix}_pair_repr_evo_rank_001_alphafold2_model_3_seed_000.npy",
         )
         shutil.copy(single_rep_tempfile, single_rep_file)
         shutil.copy(pair_rep_tempfile, pair_rep_file)
