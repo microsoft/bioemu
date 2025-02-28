@@ -122,7 +122,6 @@ def main(
     sdes: dict[str, SDE] = hydra.utils.instantiate(model_config["sdes"])
 
     if denoiser_config_path is None:
-        assert denoiser_type is not None
         assert denoiser_type in SUPPORTED_DENOISERS
         denoiser_config_path = DEFAULT_DENOISER_CONFIG_DIR / f"{denoiser_type}.yaml"
 
