@@ -21,6 +21,10 @@ COLABFOLD_INSTALL_SCRIPT = os.path.join(
 )
 
 
+logger = logging.getLogger(__name__)
+logger.setLevel(logging.DEBUG)
+
+
 def shahexencode(s: str) -> str:
     """Simple sha256 string encoding"""
     return hashlib.sha256(s.encode()).hexdigest()
@@ -52,9 +56,6 @@ def ensure_colabfold_install(colabfold_dir: StrPath) -> str:
     Ensures localcolabfold is installed under `colabfold_dir`. Returns path
     to directory where colabfold executables are placed
     """
-    logger = logging.getLogger(__name__)
-    logger.setLevel(logging.DEBUG)
-
     colabfold_batch_exec = os.path.join(
         colabfold_dir, "localcolabfold", "colabfold-conda", "bin", "colabfold_batch"
     )
