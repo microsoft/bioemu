@@ -4,8 +4,10 @@
 
 import logging
 import os
+import typing
 from collections.abc import Callable
 from pathlib import Path
+from typing import Literal
 
 import hydra
 import numpy as np
@@ -28,7 +30,9 @@ from .utils import count_samples_in_output_dir, format_npz_samples_filename
 
 logger = logging.getLogger(__name__)
 
-DEFAULT_DENOISER_CONFIG_PATH = Path(__file__).parent / "config/denoiser/dpm.yaml"
+DEFAULT_DENOISER_CONFIG_DIR = Path(__file__).parent / "config/denoiser/"
+SupportedDenoisersLiteral = Literal["dpm", "heun"]
+SUPPORTED_DENOISERS = list(typing.get_args(SupportedDenoisersLiteral))
 
 
 def maybe_download_checkpoint(
@@ -66,7 +70,8 @@ def main(
     model_name: str | None = "bioemu-v1.0",
     ckpt_path: str | Path | None = None,
     model_config_path: str | Path | None = None,
-    denoiser_config_path: str | Path = DEFAULT_DENOISER_CONFIG_PATH,
+    denoiser_type: SupportedDenoisersLiteral | None = "dpm",
+    denoiser_config_path: str | Path | None = None,
     cache_embeds_dir: str | Path | None = None,
     msa_host_url: str | None = None,
 ) -> None:
@@ -85,6 +90,7 @@ def main(
         ckpt_path: Path to the model checkpoint. If this is set, `model_name` will be ignored.
         model_config_path: Path to the model config, defining score model architecture and the corruption process the model was trained with.
            Only required if `ckpt_path` is set.
+        denoiser_type: Denoiser to use for sampling, if `denoiser_config_path` not specified. Comes in with default parameter configuration. Must be one of ['dpm', 'heun']
         denoiser_config_path: Path to the denoiser config, defining the denoising process.
         cache_embeds_dir: Directory to store MSA embeddings. If not set, this defaults to `COLABFOLD_DIR/embeds_cache`.
         msa_host_url: MSA server URL. If not set, this defaults to colabfold's remote server. If sequence is an a3m file, this is ignored.
@@ -98,7 +104,6 @@ def main(
 
     assert os.path.isfile(ckpt_path), f"Checkpoint {ckpt_path} not found"
     assert os.path.isfile(model_config_path), f"Model config {model_config_path} not found"
-    assert os.path.isfile(denoiser_config_path), f"Denoiser config {denoiser_config_path} not found"
 
     with open(model_config_path) as f:
         model_config = yaml.safe_load(f)
@@ -126,6 +131,12 @@ def main(
     score_model: DiGConditionalScoreModel = hydra.utils.instantiate(model_config["score_model"])
     score_model.load_state_dict(model_state)
     sdes: dict[str, SDE] = hydra.utils.instantiate(model_config["sdes"])
+
+    if denoiser_config_path is None:
+        assert (
+            denoiser_type in SUPPORTED_DENOISERS
+        ), f"denoiser_type must be one of {SUPPORTED_DENOISERS}"
+        denoiser_config_path = DEFAULT_DENOISER_CONFIG_DIR / f"{denoiser_type}.yaml"
 
     with open(denoiser_config_path) as f:
         denoiser_config = yaml.safe_load(f)
