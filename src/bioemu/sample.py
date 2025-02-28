@@ -61,7 +61,7 @@ def maybe_download_checkpoint(
 
 @torch.no_grad()
 def main(
-    sequence: str,
+    sequence: str | Path,
     num_samples: int,
     output_dir: str | Path,
     batch_size_100: int = 10,
@@ -71,12 +71,14 @@ def main(
     denoiser_type: Literal["dpm", "heun"] | None = "dpm",
     denoiser_config_path: str | Path | None = None,
     cache_embeds_dir: str | Path | None = None,
+    msa_host_url: str | None = None,
 ) -> None:
     """
     Generate samples for a specified sequence, using a trained model.
 
     Args:
-        sequence: Amino acid sequence for which to generate samples or a path to a .fasta file.
+        sequence: Amino acid sequence for which to generate samples, or a path to a .fasta file, or a path to an .a3m file with MSAs.
+            If it is not an a3m file, then colabfold will be used to generate an MSA and embedding.
         num_samples: Number of samples to generate. If `output_dir` already contains samples, this function will only generate additional samples necessary to reach the specified `num_samples`.
         output_dir: Directory to save the samples. Each batch of samples will initially be dumped as .npz files. Once all batches are sampled, they will be converted to .xtc and .pdb.
         batch_size_100: Batch size you'd use for a sequence of length 100. The batch size will be calculated from this, assuming
@@ -89,6 +91,7 @@ def main(
         denoiser_type: Denoiser to use for sampling, if `denoiser_config_path` not specified. Comes in with default parameter configuration. Must be one of ['dpm', 'heun']
         denoiser_config_path: Path to the denoiser config, defining the denoising process.
         cache_embeds_dir: Directory to store MSA embeddings. If not set, this defaults to `COLABFOLD_DIR/embeds_cache`.
+        msa_host_url: MSA server URL. If not set, this defaults to colabfold's remote server. If sequence is an a3m file, this is ignored.
     """
     output_dir = Path(output_dir).expanduser().resolve()
     output_dir.mkdir(parents=True, exist_ok=True)  # Fail fast if output_dir is non-writeable
@@ -103,7 +106,13 @@ def main(
     with open(model_config_path) as f:
         model_config = yaml.safe_load(f)
 
-    # Parse FASTA file if sequence is a file path
+    # User may have provided an MSA file instead of a sequence. This will be used for embeddings.
+    msa_file = sequence if str(sequence).endswith(".a3m") else None
+
+    if msa_file is not None and msa_host_url is not None:
+        logger.warning(f"msa_host_url is ignored because MSA file {msa_file} is provided.")
+
+    # Parse FASTA or A3M file if sequence is a file path. Extract the actual sequence.
     sequence = parse_sequence(sequence)
 
     fasta_path = output_dir / "sequence.fasta"
@@ -158,6 +167,8 @@ def main(
             seed=seed,
             denoiser=denoiser,
             cache_embeds_dir=cache_embeds_dir,
+            msa_file=msa_file,
+            msa_host_url=msa_host_url,
         )
         batch = {k: v.cpu().numpy() for k, v in batch.items()}
         np.savez(npz_path, **batch, sequence=sequence)
@@ -189,6 +200,8 @@ def generate_batch(
     seed: int,
     denoiser: Callable,
     cache_embeds_dir: str | Path | None,
+    msa_file: str | Path | None = None,
+    msa_host_url: str | None = None,
 ) -> dict[str, torch.Tensor]:
     """Generate one batch of samples, using GPU if available.
 
@@ -199,13 +212,18 @@ def generate_batch(
         embeddings_file: Path to embeddings file.
         batch_size: Batch size.
         seed: Random seed.
+        msa_file: Optional path to an MSA A3M file.
+        msa_host_url: MSA server URL for colabfold.
     """
 
     torch.manual_seed(seed)
     n = len(sequence)
 
     single_embeds_file, pair_embeds_file = get_colabfold_embeds(
-        seq=sequence, cache_embeds_dir=cache_embeds_dir
+        seq=sequence,
+        cache_embeds_dir=cache_embeds_dir,
+        msa_file=msa_file,
+        msa_host_url=msa_host_url,
     )
     single_embeds = np.load(single_embeds_file)
     pair_embeds = np.load(pair_embeds_file)

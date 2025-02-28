@@ -43,6 +43,7 @@ def parse_sequence(sequence: StrPath) -> str:
     """Parse sequence if sequence is a file path. Otherwise just return the input."""
     try:
         if Path(sequence).is_file():
+            # The same parser applies to both fasta and a3m files.
             rec = read_fasta(sequence)[0]
             return str(rec.seq)
     except OSError:
