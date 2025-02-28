@@ -86,7 +86,7 @@ def main(
         ckpt_path: Path to the model checkpoint. If this is set, `model_name` will be ignored.
         model_config_path: Path to the model config, defining score model architecture and the corruption process the model was trained with.
            Only required if `ckpt_path` is set.
-        denoiser_type: Denoiser to use for sampling, if `denoiser_config_path` not specified. Comes in with default parameter configuration
+        denoiser_type: Denoiser to use for sampling, if `denoiser_config_path` not specified. Comes in with default parameter configuration. Must be one of ['dpm', 'heun']
         denoiser_config_path: Path to the denoiser config, defining the denoising process.
         cache_embeds_dir: Directory to store MSA embeddings. If not set, this defaults to `COLABFOLD_DIR/embeds_cache`.
     """
@@ -122,7 +122,9 @@ def main(
     sdes: dict[str, SDE] = hydra.utils.instantiate(model_config["sdes"])
 
     if denoiser_config_path is None:
-        assert denoiser_type in SUPPORTED_DENOISERS
+        assert (
+            denoiser_type in SUPPORTED_DENOISERS
+        ), f"denoiser_type must be one of {SUPPORTED_DENOISERS}"
         denoiser_config_path = DEFAULT_DENOISER_CONFIG_DIR / f"{denoiser_type}.yaml"
 
     with open(denoiser_config_path) as f:
