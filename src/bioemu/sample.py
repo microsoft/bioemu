@@ -4,6 +4,7 @@
 
 import logging
 import os
+import typing
 from collections.abc import Callable
 from pathlib import Path
 from typing import Literal
@@ -30,7 +31,8 @@ from .utils import count_samples_in_output_dir, format_npz_samples_filename
 logger = logging.getLogger(__name__)
 
 DEFAULT_DENOISER_CONFIG_DIR = Path(__file__).parent / "config/denoiser/"
-SUPPORTED_DENOISERS = ["heun", "dpm"]
+SupportedDenoisersLiteral = Literal["dpm", "heun"]
+SUPPORTED_DENOISERS = list(typing.get_args(SupportedDenoisersLiteral))
 
 
 def maybe_download_checkpoint(
@@ -68,7 +70,7 @@ def main(
     model_name: str | None = "bioemu-v1.0",
     ckpt_path: str | Path | None = None,
     model_config_path: str | Path | None = None,
-    denoiser_type: Literal["dpm", "heun"] | None = "dpm",
+    denoiser_type: SupportedDenoisersLiteral | None = "dpm",
     denoiser_config_path: str | Path | None = None,
     cache_embeds_dir: str | Path | None = None,
     msa_host_url: str | None = None,
