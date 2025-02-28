@@ -37,12 +37,6 @@ class DenoiserType(str, Enum):
     DPM = "dpm"
 
 
-DEFAULT_DENOISER_CONFIG_PATHS: dict[DenoiserType, Path] = {
-    DenoiserType.HEUN: DEFAULT_DENOISER_CONFIG_DIR / "heun.yaml",
-    DenoiserType.DPM: DEFAULT_DENOISER_CONFIG_DIR / "dpm.yaml",
-}
-
-
 def maybe_download_checkpoint(
     *,
     model_name: str | None,
@@ -133,7 +127,7 @@ def main(
 
     if denoiser_config_path is None:
         assert denoiser_type is not None
-        denoiser_config_path = DEFAULT_DENOISER_CONFIG_PATHS[denoiser_type]
+        denoiser_config_path = DEFAULT_DENOISER_CONFIG_DIR / f"{denoiser_type.value}.yaml"
 
     with open(denoiser_config_path) as f:
         denoiser_config = yaml.safe_load(f)
