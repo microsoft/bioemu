@@ -5,8 +5,8 @@
 import logging
 import os
 from collections.abc import Callable
-from enum import Enum
 from pathlib import Path
+from typing import Literal
 
 import hydra
 import numpy as np
@@ -30,11 +30,7 @@ from .utils import count_samples_in_output_dir, format_npz_samples_filename
 logger = logging.getLogger(__name__)
 
 DEFAULT_DENOISER_CONFIG_DIR = Path(__file__).parent / "config/denoiser/"
-
-
-class DenoiserType(str, Enum):
-    HEUN = "heun"
-    DPM = "dpm"
+SUPPORTED_DENOISERS = ["heun", "dpm"]
 
 
 def maybe_download_checkpoint(
@@ -72,7 +68,7 @@ def main(
     model_name: str | None = "bioemu-v1.0",
     ckpt_path: str | Path | None = None,
     model_config_path: str | Path | None = None,
-    denoiser_type: DenoiserType | None = DenoiserType.DPM,
+    denoiser_type: Literal["dpm", "heun"] | None = "dpm",
     denoiser_config_path: str | Path | None = None,
     cache_embeds_dir: str | Path | None = None,
 ) -> None:
@@ -127,7 +123,8 @@ def main(
 
     if denoiser_config_path is None:
         assert denoiser_type is not None
-        denoiser_config_path = DEFAULT_DENOISER_CONFIG_DIR / f"{denoiser_type.value}.yaml"
+        assert denoiser_type in SUPPORTED_DENOISERS
+        denoiser_config_path = DEFAULT_DENOISER_CONFIG_DIR / f"{denoiser_type}.yaml"
 
     with open(denoiser_config_path) as f:
         denoiser_config = yaml.safe_load(f)
