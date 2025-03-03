@@ -1,0 +1,2 @@
+include src/bioemu/config/**/*.yaml
+include src/bioemu/config/**/*.yml

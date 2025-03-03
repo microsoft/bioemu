@@ -36,7 +36,6 @@ def test_mdrelax_integration(tmp_path):
     samples_xtc = tmp_path / "samples.xtc"
     sample = mdtraj.load_pdb(samples_pdb)
     sample.save_xtc(samples_xtc)
-
     main(
         samples_xtc,
         samples_pdb,

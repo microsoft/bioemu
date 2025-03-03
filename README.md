@@ -1,7 +1,7 @@
 
 <h1>
 <p align="center">
-    <img src="assets/emu.png" alt="BioEmu logo" width="600"/>
+    <img src="assets/emu.png" alt="BioEmu logo" width="300"/>
 </p>
 </h1>
 
@@ -24,21 +24,38 @@ This repository contains inference code and model weights.
 - [Get in touch](#get-in-touch)
 
 ## Installation
+bioemu is provided as a Linux-only pip-installable package:
 
-We use git-LFS to store model weights. If you do not already have git-LFS installed, follow the instructions at https://github.com/git-lfs/git-lfs/blob/main/INSTALLING.md, e.g.
-```
-curl -s https://packagecloud.io/install/repositories/github/git-lfs/script.deb.sh | sudo bash
-sudo apt-get install git-lfs
-git lfs install
-git lfs pull
+```bash
+pip install bioemu
 ```
 
-Run `setup.sh` to create a conda environment named 'bioemu' with bioemu and its dependencies installed.  `setup.sh` will install and patch [ColabFold](https://github.com/sokrypton/ColabFold), create a conda environment called 'bioemu' with some installed dependencies that pip does not handle, and then pip-install the `bioemu` package inside the conda environment.
+> [!NOTE]
+> The first time `bioemu` is used to sample structures, it will also need to setup Colabfold on the side. This process can take ~5-10 mins. By default, Colabfold is installed on `~/.localcolabfold` - if you want this changed please set the `COLABFOLD_DIR` environment variable before running the code for the first time.
+
 
 ## Sampling structures
-If you installed `bioemu` in a conda environment named `bioemu` (which is the default if you run `setup.sh` as described above) then you will first need to `conda activate bioemu`.
+You can sample structures for a given protein sequence using the `sample` module. To run a tiny test using the default model parameters and denoising settings:
+```
+python -m bioemu.sample --sequence GYDPETGTWG --num_samples 10 --output_dir ~/test-chignolin
+```
 
-You can sample structures for a given protein sequence using the script `sample.py`. See `tiny_sample.sh` for an example invocation.
+Alternatively, you can use the Python API:
+
+```python
+from bioemu.sample import main as sample
+sample(sequence='GYDPETGTWG', num_samples=10, output_dir='~/test_chignolin')
+```
+
+The model parameters will be automatically downloaded from [huggingface](https://huggingface.co/microsoft/bioemu). See [sample.py](./src/bioemu/sample.py) for more options.
+
+Sampling times will depend on sequence length and available infrastructure. The following table gives times for collecting 1000 samples measured on an A100 GPU with 80 GB VRAM for sequences of different lengths (using a `batch_size_100=20` setting in `sample.py`):
+ | sequence length | time / min |
+ | --------------: | ---------: |
+ |             100 |          4 |
+ |             300 |         40 |
+ |             600 |        150 |
+
 
 Sampling times will depend on sequence length and available infrastructure. The following table gives times for collecting 1000 samples measured on an A100 GPU with 80 GB VRAM for sequences of different lengths (using a `batch_size_100=20` setting in `sample.py`):
  | sequence length | time / min |
@@ -51,42 +68,41 @@ Sampling times will depend on sequence length and available infrastructure. The 
 ## Reproducing results from the preprint
 You can use this code together with code from [bioemu-benchmarks](https://github.com/microsoft/bioemu-benchmarks) to approximately reproduce results from our [preprint](https://www.biorxiv.org/content/10.1101/2024.12.05.626885v1).
 
-The `bioemu-v1.0` checkpoint contains the model weights used to produce the results in the preprint. Due to simplifications made in the embedding computation and a more efficient sampler, the results obtained with this code are not identical but consistent with the statistics shown in the preprint, i.e., mode coverage and free energy errors averaged over the proteins in a test set. Results for individual proteins may differ.
+The `bioemu-v1.0` checkpoint contains the model weights used to produce the results in the preprint. Due to simplifications made in the embedding computation and a more efficient sampler, the results obtained with this code are not identical but consistent with the statistics shown in the preprint, i.e., mode coverage and free energy errors averaged over the proteins in a test set. Results for individual proteins may differ. For more details, please check the [BIOEMU_RESULTS.md](https://github.com/microsoft/bioemu-benchmarks/blob/main/bioemu_benchmarks/BIOEMU_RESULTS.md) document on the bioemu-benchmarks repository.
 
 
 ## Citation
 If you are using our code or model, please consider citing our work:
 ```bibtex
 @article {BioEmu2024,
-	author = {Lewis, Sarah and Hempel, Tim and Jim{\'e}nez-Luna, Jos{\'e} and Gastegger, Michael and Xie, Yu and Foong, Andrew Y. K. and Satorras, Victor Garc{\'\i}a and Abdin, Osama and Veeling, Bastiaan S. and Zaporozhets, Iryna and Chen, Yaoyi and Yang, Soojung and Schneuing, Arne and Nigam, Jigyasa and Barbero, Federico and Stimper, Vincent and Campbell, Andrew and Yim, Jason and Lienen, Marten and Shi, Yu and Zheng, Shuxin and Schulz, Hannes and Munir, Usman and Clementi, Cecilia and No{\'e}, Frank},
-	title = {Scalable emulation of protein equilibrium ensembles with generative deep learning},
-	year = {2024},
-	doi = {10.1101/2024.12.05.626885},
-	journal = {bioRxiv}
+    author = {Lewis, Sarah and Hempel, Tim and Jim{\'e}nez-Luna, Jos{\'e} and Gastegger, Michael and Xie, Yu and Foong, Andrew Y. K. and Satorras, Victor Garc{\'\i}a and Abdin, Osama and Veeling, Bastiaan S. and Zaporozhets, Iryna and Chen, Yaoyi and Yang, Soojung and Schneuing, Arne and Nigam, Jigyasa and Barbero, Federico and Stimper, Vincent and Campbell, Andrew and Yim, Jason and Lienen, Marten and Shi, Yu and Zheng, Shuxin and Schulz, Hannes and Munir, Usman and Clementi, Cecilia and No{\'e}, Frank},
+    title = {Scalable emulation of protein equilibrium ensembles with generative deep learning},
+    year = {2024},
+    doi = {10.1101/2024.12.05.626885},
+    journal = {bioRxiv}
 }
 ```
 
 ## Side-chain reconstruction and MD-relaxation
-BioEmu outputs structures in backbone frame representation.
-To reconstruct the side-chains, several tools are available. 
-As an example, we provide a script to conduct side-chain reconstruction with HPacker (https://github.com/gvisani/hpacker), and provide an interface for running a short molecular dynamics (MD) equilibration.
-HPacker is a method for protein side-chain packing based on holographic rotationally equivariant convolutional neural networks (https://arxiv.org/abs/2311.09312).
+BioEmu outputs structures in backbone frame representation. To reconstruct the side-chains, several tools are available. As an example, we interface with HPacker (https://github.com/gvisani/hpacker) to conduct side-chain reconstruction, and also provide basic tooling for running a short molecular dynamics (MD) equilibration.
 
-This code is experimental and is provided for research purposes only. Further testing/development are needed before considering its application in real-world scenarios or production environments.
+> [!WARNING]
+> This code is experimental and is provided for research purposes only. Further testing/development are needed before considering its application in real-world scenarios or production environments.
 
-### Install side-chain reconstruction tools
-Clone and install the HPacker code and other dependencies with
+Install optional dependencies:
+
 ```bash
-./setup_sidechain_relax.sh
+pip install bioemu[md]
 ```
 
-This will install some additional dependences for running MD relaxation in the `bioemu` environment. It will also install HPacker in a separate conda environment called `hpacker`.
-
-### Use side-chain reconstruction tools
-Inside the `bioemu` enviroment, run side-chain reconstruction with:
+You can compute side-chain reconstructions via the `bioemu.sidechains_relax` module:
 ```bash
 python -m bioemu.sidechain_relax --pdb-path path/to/topology.pdb --xtc-path path/to/samples.xtc
 ```
+
+> [!NOTE]
+> The first time this module is invoked, it will attempt to install `hpacker` and its dependencies into a separate `hpacker` conda environment. If you wish for it to be installed in a different location, please set the `HPACKER_ENVNAME` environment variable before using this module for the first time.
+
 By default, side-chain reconstruction and local energy minimization are performed (no full MD integration for efficiency reasons).
 Note that the runtime of this code scales with the size of the system.
 We suggest running this code on a selection of samples rather than the full set.

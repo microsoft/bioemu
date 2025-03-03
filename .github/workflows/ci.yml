@@ -35,7 +35,7 @@ jobs:
         wget -O "${HOME}/mambaforge.sh" "https://github.com/conda-forge/miniforge/releases/latest/download/Miniforge3-$(uname)-$(uname -m).sh"
         bash "${HOME}/mambaforge.sh" -b -p "${HOME}/conda"
         source "${HOME}/conda/etc/profile.d/conda.sh"
-        conda env create --file environment.yml --name bioemu
+        conda create -n bioemu python=${{ matrix.python-version }} uv
         conda activate bioemu
         uv pip install -e ".[dev,md]"
     - name: Check style
@@ -49,7 +49,7 @@ jobs:
         set -e
         source "${HOME}/conda/etc/profile.d/conda.sh"
         conda activate bioemu
-        coverage run --source=bioemu -m pytest tests
+        coverage run --source=bioemu -m pytest tests/
         coverage xml  # produces coverage.xml file
         coverage html # produces htmlcov directory
     - name: Upload code coverage report
@@ -69,3 +69,4 @@ jobs:
       env:
         GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         PR_NUMBER: ${{ github.event.number }}
+      continue-on-error: true # workflow triggered by PRs from external forks cannot comment

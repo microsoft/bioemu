@@ -27,15 +27,17 @@ def test_generate_batch(tmp_path):
     sdes = {"node_orientations": DiGSO3SDE(), "pos": CosineVPSDE()}
     batch_size = 2
     seed = 42
-    with open(os.path.join(os.path.dirname(__file__), "../configs/denoiser/dpm.yaml")) as f:
+    with open(
+        os.path.join(os.path.dirname(__file__), "../src/bioemu/config/denoiser/dpm.yaml")
+    ) as f:
         denoiser_config = yaml.safe_load(f)
     denoiser = hydra.utils.instantiate(denoiser_config)
 
     # Mock the run_colabfold function
-    with patch("bioemu.get_embeds.run_colabfold", side_effect=mock_run_colabfold):
+    with patch("bioemu.get_embeds.run_colabfold", side_effect=mock_run_colabfold), patch(
+        "bioemu.get_embeds.ensure_colabfold_install"
+    ):
         # cache_embeds_dir could be None when input to get_colabfold_embeds
-        # Need to set up COLABFOLD_DIR so get_colabfold_embeds can create the dir
-        os.environ["COLABFOLD_DIR"] = str(tmp_path)
         batch = generate_batch(
             score_model=mock_score_model,
             sequence=sequence,

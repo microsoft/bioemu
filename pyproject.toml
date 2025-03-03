@@ -4,23 +4,26 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "bioemu"
-version = "0.1.0"
+version = "0.1.3"
 description = "Biomolecular emulator"
 authors = [
 ]
 requires-python = ">=3.10"
 dependencies = [
-    "mdtraj==1.9.9",
+    "mdtraj>=1.9.9",
     "torch_geometric==2.6.1",
     "torch==2.4.0",
     "torchvision",
     "modelcif==0.7",
-    "bio==1.7.1",
+    "bio>=1.5.9",
     "fire==0.7.0",
+    "huggingface-hub",
     "hydra-core",
     "dm-tree",
     "stackprinter",
+    "typer"
 ]
+readme = "README.md"
 
 [project.optional-dependencies]
 dev = [
@@ -157,3 +160,11 @@ extend-safe-fixes = [
 ]
 exclude=["openfold"]
 
+[tool.setuptools]
+include-package-data = true
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+"*" = ["*.patch", "*.sh", "*.md"]
