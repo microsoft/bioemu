@@ -57,14 +57,6 @@ Sampling times will depend on sequence length and available infrastructure. The 
  |             600 |        150 |
 
 
-Sampling times will depend on sequence length and available infrastructure. The following table gives times for collecting 1000 samples measured on an A100 GPU with 80 GB VRAM for sequences of different lengths (using a `batch_size_100=20` setting in `sample.py`):
- | sequence length | time / min |
- | --------------: | ---------: |
- |             100 |          4 |
- |             300 |         40 |
- |             600 |        150 |
-
-
 ## Reproducing results from the preprint
 You can use this code together with code from [bioemu-benchmarks](https://github.com/microsoft/bioemu-benchmarks) to approximately reproduce results from our [preprint](https://www.biorxiv.org/content/10.1101/2024.12.05.626885v1).
 
