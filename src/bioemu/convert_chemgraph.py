@@ -413,6 +413,8 @@ def save_pdb_and_xtc(
         sequence: Amino acid sequence.
         topology_path: Path to save the PDB file.
         xtc_path: Path to save the XTC trajectory file.
+        filter_samples: Filter out unphysical samples with e.g. long bond distances or steric
+          clashes.
     """
     assert len(pos_nm.shape) == 3
     assert len(node_orientations.shape) == 4
