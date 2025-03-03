@@ -74,6 +74,7 @@ def main(
     denoiser_config_path: str | Path | None = None,
     cache_embeds_dir: str | Path | None = None,
     msa_host_url: str | None = None,
+    filter_samples: bool = True,
 ) -> None:
     """
     Generate samples for a specified sequence, using a trained model.
@@ -94,6 +95,7 @@ def main(
         denoiser_config_path: Path to the denoiser config, defining the denoising process.
         cache_embeds_dir: Directory to store MSA embeddings. If not set, this defaults to `COLABFOLD_DIR/embeds_cache`.
         msa_host_url: MSA server URL. If not set, this defaults to colabfold's remote server. If sequence is an a3m file, this is ignored.
+        filter_samples: Filter out unphysical samples with e.g. long bond distances or steric clashes.
     """
     output_dir = Path(output_dir).expanduser().resolve()
     output_dir.mkdir(parents=True, exist_ok=True)  # Fail fast if output_dir is non-writeable
@@ -190,6 +192,7 @@ def main(
         topology_path=output_dir / "topology.pdb",
         xtc_path=output_dir / "samples.xtc",
         sequence=sequence,
+        filter_samples=filter_samples,
     )
     logger.info(f"Completed. Your samples are in {output_dir}.")
 
