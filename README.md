@@ -47,7 +47,7 @@ from bioemu.sample import main as sample
 sample(sequence='GYDPETGTWG', num_samples=10, output_dir='~/test_chignolin')
 ```
 
-The model parameters will be automatically downloaded from [huggingface](https://huggingface.co/microsoft/bioemu). A path to a single-sequence FASTA files can also be passed to the `sequence` argument.
+The model parameters will be automatically downloaded from [huggingface](https://huggingface.co/microsoft/bioemu). A path to a single-sequence FASTA file can also be passed to the `sequence` argument.
 
 Sampling times will depend on sequence length and available infrastructure. The following table gives times for collecting 1000 samples measured on an A100 GPU with 80 GB VRAM for sequences of different lengths (using a `batch_size_100=20` setting in `sample.py`):
  | sequence length | time / min |
