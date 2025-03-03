@@ -47,6 +47,8 @@ from bioemu.sample import main as sample
 sample(sequence='GYDPETGTWG', num_samples=10, output_dir='~/test_chignolin')
 ```
 
+You can provide a .fasta file or an MSA .a3m file instead of a sequence, by setting `sequence=<path/to/fasta_or_a3m>`. With a sequence or a .fasta input, we use `ColabFold` to compute evoformer embeddings for structure generation, and the MSAs from the ColabFold remote server will be used. With an .a3m input, the user-provided MSAs will be used and input to `ColabFold` to get the embeddings. You can also specify input arg `msa_host_url` if you have your own MSA server.
+
 The model parameters will be automatically downloaded from [huggingface](https://huggingface.co/microsoft/bioemu). See [sample.py](./src/bioemu/sample.py) for more options.
 
 Sampling times will depend on sequence length and available infrastructure. The following table gives times for collecting 1000 samples measured on an A100 GPU with 80 GB VRAM for sequences of different lengths (using a `batch_size_100=20` setting in `sample.py`):
