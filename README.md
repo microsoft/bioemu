@@ -47,9 +47,7 @@ from bioemu.sample import main as sample
 sample(sequence='GYDPETGTWG', num_samples=10, output_dir='~/test_chignolin')
 ```
 
-You can provide a .fasta file or an MSA .a3m file instead of a sequence, by setting `sequence=<path/to/fasta_or_a3m>`. With a sequence or a .fasta input, we use `ColabFold` to compute evoformer embeddings for structure generation, and the MSAs from the ColabFold remote server will be used. With an .a3m input, the user-provided MSAs will be used and input to `ColabFold` to get the embeddings. You can also specify input arg `msa_host_url` if you have your own MSA server.
-
-The model parameters will be automatically downloaded from [huggingface](https://huggingface.co/microsoft/bioemu). See [sample.py](./src/bioemu/sample.py) for more options.
+The model parameters will be automatically downloaded from [huggingface](https://huggingface.co/microsoft/bioemu). A path to a single-sequence FASTA files can also be passed to the `sequence` argument.
 
 Sampling times will depend on sequence length and available infrastructure. The following table gives times for collecting 1000 samples measured on an A100 GPU with 80 GB VRAM for sequences of different lengths (using a `batch_size_100=20` setting in `sample.py`):
  | sequence length | time / min |
@@ -58,6 +56,9 @@ Sampling times will depend on sequence length and available infrastructure. The 
  |             300 |         40 |
  |             600 |        150 |
 
+
+> [!NOTE]
+> If you wish to use your own generated MSA instead of the ones retrieved via Colabfold, you can pass an A3M file containing the query sequence as the first row to the `sequence` argument. Additionally, the `msa_host_url` argument can be used to override the default Colabfold MSA query server. See [sample.py](./src/bioemu/sample.py) for more options.
 
 ## Reproducing results from the preprint
 You can use this code together with code from [bioemu-benchmarks](https://github.com/microsoft/bioemu-benchmarks) to approximately reproduce results from our [preprint](https://www.biorxiv.org/content/10.1101/2024.12.05.626885v1).
