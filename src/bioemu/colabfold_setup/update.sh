@@ -1,4 +1,5 @@
 #!/bin/bash -e
+set -ex
 
 # get absolute path of COLABFOLDDIR
 COLABFOLDDIR=$(realpath $(dirname $0))
@@ -27,4 +28,4 @@ sed -i -e "s#appdirs.user_cache_dir(__package__ or \"colabfold\")#\"${COLABFOLDD
 sed -i -e "s#from io import StringIO#from io import StringIO\nfrom silence_tensorflow import silence_tensorflow\nsilence_tensorflow()#g" batch.py
 # remove cache directory
 rm -rf __pycache__
-~                         
+                         
