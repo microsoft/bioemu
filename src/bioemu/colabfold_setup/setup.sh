@@ -14,7 +14,9 @@ wget "https://raw.githubusercontent.com/YoshitakaMo/localcolabfold/5fc8775114b63
 sed -i 's/git+https:\/\/github.com\/sokrypton\/ColabFold/git+https:\/\/github.com\/sokrypton\/ColabFold@e2ca9e8f992cd65c986de5b64885d5572d8b8ad9/g' ${COLABFOLD_DIR}/install_colabbatch_linux.sh
 chmod +x ${COLABFOLD_DIR}/install_colabbatch_linux.sh
 cd ${COLABFOLD_DIR} && bash install_colabbatch_linux.sh
-
+# Attempt to update jax/numpy
+cp ${SCRIPT_DIR}/update.sh ${COLABFOLD_DIR}/localcolabfold/update.sh
+cd ${COLABFOLD_DIR}/localcolabfold/ && bash update.sh
 # Patch colabfold install
 echo "Patching colabfold installation..."
 patch ${COLABFOLD_DIR}/localcolabfold/colabfold-conda/lib/python3.10/site-packages/alphafold/model/modules.py ${SCRIPT_DIR}/modules.patch
