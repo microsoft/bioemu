@@ -1,6 +1,8 @@
 #!/bin/bash -e
 set -ex
 
+# Adapted from https://github.com/YoshitakaMo/localcolabfold/blob/main/update_linux.sh
+
 # get absolute path of COLABFOLDDIR
 COLABFOLDDIR=$(realpath $(dirname $0))
 
@@ -13,7 +15,7 @@ fi
 source "${COLABFOLDDIR}/conda/etc/profile.d/conda.sh"
 conda activate "$COLABFOLDDIR/colabfold-conda"
 
-# reinstall jax and numpy
+# reinstall jax and numpy (Issue #63)
 
 "$COLABFOLDDIR/colabfold-conda/bin/pip" install --force-reinstall "jax[cuda12]"==0.4.35 "numpy==1.26.4"
 "$COLABFOLDDIR/colabfold-conda/bin/pip" install --upgrade tensorflow
