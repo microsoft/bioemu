@@ -184,8 +184,8 @@ def run_all_md(samples_all: list[mdtraj.Trajectory], md_protocol: MDProtocol) ->
                 frame, only_energy_minimization=md_protocol == MDProtocol.LOCAL_MINIMIZATION
             )
             equil_xyz.append(positions[atom_idx])
-        except ValueError:
-            logger.warning(f"Skipping sample {n} for MD setup.")
+        except ValueError as err:
+            logger.warning(f"Skipping sample {n} for MD setup: Failed with\n {err}")
 
     if not equil_xyz:
         raise RuntimeError(
