@@ -165,7 +165,7 @@ def run_all_md(samples_all: list[mdtraj.Trajectory], md_protocol: MDProtocol) ->
     """run MD for set of protonated samples.
 
     This function will skip samples that cannot be loaded by openMM default setup generator,
-    i.e. it might output less frames than in input.
+    i.e. it might output fewer frames than in input.
 
     Args:
         samples_all: mdtraj objects with protonated samples (can be different protonation states)
