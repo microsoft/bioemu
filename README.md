@@ -60,6 +60,8 @@ Sampling times will depend on sequence length and available infrastructure. The 
 > [!NOTE]
 > If you wish to use your own generated MSA instead of the ones retrieved via Colabfold, you can pass an A3M file containing the query sequence as the first row to the `sequence` argument. Additionally, the `msa_host_url` argument can be used to override the default Colabfold MSA query server. See [sample.py](./src/bioemu/sample.py) for more options.
 
+### Multimers
+This code only supports sampling structures of monomers. You can try to sample multimers using the 'linker trick', but in our limited experiments, this has not worked well.
 ## Reproducing results from the preprint
 You can use this code together with code from [bioemu-benchmarks](https://github.com/microsoft/bioemu-benchmarks) to approximately reproduce results from our [preprint](https://www.biorxiv.org/content/10.1101/2024.12.05.626885v1).
 
