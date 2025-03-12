@@ -164,7 +164,7 @@ def run_one_md(
 def run_all_md(samples_all: list[mdtraj.Trajectory], md_protocol: MDProtocol) -> mdtraj.Trajectory:
     """run MD for set of protonated samples.
 
-    This function will skip samples that cannot be loaded by openMM default setup generator, 
+    This function will skip samples that cannot be loaded by openMM default setup generator,
     i.e. it might output less frames than in input.
 
     Args:
@@ -188,7 +188,9 @@ def run_all_md(samples_all: list[mdtraj.Trajectory], md_protocol: MDProtocol) ->
             logger.warning(f"Skipping sample {n} for MD setup.")
 
     if not equil_xyz:
-        raise RuntimeError("Could not create MD setups for given system. Try running MD setup on reconstructed samples manually.")
+        raise RuntimeError(
+            "Could not create MD setups for given system. Try running MD setup on reconstructed samples manually."
+        )
 
     equil_traj = mdtraj.Trajectory(np.concatenate(equil_xyz), samples_all[-1].top.subset(atom_idx))
     return equil_traj
