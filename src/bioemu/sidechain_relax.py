@@ -164,6 +164,9 @@ def run_one_md(
 def run_all_md(samples_all: list[mdtraj.Trajectory], md_protocol: MDProtocol) -> mdtraj.Trajectory:
     """run MD for set of protonated samples.
 
+    This function will skip samples that cannot be loaded by openMM default setup generator,
+    i.e. it might output fewer frames than in input.
+
     Args:
         samples_all: mdtraj objects with protonated samples (can be different protonation states)
         md_protocol: md protocol
@@ -172,17 +175,24 @@ def run_all_md(samples_all: list[mdtraj.Trajectory], md_protocol: MDProtocol) ->
         array containing all heavy-atom coordinates
     """
 
-    equil_xyz = np.empty(
-        (len(samples_all), samples_all[0].top.select("protein and mass > 2").shape[0], 3)
-    )
+    equil_xyz = []
 
     for n, frame in tqdm(enumerate(samples_all), leave=False, desc="running MD equilibration"):
         atom_idx = frame.top.select("protein and mass > 2")
-        positions = run_one_md(
-            frame, only_energy_minimization=md_protocol == MDProtocol.LOCAL_MINIMIZATION
+        try:
+            positions = run_one_md(
+                frame, only_energy_minimization=md_protocol == MDProtocol.LOCAL_MINIMIZATION
+            )
+            equil_xyz.append(positions[atom_idx])
+        except ValueError as err:
+            logger.warning(f"Skipping sample {n} for MD setup: Failed with\n {err}")
+
+    if not equil_xyz:
+        raise RuntimeError(
+            "Could not create MD setups for given system. Try running MD setup on reconstructed samples manually."
         )
-        equil_xyz[n] = positions[atom_idx]
-    equil_traj = mdtraj.Trajectory(equil_xyz, samples_all[-1].top.subset(atom_idx))
+
+    equil_traj = mdtraj.Trajectory(np.concatenate(equil_xyz), samples_all[-1].top.subset(atom_idx))
     return equil_traj
 
 
