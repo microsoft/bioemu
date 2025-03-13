@@ -19,11 +19,16 @@ def ensure_hpacker_install(
     Ensures hpacker and its dependencies are installed under conda environment
     named `envname`
     """
+    _conda_not_installed_errmsg = "conda required to install hpacker environment"
     conda_root = os.getenv("CONDA_ROOT", None)
     if conda_root is None:
-        # Attempt $CONDA_PREFIX_1
-        conda_root = os.getenv("CONDA_PREFIX_1", None)
-    assert conda_root is not None, "conda required to install hpacker environment"
+        # Attempt $CONDA_PREFIX_1 or $CONDA_PREFIX, depending
+        # on whether the `base` environment is activated.
+        default_env_name = os.getenv("CONDA_DEFAULT_ENV", None)
+        assert default_env_name is not None, _conda_not_installed_errmsg
+        conda_prefix_env_name = "CONDA_PREFIX" if default_env_name == "base" else "CONDA_PREFIX_1"
+        conda_root = os.getenv(conda_prefix_env_name, None)
+    assert conda_root is not None, _conda_not_installed_errmsg
     conda_envs = os.listdir(os.path.join(conda_root, "envs"))
 
     if envname not in conda_envs:
