@@ -4,23 +4,21 @@ set -ex
 
 SCRIPT_DIR=$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )
 
-# Set COLABFOLD_DIR to ~/.localcolabfold if dir not passed as first arg
-COLABFOLD_DIR="${1:-"~/.localcolabfold"}"
-
+# Set COLABFOLD_ENVNAME
 echo "Setting up colabfold..."
-mkdir -p ${COLABFOLD_DIR}
-wget "https://raw.githubusercontent.com/YoshitakaMo/localcolabfold/5fc8775114b637b5672234179c50e694ab057db4/install_colabbatch_linux.sh" -O ${COLABFOLD_DIR}/install_colabbatch_linux.sh
-# Replace 'git+https://github.com/sokrypton/ColabFold' with 'git+https://github.com/sokrypton/ColabFold@e2ca9e8f992cd65c986de5b64885d5572d8b8ad9' in install_colabbatch_linux.sh
-sed -i 's/git+https:\/\/github.com\/sokrypton\/ColabFold/git+https:\/\/github.com\/sokrypton\/ColabFold@e2ca9e8f992cd65c986de5b64885d5572d8b8ad9/g' ${COLABFOLD_DIR}/install_colabbatch_linux.sh
-chmod +x ${COLABFOLD_DIR}/install_colabbatch_linux.sh
-cd ${COLABFOLD_DIR} && bash install_colabbatch_linux.sh
-# Attempt to update jax/numpy
-cp ${SCRIPT_DIR}/update.sh ${COLABFOLD_DIR}/localcolabfold/update.sh
-cd ${COLABFOLD_DIR}/localcolabfold/ && bash update.sh
+COLABFOLD_ENVNAME="${1:-"colabfold-bioemu"}"
+# TODO: pass conda prefix as an arg
+conda create -n ${COLABFOLD_ENVNAME} python=3.10 --yes
+eval "$(conda shell.bash hook)"
+conda activate ${COLABFOLD_ENVNAME}
+pip install -q --no-warn-conflicts 'colabfold[alphafold-minus-jax] @ git+https://github.com/sokrypton/ColabFold'
+
+COLABFOLD_SITE_PACKAGE=${CONDA_PREFIX_1}/envs/${COLABFOLD_ENVNAME}/lib/python3.10/site-packages/colabfold
+
 # Patch colabfold install
 echo "Patching colabfold installation..."
-patch ${COLABFOLD_DIR}/localcolabfold/colabfold-conda/lib/python3.10/site-packages/alphafold/model/modules.py ${SCRIPT_DIR}/modules.patch
-patch ${COLABFOLD_DIR}/localcolabfold/colabfold-conda/lib/python3.10/site-packages/colabfold/batch.py ${SCRIPT_DIR}/batch.patch
+patch ${CONDA_PREFIX_1}/envs/${COLABFOLD_ENVNAME}/lib/python3.10/site-packages/alphafold/model/modules.py ${SCRIPT_DIR}/modules.patch
+patch ${COLABFOLD_SITE_PACKAGE}/batch.py ${SCRIPT_DIR}/batch.patch
 
-touch ${COLABFOLD_DIR}/.COLABFOLD_PATCHED
+touch ${CONDA_PREFIX_1}/envs/${COLABFOLD_ENVNAME}/.COLABFOLD_PATCHED
 echo "Colabfold installation complete!"
