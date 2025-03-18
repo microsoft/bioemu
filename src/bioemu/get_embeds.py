@@ -59,10 +59,14 @@ def ensure_colabfold_install(colabfold_dir: StrPath) -> str:
     colabfold_batch_exec = os.path.join(
         colabfold_dir, "localcolabfold", "colabfold-conda", "bin", "colabfold_batch"
     )
+    colabfold_patched_file = os.path.join(colabfold_dir, ".COLABFOLD_PATCHED")
     colabfold_bin_dir = os.path.dirname(colabfold_batch_exec)
     if os.path.exists(colabfold_batch_exec):
         # Colabfold present
-        pass
+        # Check whether it's been patched
+        assert os.path.exists(
+            colabfold_patched_file
+        ), "Colabfold has not been patched. Do not set $COLABFOLD_DIR to a pre-existing installation"
     else:
         logger.info(f"Colabfold not present under {colabfold_dir}. Installing...")
         os.makedirs(colabfold_dir, exist_ok=True)

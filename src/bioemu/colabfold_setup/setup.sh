@@ -22,4 +22,5 @@ echo "Patching colabfold installation..."
 patch ${COLABFOLD_DIR}/localcolabfold/colabfold-conda/lib/python3.10/site-packages/alphafold/model/modules.py ${SCRIPT_DIR}/modules.patch
 patch ${COLABFOLD_DIR}/localcolabfold/colabfold-conda/lib/python3.10/site-packages/colabfold/batch.py ${SCRIPT_DIR}/batch.patch
 
+touch ${COLABFOLD_DIR}/.COLABFOLD_PATCHED
 echo "Colabfold installation complete!"
