@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "bioemu"
-version = "0.1.4"
+version = "0.1.5"
 description = "Biomolecular emulator"
 authors = [
 ]
@@ -13,7 +13,6 @@ dependencies = [
     "mdtraj>=1.9.9",
     "torch_geometric==2.6.1",
     "torch==2.4.0",
-    "torchvision",
     "modelcif==0.7",
     "bio>=1.5.9",
     "fire==0.7.0",
