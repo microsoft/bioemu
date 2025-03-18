@@ -24,7 +24,7 @@ This repository contains inference code and model weights.
 - [Get in touch](#get-in-touch)
 
 ## Installation
-bioemu is provided as a Linux-only pip-installable package:
+bioemu is provided as a Linux-only pip-installable package that should be installed on [conda environments](https://docs.conda.io/projects/conda/en/latest/user-guide/install/index.html) only:
 
 ```bash
 pip install bioemu
