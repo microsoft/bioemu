@@ -1,6 +1,7 @@
 # Copyright (c) Microsoft Corporation.
 # Licensed under the MIT License.
 import os
+import subprocess
 from unittest.mock import patch
 
 import numpy as np
@@ -12,7 +13,7 @@ TEST_SEQ = "TESTSEQ"
 
 def mock_run_colabfold(
     input_file: StrPath, res_dir: StrPath, colabfold_env: dict[str, str], msa_host_url: str | None
-) -> int:
+) -> subprocess.CompletedProcess:
     seq = TEST_SEQ
     seqsha = os.path.basename(input_file).split(".")[0]
     single_rep_tempfile = os.path.join(
@@ -25,7 +26,7 @@ def mock_run_colabfold(
     )
     np.save(single_rep_tempfile, np.random.rand(len(seq), 10))
     np.save(pair_rep_tempfile, np.random.rand(len(seq), len(seq), 10))
-    return 0
+    return subprocess.CompletedProcess("mock", returncode=0)
 
 
 def test_get_colabfold_embeds(tmp_path):

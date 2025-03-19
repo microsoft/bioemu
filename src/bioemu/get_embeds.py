@@ -15,7 +15,6 @@ from Bio.SeqRecord import SeqRecord
 StrPath = str | os.PathLike
 
 
-DEFAULT_COLABFOLD_DIR = os.path.join(os.path.expanduser("~"), ".localcolabfold")
 COLABFOLD_INSTALL_SCRIPT = os.path.join(
     os.path.dirname(os.path.realpath(__file__)), "colabfold_setup", "setup.sh"
 )
@@ -46,28 +45,56 @@ def write_fasta(seqs: list[str], fasta_file: StrPath, ids: list[str] | None = No
         SeqIO.write(seq_records, fasta_handle, format="fasta")
 
 
-def _get_colabfold_install_dir() -> StrPath:
-    """Returns the directory where colabfold is installed"""
-    return os.getenv("COLABFOLD_DIR", os.path.join(os.path.expanduser("~"), ".localcolabfold"))
+_conda_not_installed_errmsg = "conda not installed"
 
 
-def ensure_colabfold_install(colabfold_dir: StrPath) -> str:
+def _get_conda_prefix() -> str:
     """
-    Ensures localcolabfold is installed under `colabfold_dir`. Returns path
-    to directory where colabfold executables are placed
+    Attempts to find the root Conda folder. Works with miniforge3/miniconda3
     """
-    colabfold_batch_exec = os.path.join(
-        colabfold_dir, "localcolabfold", "colabfold-conda", "bin", "colabfold_batch"
-    )
+    conda_root = os.getenv("CONDA_ROOT", None)
+    if conda_root is None:
+        # Attempt $CONDA_PREFIX_1 or $CONDA_PREFIX, depending
+        # on whether the `base` environment is activated.
+        default_env_name = os.getenv("CONDA_DEFAULT_ENV", None)
+        assert default_env_name is not None, _conda_not_installed_errmsg
+        conda_prefix_env_name = "CONDA_PREFIX" if default_env_name == "base" else "CONDA_PREFIX_1"
+        conda_root = os.getenv(conda_prefix_env_name, None)
+    assert conda_root is not None, _conda_not_installed_errmsg
+    return conda_root
+
+
+def _get_colabfold_envname() -> str:
+    """Returns conda environment name of patched colabfold package"""
+    return os.getenv("COLABFOLD_ENVNAME", "colabfold-bioemu")
+
+
+def _get_colabfold_dir() -> StrPath:
+    """
+    Get colabfold environment folder
+    """
+    colabfold_envname = _get_colabfold_envname()
+    conda_prefix = _get_conda_prefix()
+    assert conda_prefix is not None, _conda_not_installed_errmsg
+    return os.path.join(conda_prefix, "envs", colabfold_envname)
+
+
+def ensure_colabfold_install() -> str:
+    """
+    Ensures colabfold is installed under the `colabfold_envname` environment
+    """
+    colabfold_dir = _get_colabfold_dir()
+    colabfold_batch_exec = os.path.join(colabfold_dir, "bin", "colabfold_batch")
+    colabfold_patched_file = os.path.join(colabfold_dir, ".COLABFOLD_PATCHED")
     colabfold_bin_dir = os.path.dirname(colabfold_batch_exec)
     if os.path.exists(colabfold_batch_exec):
         # Colabfold present
-        pass
+        # Check whether it's been patched
+        assert os.path.exists(colabfold_patched_file), "Colabfold not patched!"
     else:
         logger.info(f"Colabfold not present under {colabfold_dir}. Installing...")
-        os.makedirs(colabfold_dir, exist_ok=True)
         _install = subprocess.run(
-            ["bash", COLABFOLD_INSTALL_SCRIPT, colabfold_dir],
+            ["bash", COLABFOLD_INSTALL_SCRIPT, _get_colabfold_envname(), _get_conda_prefix()],
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
         )
@@ -79,7 +106,7 @@ def ensure_colabfold_install(colabfold_dir: StrPath) -> str:
 
 def _get_default_embeds_dir() -> StrPath:
     """Returns the directory where precomputed embeddings are stored"""
-    return os.path.join(_get_colabfold_install_dir(), "embeds_cache")
+    return os.path.join(os.path.expanduser("~"), ".bioemu_embeds_cache")
 
 
 def run_colabfold(
@@ -87,7 +114,7 @@ def run_colabfold(
     res_dir: StrPath,
     colabfold_env: dict[str, str],
     msa_host_url: str | None = None,
-) -> int:
+) -> subprocess.CompletedProcess:
     """
     Runs colabfold.
     Args:
@@ -118,7 +145,7 @@ def run_colabfold(
     ]
     if msa_host_url is not None:
         cmd.extend(["--host-url", msa_host_url])
-    return subprocess.call(cmd, env=colabfold_env)
+    return subprocess.run(cmd, env=colabfold_env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
 
 
 def get_colabfold_embeds(
@@ -136,6 +163,7 @@ def get_colabfold_embeds(
         seq: Protein sequence to query
         cache_embeds_dir: Cache directory where embeddings will be stored. If None, defaults to a child of the colabfold install directory.
         msa_file: MSA A3M file to use as input. If None, the sequence is used as input.
+        msa_host_url: MSA host URL. If None, defaults to the colabfold default, which is a remote server.
 
     Returns:
         Tuple of paths to single and pair embeddings.
@@ -156,8 +184,7 @@ def get_colabfold_embeds(
         return single_rep_file, pair_rep_file
 
     # If we don't already have embeds, run colabfold
-    colabfold_dir = _get_colabfold_install_dir()
-    colabfold_bin_dir = ensure_colabfold_install(colabfold_dir=colabfold_dir)
+    colabfold_bin_dir = ensure_colabfold_install()
 
     colabfold_env = os.environ.copy()
     colabfold_env["PATH"] = f'{colabfold_bin_dir}:{colabfold_env["PATH"]}'
@@ -182,7 +209,7 @@ def get_colabfold_embeds(
         else:
             res = run_colabfold(fasta_file, res_dir, colabfold_env, msa_host_url)
             embed_prefix = f"{seqsha}__unknown_description_"
-        assert res == 0, "Failed to run colabfold_batch"
+        assert res.returncode == 0, f"Failed to run colabfold_batch: {res.stdout.decode()}"
 
         single_rep_tempfile = os.path.join(
             res_dir,
