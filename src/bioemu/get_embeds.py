@@ -15,7 +15,6 @@ from Bio.SeqRecord import SeqRecord
 StrPath = str | os.PathLike
 
 
-DEFAULT_COLABFOLD_DIR = os.path.join(os.path.expanduser("~"), ".localcolabfold")
 COLABFOLD_INSTALL_SCRIPT = os.path.join(
     os.path.dirname(os.path.realpath(__file__)), "colabfold_setup", "setup.sh"
 )
