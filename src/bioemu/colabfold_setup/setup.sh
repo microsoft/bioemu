@@ -11,8 +11,9 @@ CONDA_FOLDER=$2
 conda create -n ${COLABFOLD_ENVNAME} python=3.10 --yes
 eval "$(conda shell.bash hook)"
 conda activate ${COLABFOLD_ENVNAME}
-pip install -q --no-warn-conflicts 'colabfold[alphafold-minus-jax] @ git+https://github.com/sokrypton/ColabFold@b119520d8f43e1547e1c4352fd090c59a8dbb369'
-pip install --force-reinstall "jax[cuda12]"==0.4.35 "numpy==1.26.4"
+pip install uv
+uv pip install 'colabfold[alphafold-minus-jax] @ git+https://github.com/sokrypton/ColabFold@b119520d8f43e1547e1c4352fd090c59a8dbb369'
+uv pip install --force-reinstall "jax[cuda12]"==0.4.35 "numpy==1.26.4"
 
 COLABFOLD_SITE_PACKAGE=${CONDA_FOLDER}/envs/${COLABFOLD_ENVNAME}/lib/python3.10/site-packages/colabfold
 
