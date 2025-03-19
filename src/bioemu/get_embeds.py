@@ -95,7 +95,7 @@ def ensure_colabfold_install() -> str:
     else:
         logger.info(f"Colabfold not present under {colabfold_dir}. Installing...")
         _install = subprocess.run(
-            ["bash", COLABFOLD_INSTALL_SCRIPT, _get_colabfold_envname()],
+            ["bash", COLABFOLD_INSTALL_SCRIPT, _get_colabfold_envname(), _get_conda_prefix()],
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
         )
