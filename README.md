@@ -24,14 +24,14 @@ This repository contains inference code and model weights.
 - [Get in touch](#get-in-touch)
 
 ## Installation
-bioemu is provided as a Linux-only pip-installable package:
+bioemu is provided as a Linux-only pip-installable package that should be installed on [conda environments](https://docs.conda.io/projects/conda/en/latest/user-guide/install/index.html) only:
 
 ```bash
 pip install bioemu
 ```
 
 > [!NOTE]
-> The first time `bioemu` is used to sample structures, it will also need to setup Colabfold on the side. This process can take ~5-10 mins. By default, Colabfold is installed on `~/.localcolabfold` - if you want this changed please set the `COLABFOLD_DIR` environment variable before running the code for the first time.
+> The first time `bioemu` is used to sample structures, it will also need to setup [Colabfold](https://github.com/sokrypton/ColabFold) on a separate environment. By default it uses the `colabfold-bioemu` conda environment name, but if you wish to have this changed please manually set the `COLABFOLD_ENVNAME` environment variable accordingly before sampling for the first time.
 
 
 ## Sampling structures
@@ -47,7 +47,7 @@ from bioemu.sample import main as sample
 sample(sequence='GYDPETGTWG', num_samples=10, output_dir='~/test_chignolin')
 ```
 
-The model parameters will be automatically downloaded from [huggingface](https://huggingface.co/microsoft/bioemu). See [sample.py](./src/bioemu/sample.py) for more options.
+The model parameters will be automatically downloaded from [huggingface](https://huggingface.co/microsoft/bioemu). A path to a single-sequence FASTA file can also be passed to the `sequence` argument.
 
 Sampling times will depend on sequence length and available infrastructure. The following table gives times for collecting 1000 samples measured on an A100 GPU with 80 GB VRAM for sequences of different lengths (using a `batch_size_100=20` setting in `sample.py`):
  | sequence length | time / min |
@@ -57,23 +57,15 @@ Sampling times will depend on sequence length and available infrastructure. The 
  |             600 |        150 |
 
 
+> [!NOTE]
+> If you wish to use your own generated MSA instead of the ones retrieved via Colabfold, you can pass an A3M file containing the query sequence as the first row to the `sequence` argument. Additionally, the `msa_host_url` argument can be used to override the default Colabfold MSA query server. See [sample.py](./src/bioemu/sample.py) for more options.
+
+This code only supports sampling structures of monomers. You can try to sample multimers using the [linker trick](https://x.com/ag_smith/status/1417063635000598528), but in our limited experiments, this has not worked well.
 ## Reproducing results from the preprint
 You can use this code together with code from [bioemu-benchmarks](https://github.com/microsoft/bioemu-benchmarks) to approximately reproduce results from our [preprint](https://www.biorxiv.org/content/10.1101/2024.12.05.626885v1).
 
 The `bioemu-v1.0` checkpoint contains the model weights used to produce the results in the preprint. Due to simplifications made in the embedding computation and a more efficient sampler, the results obtained with this code are not identical but consistent with the statistics shown in the preprint, i.e., mode coverage and free energy errors averaged over the proteins in a test set. Results for individual proteins may differ. For more details, please check the [BIOEMU_RESULTS.md](https://github.com/microsoft/bioemu-benchmarks/blob/main/bioemu_benchmarks/BIOEMU_RESULTS.md) document on the bioemu-benchmarks repository.
 
-
-## Citation
-If you are using our code or model, please consider citing our work:
-```bibtex
-@article {BioEmu2024,
-    author = {Lewis, Sarah and Hempel, Tim and Jim{\'e}nez-Luna, Jos{\'e} and Gastegger, Michael and Xie, Yu and Foong, Andrew Y. K. and Satorras, Victor Garc{\'\i}a and Abdin, Osama and Veeling, Bastiaan S. and Zaporozhets, Iryna and Chen, Yaoyi and Yang, Soojung and Schneuing, Arne and Nigam, Jigyasa and Barbero, Federico and Stimper, Vincent and Campbell, Andrew and Yim, Jason and Lienen, Marten and Shi, Yu and Zheng, Shuxin and Schulz, Hannes and Munir, Usman and Clementi, Cecilia and No{\'e}, Frank},
-    title = {Scalable emulation of protein equilibrium ensembles with generative deep learning},
-    year = {2024},
-    doi = {10.1101/2024.12.05.626885},
-    journal = {bioRxiv}
-}
-```
 
 ## Side-chain reconstruction and MD-relaxation
 BioEmu outputs structures in backbone frame representation. To reconstruct the side-chains, several tools are available. As an example, we interface with HPacker (https://github.com/gvisani/hpacker) to conduct side-chain reconstruction, and also provide basic tooling for running a short molecular dynamics (MD) equilibration.
@@ -111,3 +103,15 @@ The script saves reconstructed all-heavy-atom structures in `samples_sidechain_r
 The code in the `openfold` subdirectory is copied from [openfold](https://github.com/aqlaboratory/openfold) with minor modifications. The modifications are described in the relevant source files.
 ## Get in touch
 If you have any questions not covered here, please create an issue or contact the BioEmu team by writing to the corresponding author on our [preprint](https://doi.org/10.1101/2024.12.05.626885).
+
+## Citation
+If you are using our code or model, please consider citing our work:
+```bibtex
+@article {BioEmu2024,
+    author = {Lewis, Sarah and Hempel, Tim and Jim{\'e}nez-Luna, Jos{\'e} and Gastegger, Michael and Xie, Yu and Foong, Andrew Y. K. and Satorras, Victor Garc{\'\i}a and Abdin, Osama and Veeling, Bastiaan S. and Zaporozhets, Iryna and Chen, Yaoyi and Yang, Soojung and Schneuing, Arne and Nigam, Jigyasa and Barbero, Federico and Stimper, Vincent and Campbell, Andrew and Yim, Jason and Lienen, Marten and Shi, Yu and Zheng, Shuxin and Schulz, Hannes and Munir, Usman and Clementi, Cecilia and No{\'e}, Frank},
+    title = {Scalable emulation of protein equilibrium ensembles with generative deep learning},
+    year = {2024},
+    doi = {10.1101/2024.12.05.626885},
+    journal = {bioRxiv}
+}
+```
