@@ -45,38 +45,11 @@ def write_fasta(seqs: list[str], fasta_file: StrPath, ids: list[str] | None = No
         SeqIO.write(seq_records, fasta_handle, format="fasta")
 
 
-_conda_not_installed_errmsg = "conda not installed"
-
-
-def _get_conda_prefix() -> str:
-    """
-    Attempts to find the root Conda folder. Works with miniforge3/miniconda3
-    """
-    conda_root = os.getenv("CONDA_ROOT", None)
-    if conda_root is None:
-        # Attempt $CONDA_PREFIX_1 or $CONDA_PREFIX, depending
-        # on whether the `base` environment is activated.
-        default_env_name = os.getenv("CONDA_DEFAULT_ENV", None)
-        assert default_env_name is not None, _conda_not_installed_errmsg
-        conda_prefix_env_name = "CONDA_PREFIX" if default_env_name == "base" else "CONDA_PREFIX_1"
-        conda_root = os.getenv(conda_prefix_env_name, None)
-    assert conda_root is not None, _conda_not_installed_errmsg
-    return conda_root
-
-
-def _get_colabfold_envname() -> str:
-    """Returns conda environment name of patched colabfold package"""
-    return os.getenv("COLABFOLD_ENVNAME", "colabfold-bioemu")
-
-
 def _get_colabfold_dir() -> StrPath:
     """
     Get colabfold environment folder
     """
-    colabfold_envname = _get_colabfold_envname()
-    conda_prefix = _get_conda_prefix()
-    assert conda_prefix is not None, _conda_not_installed_errmsg
-    return os.path.join(conda_prefix, "envs", colabfold_envname)
+    return os.path.join(os.path.expanduser("~"), ".bioemu_colabfold")
 
 
 def ensure_colabfold_install() -> str:
@@ -93,20 +66,20 @@ def ensure_colabfold_install() -> str:
         assert os.path.exists(colabfold_patched_file), "Colabfold not patched!"
     else:
         logger.info(f"Colabfold not present under {colabfold_dir}. Installing...")
-        _install = subprocess.run(
-            ["bash", COLABFOLD_INSTALL_SCRIPT, _get_colabfold_envname(), _get_conda_prefix()],
+        install = subprocess.run(
+            ["bash", COLABFOLD_INSTALL_SCRIPT, _get_colabfold_dir()],
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
         )
         assert (
-            _install.returncode == 0
-        ), f"Something went wrong during colabfold install: {_install.stdout.decode()}"
+            install.returncode == 0
+        ), f"Something went wrong during colabfold install: {install.stdout.decode()}"
     return colabfold_bin_dir
 
 
 def _get_default_embeds_dir() -> StrPath:
     """Returns the directory where precomputed embeddings are stored"""
-    return os.path.join(os.path.expanduser("~"), ".bioemu_embeds_cache")
+    return os.path.join(_get_colabfold_dir(), "embeds_cache")
 
 
 def run_colabfold(
