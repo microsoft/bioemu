@@ -7,7 +7,7 @@ VENV_FOLDER=$1
 python -m venv ${VENV_FOLDER}
 source ${VENV_FOLDER}/bin/activate
 pip install uv
-uv pip install 'colabfold[alphafold-minus-jax] @ git+https://github.com/sokrypton/ColabFold@b119520d8f43e1547e1c4352fd090c59a8dbb369'
+uv pip install 'colabfold[alphafold-minus-jax]==1.5.2'
 uv pip install --force-reinstall "jax[cuda12]"==0.4.35 "numpy==1.26.4"
 
 # Patch colabfold install
