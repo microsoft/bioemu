@@ -12,6 +12,8 @@ from Bio import SeqIO
 from Bio.Seq import Seq
 from Bio.SeqRecord import SeqRecord
 
+from bioemu.utils import _conda_not_installed_errmsg, get_conda_prefix
+
 StrPath = str | os.PathLike
 
 
@@ -45,25 +47,6 @@ def write_fasta(seqs: list[str], fasta_file: StrPath, ids: list[str] | None = No
         SeqIO.write(seq_records, fasta_handle, format="fasta")
 
 
-_conda_not_installed_errmsg = "conda not installed"
-
-
-def _get_conda_prefix() -> str:
-    """
-    Attempts to find the root Conda folder. Works with miniforge3/miniconda3
-    """
-    conda_root = os.getenv("CONDA_ROOT", None)
-    if conda_root is None:
-        # Attempt $CONDA_PREFIX_1 or $CONDA_PREFIX, depending
-        # on whether the `base` environment is activated.
-        default_env_name = os.getenv("CONDA_DEFAULT_ENV", None)
-        assert default_env_name is not None, _conda_not_installed_errmsg
-        conda_prefix_env_name = "CONDA_PREFIX" if default_env_name == "base" else "CONDA_PREFIX_1"
-        conda_root = os.getenv(conda_prefix_env_name, None)
-    assert conda_root is not None, _conda_not_installed_errmsg
-    return conda_root
-
-
 def _get_colabfold_envname() -> str:
     """Returns conda environment name of patched colabfold package"""
     return os.getenv("COLABFOLD_ENVNAME", "colabfold-bioemu")
@@ -74,7 +57,7 @@ def _get_colabfold_dir() -> StrPath:
     Get colabfold environment folder
     """
     colabfold_envname = _get_colabfold_envname()
-    conda_prefix = _get_conda_prefix()
+    conda_prefix = get_conda_prefix()
     assert conda_prefix is not None, _conda_not_installed_errmsg
     return os.path.join(conda_prefix, "envs", colabfold_envname)
 
@@ -94,7 +77,7 @@ def ensure_colabfold_install() -> str:
     else:
         logger.info(f"Colabfold not present under {colabfold_dir}. Installing...")
         _install = subprocess.run(
-            ["bash", COLABFOLD_INSTALL_SCRIPT, _get_colabfold_envname(), _get_conda_prefix()],
+            ["bash", COLABFOLD_INSTALL_SCRIPT, _get_colabfold_envname(), get_conda_prefix()],
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
         )
