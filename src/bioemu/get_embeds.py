@@ -66,20 +66,20 @@ def ensure_colabfold_install() -> str:
         assert os.path.exists(colabfold_patched_file), "Colabfold not patched!"
     else:
         logger.info(f"Colabfold not present under {colabfold_dir}. Installing...")
-        install = subprocess.run(
+        result = subprocess.run(
             ["bash", COLABFOLD_INSTALL_SCRIPT, _get_colabfold_dir()],
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
         )
         assert (
-            install.returncode == 0
-        ), f"Something went wrong during colabfold install: {install.stdout.decode()}"
+            result.returncode == 0
+        ), f"Something went wrong during colabfold install: {result.stdout.decode()}"
     return colabfold_bin_dir
 
 
 def _get_default_embeds_dir() -> StrPath:
     """Returns the directory where precomputed embeddings are stored"""
-    return os.path.join(_get_colabfold_dir(), "embeds_cache")
+    return os.path.join(os.path.expanduser("~"), ".bioemu_embeds_cache")
 
 
 def run_colabfold(
