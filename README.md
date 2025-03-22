@@ -24,7 +24,7 @@ This repository contains inference code and model weights.
 - [Get in touch](#get-in-touch)
 
 ## Installation
-bioemu is provided as a Linux-only pip-installable package that should be installed on [conda environments](https://docs.conda.io/projects/conda/en/latest/user-guide/install/index.html) only:
+bioemu is provided as a Linux-only pip-installable package:
 
 ```bash
 pip install bioemu
@@ -71,7 +71,7 @@ The `bioemu-v1.0` checkpoint contains the model weights used to produce the resu
 BioEmu outputs structures in backbone frame representation. To reconstruct the side-chains, several tools are available. As an example, we interface with HPacker (https://github.com/gvisani/hpacker) to conduct side-chain reconstruction, and also provide basic tooling for running a short molecular dynamics (MD) equilibration.
 
 > [!WARNING]
-> This code is experimental and is provided for research purposes only. Further testing/development are needed before considering its application in real-world scenarios or production environments.
+> This code is experimental and relies on a [conda-based package manager](https://docs.conda.io/projects/conda/en/latest/user-guide/install/index.html) due to `hpacker` having `conda` as a dependency. Make sure that `conda` is in your `PATH` before running the following code.
 
 Install optional dependencies:
 
