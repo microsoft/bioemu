@@ -20,17 +20,12 @@ from bioemu.hpacker_setup.setup_hpacker import (
     ensure_hpacker_install,
 )
 from bioemu.md_utils import get_propka_protonation
+from bioemu.utils import get_conda_prefix
 
 logger = logging.getLogger(__name__)
 
 HPACKER_ENVNAME = os.getenv("HPACKER_ENV_NAME", HPACKER_DEFAULT_ENVNAME)
 HPACKER_REPO_DIR = os.getenv("HPACKER_REPO_DIR", HPACKER_DEFAULT_REPO_DIR)
-HPACKER_PYTHONBIN = os.path.join(
-    os.path.abspath(os.path.join(os.environ["CONDA_PREFIX"], "..")),
-    HPACKER_ENVNAME,
-    "bin",
-    "python",
-)
 
 
 class MDProtocol(str, Enum):
@@ -43,9 +38,18 @@ def _run_hpacker(protein_pdb_in: str, protein_pdb_out: str) -> None:
     # make sure that hpacker env is set up
     ensure_hpacker_install(envname=HPACKER_ENVNAME, repo_dir=HPACKER_REPO_DIR)
 
+    _default_hpacker_pythonbin = os.path.join(
+        get_conda_prefix(),
+        "envs",
+        HPACKER_ENVNAME,
+        "bin",
+        "python",
+    )
+    hpacker_pythonbin = os.getenv("HPACKER_PYTHONBIN", _default_hpacker_pythonbin)
+
     result = subprocess.run(
         [
-            HPACKER_PYTHONBIN,
+            hpacker_pythonbin,
             os.path.abspath(os.path.join(os.path.dirname(__file__), "run_hpacker.py")),
             protein_pdb_in,
             protein_pdb_out,
