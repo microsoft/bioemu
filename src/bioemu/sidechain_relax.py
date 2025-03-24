@@ -192,7 +192,7 @@ def run_all_md(samples_all: list[mdtraj.Trajectory], md_protocol: MDProtocol) ->
             "Could not create MD setups for given system. Try running MD setup on reconstructed samples manually."
         )
 
-    equil_traj = mdtraj.Trajectory(np.concatenate(equil_xyz), samples_all[-1].top.subset(atom_idx))
+    equil_traj = mdtraj.Trajectory(np.concatenate([xyz[np.newaxis, ...] for xyz in equil_xyz], axis=0), samples_all[-1].top.subset(atom_idx))
     return equil_traj
 
 
