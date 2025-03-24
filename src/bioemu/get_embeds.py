@@ -49,7 +49,9 @@ def _get_colabfold_dir() -> StrPath:
     """
     Get colabfold environment folder
     """
-    return os.path.join(os.path.expanduser("~"), ".bioemu_colabfold")
+    return os.environ.get(
+        "BIOEMU_COLABFOLD_DIR", os.path.join(os.path.expanduser("~"), ".bioemu_colabfold")
+    )
 
 
 def ensure_colabfold_install() -> str:
