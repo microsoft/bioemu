@@ -229,8 +229,8 @@ def main(
     samples_all_heavy = reconstruct_sidechains(samples)
 
     # write out sidechain reconstructed output
-    samples_all_heavy.save_xtc(f"{prefix}_sidechain_rec.xtc")
-    samples_all_heavy[0].save_pdb(f"{prefix}_sidechain_rec.pdb")
+    samples_all_heavy.save_xtc(os.path.join(outpath, f"{prefix}_sidechain_rec.xtc"))
+    samples_all_heavy[0].save_pdb(os.path.join(outpath, f"{prefix}_sidechain_rec.pdb"))
 
     # run MD equilibration if requested
     if md_equil:
