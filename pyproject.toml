@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "bioemu"
-version = "0.1.6"
+version = "0.1.6.post1"
 description = "Biomolecular emulator"
 authors = [
 ]
@@ -20,7 +20,8 @@ dependencies = [
     "hydra-core",
     "dm-tree",
     "stackprinter",
-    "typer"
+    "typer",
+    "ihm<2.4"
 ]
 readme = "README.md"
 
