@@ -13,6 +13,7 @@ import hydra
 import numpy as np
 import stackprinter
 from huggingface_hub import hf_hub_download
+from tqdm import tqdm
 
 stackprinter.set_excepthook(style="darkbg2")
 
@@ -155,7 +156,9 @@ def main(
 
     existing_num_samples = count_samples_in_output_dir(output_dir)
     logger.info(f"Found {existing_num_samples} previous samples in {output_dir}.")
-    for seed in range(existing_num_samples, num_samples, batch_size):
+    for seed in tqdm(
+        range(existing_num_samples, num_samples, batch_size), desc="Sampling batches..."
+    ):
         n = min(batch_size, num_samples - seed)
         npz_path = output_dir / format_npz_samples_filename(seed, n)
         if npz_path.exists():
