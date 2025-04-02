@@ -31,7 +31,7 @@ pip install bioemu
 ```
 
 > [!NOTE]
-> The first time `bioemu` is used to sample structures, it will also need to setup [Colabfold](https://github.com/sokrypton/ColabFold) on a separate environment. By default it uses the `colabfold-bioemu` conda environment name, but if you wish to have this changed please manually set the `COLABFOLD_ENVNAME` environment variable accordingly before sampling for the first time.
+> The first time `bioemu` is used to sample structures, it will also need to setup [Colabfold](https://github.com/sokrypton/ColabFold) on a separate virtual environment for MSA and embedding generation. By default this setup uses the `~/.bioemu_colabfold` directory, but if you wish to have this changed please manually set the `BIOEMU_COLABFOLD_DIR` environment variable accordingly before sampling for the first time.
 
 
 ## Sampling structures
