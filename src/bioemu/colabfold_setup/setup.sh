@@ -3,8 +3,10 @@
 set -ex
 
 echo "Setting up colabfold..."
-VENV_FOLDER=$1
-python -m venv ${VENV_FOLDER}
+BASE_PYTHON=$1
+VENV_FOLDER=$2
+
+${BASE_PYTHON} -m venv ${VENV_FOLDER}
 source ${VENV_FOLDER}/bin/activate
 pip install uv
 uv pip install --python ${VENV_FOLDER}/bin/python 'colabfold[alphafold-minus-jax]==1.5.4'

@@ -5,6 +5,7 @@ import logging
 import os
 import shutil
 import subprocess
+import sys
 import tempfile
 from pathlib import Path
 
@@ -69,7 +70,7 @@ def ensure_colabfold_install() -> str:
     else:
         logger.info(f"Colabfold not present under {colabfold_dir}. Installing...")
         result = subprocess.run(
-            ["bash", COLABFOLD_INSTALL_SCRIPT, _get_colabfold_dir()],
+            ["bash", COLABFOLD_INSTALL_SCRIPT, sys.executable, colabfold_dir],
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
         )
