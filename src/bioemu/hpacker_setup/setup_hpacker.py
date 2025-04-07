@@ -2,6 +2,8 @@ import logging
 import os
 import subprocess
 
+from bioemu.utils import get_conda_prefix
+
 HPACKER_INSTALL_SCRIPT = os.path.join(
     os.path.dirname(os.path.realpath(__file__)), "setup_sidechain_relax.sh"
 )
@@ -19,11 +21,7 @@ def ensure_hpacker_install(
     Ensures hpacker and its dependencies are installed under conda environment
     named `envname`
     """
-    conda_root = os.getenv("CONDA_ROOT", None)
-    if conda_root is None:
-        # Attempt $CONDA_PREFIX_1
-        conda_root = os.getenv("CONDA_PREFIX_1", None)
-    assert conda_root is not None, "conda required to install hpacker environment"
+    conda_root = get_conda_prefix()
     conda_envs = os.listdir(os.path.join(conda_root, "envs"))
 
     if envname not in conda_envs:
