@@ -22,7 +22,8 @@ def ensure_hpacker_install(
     named `envname`
     """
     conda_root = get_conda_prefix()
-    conda_envs = os.listdir(os.path.join(conda_root, "envs"))
+    env_dir = os.path.join(conda_root, "envs")
+    conda_envs = os.listdir(os.path.join(conda_root, "envs")) if os.path.exists(env_dir) else []
 
     if envname not in conda_envs:
         logger.info("Setting up hpacker dependencies...")
