@@ -67,6 +67,7 @@ def main(
     sequence: str | Path,
     num_samples: int,
     output_dir: str | Path,
+    n_steps: int,
     batch_size_100: int = 10,
     model_name: str | None = "bioemu-v1.0",
     ckpt_path: str | Path | None = None,
@@ -143,6 +144,9 @@ def main(
 
     with open(denoiser_config_path) as f:
         denoiser_config = yaml.safe_load(f)
+
+    assert "N" in denoiser_config
+    denoiser_config["N"] = n_steps
     denoiser = hydra.utils.instantiate(denoiser_config)
 
     logger.info(
