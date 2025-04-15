@@ -19,7 +19,6 @@ from bioemu.hpacker_setup.setup_hpacker import (
     HPACKER_DEFAULT_REPO_DIR,
     ensure_hpacker_install,
 )
-from bioemu.md_utils import get_propka_protonation
 from bioemu.utils import get_conda_prefix
 
 logger = logging.getLogger(__name__)
@@ -105,6 +104,40 @@ def reconstruct_sidechains(traj: mdtraj.Trajectory) -> mdtraj.Trajectory:
     return concatenated
 
 
+def _add_oxt_to_terminus(topology, positions):
+    # Create a new topology object to modify
+    new_topology = app.Topology()
+    new_positions = []
+
+    # Copy existing chains, residues, and atoms to the new topology
+    for chain in topology.chains():
+        new_chain = new_topology.addChain(chain.id)
+        for residue in chain.residues():
+            new_residue = new_topology.addResidue(residue.name, new_chain)
+            for atom in residue.atoms():
+                new_topology.addAtom(atom.name, atom.element, new_residue)
+                new_positions.append(positions[atom.index])
+
+            # Add OXT atom to the C-terminal residue
+            if residue.id == list(chain.residues())[-1].id:
+                new_topology.addAtom("OXT", app.element.oxygen, new_residue)
+                # Assuming a position for OXT, you might need to adjust this
+
+                atom_positions = {a.name: positions[a.index] for a in residue.atoms()}
+
+                d_ca_o = atom_positions["O"] - atom_positions["CA"]
+                d_ca_c = atom_positions["C"] - atom_positions["CA"]
+                d_ca_c /= u.sqrt(u.dot(d_ca_c, d_ca_c))
+                v = d_ca_o - u.dot(d_ca_c, d_ca_o) * d_ca_c
+
+                oxt_position = atom_positions["O"] + 2 * v
+                new_positions.append(oxt_position)
+
+    new_topology.createStandardBonds()
+
+    return new_topology, new_positions
+
+
 def run_one_md(
     frame: mdtraj.Trajectory,
     only_energy_minimization: bool = False,
@@ -126,7 +159,11 @@ def run_one_md(
     integrator_timestep_ps = 0.002  # fixed for standard protocol
     temperature_K = 300.0 * u.kelvin
 
-    modeller = app.Modeller(frame.top.to_openmm(), frame.xyz[0] * u.nanometers)
+    topology, positions = _add_oxt_to_terminus(frame.top.to_openmm(), frame.xyz[0] * u.nanometers)
+
+    modeller = app.Modeller(topology, u.Quantity(positions))
+    modeller.addHydrogens()
+
     forcefield = app.ForceField("amber99sb.xml", "tip3p.xml")
 
     modeller.addSolvent(
@@ -166,13 +203,13 @@ def run_one_md(
 
 
 def run_all_md(samples_all: list[mdtraj.Trajectory], md_protocol: MDProtocol) -> mdtraj.Trajectory:
-    """run MD for set of protonated samples.
+    """run MD for set of samples.
 
     This function will skip samples that cannot be loaded by openMM default setup generator,
     i.e. it might output fewer frames than in input.
 
     Args:
-        samples_all: mdtraj objects with protonated samples (can be different protonation states)
+        samples_all: mdtraj objects with samples with side-chains reconstructed
         md_protocol: md protocol
 
     Returns:
@@ -225,7 +262,7 @@ def main(
         outpath: path to write output to
         prefix: prefix for output file names
     """
-    samples = mdtraj.load_xtc(xtc_path, top=pdb_path)
+    samples = mdtraj.load_xtc(xtc_path, top=pdb_path)[:10]
     samples_all_heavy = reconstruct_sidechains(samples)
 
     # write out sidechain reconstructed output
@@ -234,9 +271,7 @@ def main(
 
     # run MD equilibration if requested
     if md_equil:
-        samples_all = get_propka_protonation(samples_all_heavy, pH=7.0)
-
-        samples_equil = run_all_md(samples_all, md_protocol)
+        samples_equil = run_all_md(samples_all_heavy, md_protocol)
 
         samples_equil.save_xtc(os.path.join(outpath, f"{prefix}_md_equil.xtc"))
         samples_equil[0].save_pdb(os.path.join(outpath, f"{prefix}_md_equil.pdb"))
