@@ -3,8 +3,10 @@ import shutil
 from unittest.mock import patch
 
 import mdtraj
+import numpy as np
+from openmm import unit as u
 
-from bioemu.sidechain_relax import main, run_one_md
+from bioemu.sidechain_relax import _add_oxt_to_terminus, main, run_one_md
 
 BACKBONE_ATOM_SEL = "name C CA N O"
 
@@ -51,3 +53,29 @@ def test_mdrelax_integration(tmp_path):
     assert (
         mdtraj.rmsd(processed_sliced, sample_sliced) < 0.1
     ), f"{mdtraj.rmsd(processed_sliced, sample_sliced)}"
+
+
+def test_add_oxt_to_terminus():
+    """checks if adding OXT atom to topology adds this atom
+    and does not change other things
+    """
+    samples_pdb = os.path.join(os.path.dirname(__file__), "test_data", "cln_bad_sample.pdb")
+    frame = mdtraj.load_pdb(samples_pdb)
+
+    old_topology = frame.top.to_openmm()
+    old_positions = frame.xyz[0] * u.nanometers
+
+    new_topology, new_positions = _add_oxt_to_terminus(old_topology, old_positions)
+
+    assert list(new_topology.atoms())[-1].name == "OXT"
+    assert len(list(new_topology.atoms())) == len(list(old_topology.atoms())) + 1
+    assert len(new_positions) == len(old_positions) + 1
+
+    for old_atom, new_atom in zip(old_topology.atoms(), new_topology.atoms()):
+        assert old_atom.name == new_atom.name
+        assert old_atom.element == new_atom.element
+        assert old_atom.residue.name == new_atom.residue.name
+
+    np.testing.assert_allclose(
+        old_positions.value_in_unit(u.nanometer), new_positions[:-1].value_in_unit(u.nanometer)
+    )
