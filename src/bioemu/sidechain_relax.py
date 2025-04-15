@@ -104,7 +104,20 @@ def reconstruct_sidechains(traj: mdtraj.Trajectory) -> mdtraj.Trajectory:
     return concatenated
 
 
-def _add_oxt_to_terminus(topology, positions):
+def _add_oxt_to_terminus(
+    topology: app.Topology, positions: u.Quantity
+) -> tuple[app.Topology, u.Quantity]:
+    """Add an OXT atom to the C-terminal residue of the given topology and positions.
+
+    NOTE: this uses a heuristics for the OXT position
+
+    Args:
+        topology: The OpenMM topology object to modify.
+        positions: The list of atomic positions corresponding to the topology.
+
+    Returns:
+        Modified topology with OXT atom, modified list of positions
+    """
     # Create a new topology object to modify
     new_topology = app.Topology()
     new_positions = []
@@ -125,6 +138,7 @@ def _add_oxt_to_terminus(topology, positions):
 
                 atom_positions = {a.name: positions[a.index] for a in residue.atoms()}
 
+                # PDBFixer's OXT heuristic:
                 d_ca_o = atom_positions["O"] - atom_positions["CA"]
                 d_ca_c = atom_positions["C"] - atom_positions["CA"]
                 d_ca_c /= u.sqrt(u.dot(d_ca_c, d_ca_c))
@@ -135,17 +149,33 @@ def _add_oxt_to_terminus(topology, positions):
 
     new_topology.createStandardBonds()
 
-    return new_topology, new_positions
+    return new_topology, u.Quantity(new_positions)
+
+
+def _is_protein_noh(atom: app.topology.Atom) -> bool:
+    """check if an atom is a protein heavy atom
+
+    Args:
+        atom: openMM atom instance
+
+    Returns:
+        True if protein and not hydrogen, False otherwise
+    """
+    if atom.residue.name in ("HOH", "NA", "CL"):
+        return False
+    if atom.element.mass.value_in_unit(u.dalton) <= 2.0:
+        return False
+    return True
 
 
 def run_one_md(
     frame: mdtraj.Trajectory,
     only_energy_minimization: bool = False,
     simtime_ns: float = 0.1,
-) -> np.ndarray:
+) -> mdtraj.Trajectory:
     """Run a standard MD protocol with amber99sb and explicit solvent (tip3p).
-    Uses a constraint force on backbone atoms to avoid large deviations from.
-    preedicted structure.
+    Uses a constraint force on backbone atoms to avoid large deviations from
+    predicted structure.
 
     Args:
         frame: mdtraj trajectory object containing molecular coordinates and topology
@@ -153,7 +183,7 @@ def run_one_md(
         simtime_ns: simulation time in ns (only used if not `only_energy_minimization`)
 
     Returns:
-        np.ndarray: atomic coordinates after MD
+        equilibrated trajectory (only heavy atoms of protein)
     """
 
     integrator_timestep_ps = 0.002  # fixed for standard protocol
@@ -161,7 +191,7 @@ def run_one_md(
 
     topology, positions = _add_oxt_to_terminus(frame.top.to_openmm(), frame.xyz[0] * u.nanometers)
 
-    modeller = app.Modeller(topology, u.Quantity(positions))
+    modeller = app.Modeller(topology, positions)
     modeller.addHydrogens()
 
     forcefield = app.ForceField("amber99sb.xml", "tip3p.xml")
@@ -199,7 +229,11 @@ def run_one_md(
         simulation.step(int(1000 * simtime_ns / integrator_timestep_ps))
 
     positions = simulation.context.getState(positions=True).getPositions()
-    return np.array(positions.value_in_unit(u.nanometer))
+
+    idx = [a.index for a in modeller.topology.atoms() if _is_protein_noh(a)]
+    mdtop = mdtraj.Topology.from_openmm(modeller.topology)
+
+    return mdtraj.Trajectory(np.array(positions.value_in_unit(u.nanometer))[idx], mdtop.subset(idx))
 
 
 def run_all_md(samples_all: list[mdtraj.Trajectory], md_protocol: MDProtocol) -> mdtraj.Trajectory:
@@ -216,28 +250,25 @@ def run_all_md(samples_all: list[mdtraj.Trajectory], md_protocol: MDProtocol) ->
         array containing all heavy-atom coordinates
     """
 
-    equil_xyz = []
+    equil_frames = []
 
-    for n, frame in tqdm(enumerate(samples_all), leave=False, desc="running MD equilibration"):
-        atom_idx = frame.top.select("protein and mass > 2")
+    for n, frame in tqdm(
+        enumerate(samples_all), leave=False, desc="running MD equilibration", total=len(samples_all)
+    ):
         try:
-            positions = run_one_md(
+            equil_frame = run_one_md(
                 frame, only_energy_minimization=md_protocol == MDProtocol.LOCAL_MINIMIZATION
             )
-            equil_xyz.append(positions[atom_idx])
+            equil_frames.append(equil_frame)
         except ValueError as err:
             logger.warning(f"Skipping sample {n} for MD setup: Failed with\n {err}")
 
-    if not equil_xyz:
+    if not equil_frames:
         raise RuntimeError(
             "Could not create MD setups for given system. Try running MD setup on reconstructed samples manually."
         )
 
-    equil_traj = mdtraj.Trajectory(
-        np.concatenate([xyz[np.newaxis, ...] for xyz in equil_xyz], axis=0),
-        samples_all[-1].top.subset(atom_idx),
-    )
-    return equil_traj
+    return mdtraj.join(equil_frames)
 
 
 def main(
@@ -262,7 +293,7 @@ def main(
         outpath: path to write output to
         prefix: prefix for output file names
     """
-    samples = mdtraj.load_xtc(xtc_path, top=pdb_path)[:10]
+    samples = mdtraj.load_xtc(xtc_path, top=pdb_path)
     samples_all_heavy = reconstruct_sidechains(samples)
 
     # write out sidechain reconstructed output
