@@ -169,7 +169,20 @@ def _is_protein_noh(atom: app.topology.Atom) -> bool:
     return True
 
 
-def _prepare_system(frame: mdtraj.Trajectory) -> tuple[mm.System, app.Modeller]:
+def _prepare_system(
+    frame: mdtraj.Trajectory, padding_nm: float = 1.0
+) -> tuple[mm.System, app.Modeller]:
+    """prepare opeMM system from mdtraj Trajectory frame.
+
+    Function uses amber99sb and standard settings for MD.
+
+    Args:
+        frame: mdtraj Trajectory with one frame
+        padding_nm: padding between protein and periodic box.
+
+    Returns:
+        openMM system, openMM modeller
+    """
     topology, positions = _add_oxt_to_terminus(frame.top.to_openmm(), frame.xyz[0] * u.nanometers)
 
     modeller = app.Modeller(topology, positions)
@@ -179,7 +192,7 @@ def _prepare_system(frame: mdtraj.Trajectory) -> tuple[mm.System, app.Modeller]:
 
     modeller.addSolvent(
         forcefield,
-        padding=0.8 * u.nanometers,
+        padding=padding_nm * u.nanometers,
         ionicStrength=0.1 * u.molar,
         positiveIon="Na+",
         negativeIon="Cl-",
@@ -196,7 +209,16 @@ def _prepare_system(frame: mdtraj.Trajectory) -> tuple[mm.System, app.Modeller]:
 
 
 def _add_constraint_force(system: mm.System, modeller: app.Modeller, k: float) -> int:
+    """add constraint force on backbone atoms to system object
 
+    Args:
+        system: openMM system
+        modeller: openMM modeller
+        k: force constant
+
+    Returns:
+        index of constraint force
+    """
     logger.debug(f"adding constraint force with {k=}")
     force = mm.CustomExternalForce("k*periodicdistance(x, y, z, x0, y0, z0)^2")
     force.addGlobalParameter("k", k)
@@ -221,17 +243,37 @@ def _do_equilibration(
     simtime_ns_npt_equil: float,
     temperature_K: u.Quantity,
 ) -> None:
+    """run equilibration protocol on initial structure.
 
+    This function is optimized to deal with bioEmu output structures
+    with reconstructed sidechains and can handle structures that are
+    far from the force field's equilibration. It might not work in
+    all situations though.
+
+    CAUTION: this function alters simulation and integrator objects inplace
+
+    Args:
+        simulation: openMM simulation
+        integrator: openMM integrator
+        init_timesteps_ps: timesteps to use sequentially during the first phase of equilibration.
+        integrator_timestep_ps: final integrator timestep
+        simtime_ns_nvt_equil: simulation time (ns) for NVT equilibration
+        simtime_ns_npt_equil: simulation time (ns) for NPT equilibration
+        temperature_K: system temperature in Kelvin
+    """
+    # start with tiny integrator steps and increase to target integrator step
     for init_int_ts_ps in init_timesteps_ps + [integrator_timestep_ps]:
         logger.debug(f"running with init integration step of {init_int_ts_ps} ps")
         integrator.setStepSize(init_int_ts_ps * u.picosecond)
         # run for 0.1 ps
         simulation.step(int(0.1 / init_int_ts_ps))
 
+    # NVT equilibration with higher than usual friction
     logger.debug(f"running {simtime_ns_nvt_equil} ns constrained MD equilibration (NVT)")
     simulation.integrator.setFriction(10.0 / u.picoseconds)
     simulation.step(int(1000 * simtime_ns_nvt_equil / integrator_timestep_ps))
-    logger.debug("reducing friction to normal, adding barostat")
+
+    # NPT equilibration with normal friction
     logger.debug(f"running {simtime_ns_npt_equil} ns constrained MD equilibration (NPT)")
     simulation.system.addForce(mm.MonteCarloBarostat(1 * u.bar, temperature_K))
     simulation.integrator.setFriction(1.0 / u.picoseconds)
@@ -242,6 +284,16 @@ def _do_equilibration(
 def _switch_off_constraints(
     simulation: app.Simulation, ext_force_id: int, integrator_timestep_ps: float, init_k: float
 ) -> None:
+    """switch off and remove constraint force from simulation.
+
+    Runs 10 ps intemediate steps to switch off force.
+
+    Args:
+        simulation: openMM simulation
+        ext_force_id: force ID to switch off and remove
+        integrator_timestep_ps: integration timestep
+        init_k: inital force constant
+    """
     for k in [init_k / 10, 0]:
         logger.debug(f"tuning down constraint force: {k=}")
         if k > 0:
@@ -259,7 +311,16 @@ def _run_md(
     simtime_ns: float,
     atom_subset: list[int],
 ) -> None:
+    """Add reporters and run MD simulation from given setup.
 
+    This function writes a trajectory file.
+
+    Args:
+        simulation: openMM simulation
+        integrator_timestep_ps: integrator timestep (ps)
+        simtime_ns: simulation time (ns)
+        atom_subset: indices of atoms to write to output file
+    """
     state_data_reporter = app.StateDataReporter(
         stdout,
         int(100 / integrator_timestep_ps),
@@ -293,6 +354,8 @@ def run_one_md(
     Args:
         frame: mdtraj trajectory object containing molecular coordinates and topology
         only_energy_minimization: only call local energy minimizer, no integration
+        simtime_ns_nvt_equil: simulation time (ns) for NVT equilibration
+        simtime_ns_npt_equil: simulation time (ns) for NPT equilibration
         simtime_ns: simulation time in ns (only used if not `only_energy_minimization`)
 
     Returns:
