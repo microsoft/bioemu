@@ -6,7 +6,8 @@ import mdtraj
 import numpy as np
 from openmm import unit as u
 
-from bioemu.sidechain_relax import _add_oxt_to_terminus, main, run_one_md
+from bioemu.md_utils import _add_oxt_to_terminus
+from bioemu.sidechain_relax import main, run_one_md
 
 BACKBONE_ATOM_SEL = "name C CA N O"
 
