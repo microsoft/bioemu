@@ -23,10 +23,20 @@ def _run_hpacker_mock(protein_pdb_in: str, protein_pdb_out: str) -> None:
 def run_one_md_nointegration(
     frame: mdtraj.Trajectory,
     only_energy_minimization: bool = False,
-    simtime_ns: float = 1.0,
+    simtime_ns_nvt_equil: float = 0.1,
+    simtime_ns_npt_equil: float = 0.4,
+    simtime_ns: float = 0.0,
+    outpath: str = ".",
+    file_prefix: str = "",
 ):
     """mock patch `run_one_md` function to not do MD integration on CI (slow). Still performs local energy minimization"""
-    return run_one_md(frame, only_energy_minimization=only_energy_minimization, simtime_ns=0.0)
+    return run_one_md(
+        frame,
+        only_energy_minimization=only_energy_minimization,
+        simtime_ns_nvt_equil=0.0,
+        simtime_ns_npt_equil=0.0,
+        simtime_ns=0.0,
+    )
 
 
 @patch("bioemu.sidechain_relax._run_hpacker", _run_hpacker_mock)
@@ -43,7 +53,7 @@ def test_mdrelax_integration(tmp_path):
         samples_xtc,
         samples_pdb,
         md_equil=True,
-        md_protocol="nvt_equil",
+        md_protocol="md_equil",
         outpath=tmp_path,
     )
 
