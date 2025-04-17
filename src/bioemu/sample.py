@@ -11,15 +11,13 @@ from typing import Literal
 
 import hydra
 import numpy as np
-import stackprinter
-from huggingface_hub import hf_hub_download
-from tqdm import tqdm
-
-stackprinter.set_excepthook(style="darkbg2")
-
 import torch
 import yaml
+
+# import stackprinter
+from huggingface_hub import hf_hub_download
 from torch_geometric.data.batch import Batch
+from tqdm import tqdm
 
 from .chemgraph import ChemGraph
 from .convert_chemgraph import save_pdb_and_xtc
@@ -28,6 +26,9 @@ from .models import DiGConditionalScoreModel
 from .sde_lib import SDE
 from .seq_io import parse_sequence, write_fasta
 from .utils import count_samples_in_output_dir, format_npz_samples_filename
+
+# stackprinter.set_excepthook(style="darkbg2")
+
 
 logger = logging.getLogger(__name__)
 

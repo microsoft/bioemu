@@ -4,6 +4,7 @@ import logging
 import os
 import subprocess
 from enum import Enum
+from sys import stdout
 from tempfile import TemporaryDirectory
 
 import mdtraj
@@ -168,10 +169,115 @@ def _is_protein_noh(atom: app.topology.Atom) -> bool:
     return True
 
 
+def _prepare_system(frame):
+    topology, positions = _add_oxt_to_terminus(frame.top.to_openmm(), frame.xyz[0] * u.nanometers)
+
+    modeller = app.Modeller(topology, positions)
+    modeller.addHydrogens()
+
+    forcefield = app.ForceField("amber99sb.xml", "tip3p.xml")
+
+    modeller.addSolvent(
+        forcefield,
+        padding=0.8 * u.nanometers,
+        ionicStrength=0.1 * u.molar,
+        positiveIon="Na+",
+        negativeIon="Cl-",
+    )
+
+    system = forcefield.createSystem(
+        modeller.topology,
+        nonbondedMethod=app.PME,
+        nonbondedCutoff=1.0 * u.nanometers,
+        constraints=app.HBonds,
+        rigidWater=True,
+    )
+    return system, modeller
+
+
+def _add_constraint_force(system, modeller):
+    k = 1000
+    logger.debug(f"adding constraint force with {k=}")
+    force = mm.CustomExternalForce("k*periodicdistance(x, y, z, x0, y0, z0)^2")
+    force.addGlobalParameter("k", k)
+    force.addPerParticleParameter("x0")
+    force.addPerParticleParameter("y0")
+    force.addPerParticleParameter("z0")
+
+    for atom in modeller.topology.atoms():
+        if atom.name in ("C", "CA", "N", "O"):
+            force.addParticle(atom.index, modeller.positions[atom.index])
+    ext_force_id = system.addForce(force)
+
+    return ext_force_id
+
+
+def _do_equilibration(
+    simulation,
+    integrator,
+    init_timesteps_ps,
+    integrator_timestep_ps,
+    simtime_ns_nvt_equil,
+    simtime_ns_npt_equil,
+    temperature_K,
+):
+
+    for init_int_ts_ps in init_timesteps_ps + [integrator_timestep_ps]:
+        logger.debug(f"running with init integration step of {init_int_ts_ps} ps")
+        integrator.setStepSize(init_int_ts_ps * u.picosecond)
+        # run for 0.1 ps
+        simulation.step(int(0.1 / init_int_ts_ps))
+
+    logger.debug(f"running {simtime_ns_nvt_equil} ns constrained MD equilibration (NVT)")
+    simulation.integrator.setFriction(10.0 / u.picoseconds)
+    simulation.step(int(1000 * simtime_ns_nvt_equil / integrator_timestep_ps))
+    logger.debug("reducing friction to normal, adding barostat")
+    logger.debug(f"running {simtime_ns_npt_equil} ns constrained MD equilibration (NPT)")
+    simulation.system.addForce(mm.MonteCarloBarostat(1 * u.bar, temperature_K))
+    simulation.integrator.setFriction(1.0 / u.picoseconds)
+    simulation.context.reinitialize(preserveState=True)
+    simulation.step(simulation.step(int(1000 * simtime_ns_npt_equil / integrator_timestep_ps)))
+
+
+def _switch_off_constraints(simulation, ext_force_id, integrator_timestep_ps):
+    for k in [100, 0]:
+        logger.debug(f"tuning down constraint force: {k=}")
+        if k > 0:
+            simulation.context.setParameter("k", k)
+        else:
+            simulation.system.removeForce(ext_force_id)
+
+        simulation.context.reinitialize(preserveState=True)
+        simulation.step(int(10 / integrator_timestep_ps))
+
+
+def _run_md(simulation, integrator_timestep_ps, simtime_ns, atom_subset):
+
+    state_data_reporter = app.StateDataReporter(
+        stdout,
+        int(100 / integrator_timestep_ps),
+        time=True,
+        potentialEnergy=True,
+        kineticEnergy=True,
+        totalEnergy=True,
+        temperature=True,
+        speed=True,
+    )
+    simulation.reporters.append(state_data_reporter)
+    xtc_reporter = mdtraj.reporters.XTCReporter(
+        "/tmp/out.xtc", int(100 / integrator_timestep_ps), atomSubset=atom_subset
+    )
+    simulation.reporters.append(xtc_reporter)
+
+    simulation.step(int(1000 * simtime_ns / integrator_timestep_ps))
+
+
 def run_one_md(
     frame: mdtraj.Trajectory,
     only_energy_minimization: bool = False,
-    simtime_ns: float = 0.1,
+    simtime_ns_nvt_equil: float = 0.1,
+    simtime_ns_npt_equil: float = 0.4,
+    simtime_ns: float = 0.0,
 ) -> mdtraj.Trajectory:
     """Run a standard MD protocol with amber99sb and explicit solvent (tip3p).
     Uses a constraint force on backbone atoms to avoid large deviations from
@@ -186,52 +292,68 @@ def run_one_md(
         equilibrated trajectory (only heavy atoms of protein)
     """
 
-    integrator_timestep_ps = 0.002  # fixed for standard protocol
+    logger.debug("creating MD setup")
+    integrator_timestep_ps = 0.001  # fixed for standard protocol
+    init_timesteps_ps = [1e-6, 1e-5, 1e-4]
     temperature_K = 300.0 * u.kelvin
 
-    topology, positions = _add_oxt_to_terminus(frame.top.to_openmm(), frame.xyz[0] * u.nanometers)
+    system, modeller = _prepare_system(frame)
+    ext_force_id = _add_constraint_force(system, modeller)
 
-    modeller = app.Modeller(topology, positions)
-    modeller.addHydrogens()
-
-    forcefield = app.ForceField("amber99sb.xml", "tip3p.xml")
-
-    modeller.addSolvent(
-        forcefield,
-        padding=1.0 * u.nanometers,
-        ionicStrength=0.1 * u.molar,
-        positiveIon="Na+",
-        negativeIon="Cl-",
-    )
-
-    system = forcefield.createSystem(modeller.topology, nonbondedMethod=app.PME)
-
-    force = mm.CustomExternalForce("k*periodicdistance(x, y, z, x0, y0, z0)^2")
-    force.addGlobalParameter("k", 1000)
-    force.addPerParticleParameter("x0")
-    force.addPerParticleParameter("y0")
-    force.addPerParticleParameter("z0")
-
-    for atom in modeller.topology.atoms():
-        if atom.residue.name in ("C", "CA", "N", "O"):
-            force.addParticle(atom.index, modeller.positions[atom.index])
-    system.addForce(force)
-
+    # use high Langevin friction to relax the system quicker
     integrator = mm.LangevinIntegrator(
-        temperature_K, 1.0 / u.picoseconds, integrator_timestep_ps * u.femtosecond
+        temperature_K, 200.0 / u.picoseconds, init_timesteps_ps[0] * u.picosecond
     )
-    simulation = app.Simulation(modeller.topology, system, integrator)
+    integrator.setConstraintTolerance(0.00001)
+
+    try:
+        platform = mm.Platform.getPlatformByName("CUDA")
+        logger.debug("simulation uses CUDA platform")
+    except Exception:
+        # fall back to default
+        platform = None
+        logger.warning(
+            "Cannot find CUDA platform. Simulation might be slow.\n Possible fix: `conda install openmm -c conda-forge`"
+        )
+    simulation = app.Simulation(modeller.topology, system, integrator, platform=platform)
 
     simulation.context.setPositions(modeller.positions)
     simulation.context.setVelocitiesToTemperature(temperature_K)
-    simulation.minimizeEnergy(maxIterations=100)
-    if not only_energy_minimization:
-        simulation.step(int(1000 * simtime_ns / integrator_timestep_ps))
+
+    simulation.context.applyConstraints(1e-7)
 
     positions = simulation.context.getState(positions=True).getPositions()
-
     idx = [a.index for a in modeller.topology.atoms() if _is_protein_noh(a)]
     mdtop = mdtraj.Topology.from_openmm(modeller.topology)
+
+    logger.debug("running local energy minimization")
+    simulation.minimizeEnergy()
+
+    if not only_energy_minimization:
+        _do_equilibration(
+            simulation,
+            integrator,
+            init_timesteps_ps,
+            integrator_timestep_ps,
+            simtime_ns_nvt_equil,
+            simtime_ns_npt_equil,
+            temperature_K,
+        )
+
+    # always return constrained equilibration output
+    positions = simulation.context.getState(positions=True).getPositions()
+
+    # free MD simulations if requested:
+    if simtime_ns > 0.0:
+
+        _switch_off_constraints(simulation, ext_force_id, integrator_timestep_ps)
+
+        logger.debug("running free MD simulation")
+
+        mdtraj.Trajectory(
+            np.array(positions.value_in_unit(u.nanometer))[idx], mdtop.subset(idx)
+        ).save_pdb("/tmp/out.pdb")
+        _run_md(simulation, integrator_timestep_ps, simtime_ns, idx)
 
     return mdtraj.Trajectory(np.array(positions.value_in_unit(u.nanometer))[idx], mdtop.subset(idx))
 
@@ -255,13 +377,11 @@ def run_all_md(samples_all: list[mdtraj.Trajectory], md_protocol: MDProtocol) ->
     for n, frame in tqdm(
         enumerate(samples_all), leave=False, desc="running MD equilibration", total=len(samples_all)
     ):
-        try:
-            equil_frame = run_one_md(
-                frame, only_energy_minimization=md_protocol == MDProtocol.LOCAL_MINIMIZATION
-            )
-            equil_frames.append(equil_frame)
-        except ValueError as err:
-            logger.warning(f"Skipping sample {n} for MD setup: Failed with\n {err}")
+
+        equil_frame = run_one_md(
+            frame, only_energy_minimization=md_protocol == MDProtocol.LOCAL_MINIMIZATION
+        )
+        equil_frames.append(equil_frame)
 
     if not equil_frames:
         raise RuntimeError(
@@ -293,7 +413,8 @@ def main(
         outpath: path to write output to
         prefix: prefix for output file names
     """
-    samples = mdtraj.load_xtc(xtc_path, top=pdb_path)
+    logger.setLevel(logging.DEBUG)
+    samples = mdtraj.load_xtc(xtc_path, top=pdb_path)[:1]
     samples_all_heavy = reconstruct_sidechains(samples)
 
     # write out sidechain reconstructed output
