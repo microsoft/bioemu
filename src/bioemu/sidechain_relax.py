@@ -169,7 +169,7 @@ def _is_protein_noh(atom: app.topology.Atom) -> bool:
     return True
 
 
-def _prepare_system(frame):
+def _prepare_system(frame: mdtraj.Trajectory) -> tuple[mm.System, app.Modeller]:
     topology, positions = _add_oxt_to_terminus(frame.top.to_openmm(), frame.xyz[0] * u.nanometers)
 
     modeller = app.Modeller(topology, positions)
@@ -195,8 +195,8 @@ def _prepare_system(frame):
     return system, modeller
 
 
-def _add_constraint_force(system, modeller):
-    k = 1000
+def _add_constraint_force(system: mm.System, modeller: app.Modeller, k: float) -> int:
+
     logger.debug(f"adding constraint force with {k=}")
     force = mm.CustomExternalForce("k*periodicdistance(x, y, z, x0, y0, z0)^2")
     force.addGlobalParameter("k", k)
@@ -213,14 +213,14 @@ def _add_constraint_force(system, modeller):
 
 
 def _do_equilibration(
-    simulation,
-    integrator,
-    init_timesteps_ps,
-    integrator_timestep_ps,
-    simtime_ns_nvt_equil,
-    simtime_ns_npt_equil,
-    temperature_K,
-):
+    simulation: app.Simulation,
+    integrator: mm.Integrator,
+    init_timesteps_ps: list[float],
+    integrator_timestep_ps: float,
+    simtime_ns_nvt_equil: float,
+    simtime_ns_npt_equil: float,
+    temperature_K: u.Quantity,
+) -> None:
 
     for init_int_ts_ps in init_timesteps_ps + [integrator_timestep_ps]:
         logger.debug(f"running with init integration step of {init_int_ts_ps} ps")
@@ -239,8 +239,10 @@ def _do_equilibration(
     simulation.step(simulation.step(int(1000 * simtime_ns_npt_equil / integrator_timestep_ps)))
 
 
-def _switch_off_constraints(simulation, ext_force_id, integrator_timestep_ps):
-    for k in [100, 0]:
+def _switch_off_constraints(
+    simulation: app.Simulation, ext_force_id: int, integrator_timestep_ps: float, init_k: float
+) -> None:
+    for k in [init_k / 10, 0]:
         logger.debug(f"tuning down constraint force: {k=}")
         if k > 0:
             simulation.context.setParameter("k", k)
@@ -251,7 +253,12 @@ def _switch_off_constraints(simulation, ext_force_id, integrator_timestep_ps):
         simulation.step(int(10 / integrator_timestep_ps))
 
 
-def _run_md(simulation, integrator_timestep_ps, simtime_ns, atom_subset):
+def _run_md(
+    simulation: app.Simulation,
+    integrator_timestep_ps: float,
+    simtime_ns: float,
+    atom_subset: list[int],
+) -> None:
 
     state_data_reporter = app.StateDataReporter(
         stdout,
@@ -296,9 +303,10 @@ def run_one_md(
     integrator_timestep_ps = 0.001  # fixed for standard protocol
     init_timesteps_ps = [1e-6, 1e-5, 1e-4]
     temperature_K = 300.0 * u.kelvin
+    k = 1000
 
     system, modeller = _prepare_system(frame)
-    ext_force_id = _add_constraint_force(system, modeller)
+    ext_force_id = _add_constraint_force(system, modeller, k)
 
     # use high Langevin friction to relax the system quicker
     integrator = mm.LangevinIntegrator(
@@ -346,7 +354,7 @@ def run_one_md(
     # free MD simulations if requested:
     if simtime_ns > 0.0:
 
-        _switch_off_constraints(simulation, ext_force_id, integrator_timestep_ps)
+        _switch_off_constraints(simulation, ext_force_id, integrator_timestep_ps, k)
 
         logger.debug("running free MD simulation")
 
