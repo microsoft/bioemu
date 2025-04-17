@@ -271,14 +271,20 @@ def _do_equilibration(
     # NVT equilibration with higher than usual friction
     logger.debug(f"running {simtime_ns_nvt_equil} ns constrained MD equilibration (NVT)")
     simulation.integrator.setFriction(10.0 / u.picoseconds)
-    simulation.step(int(1000 * simtime_ns_nvt_equil / integrator_timestep_ps))
+
+    for _ in tqdm(range(100), leave=False, desc=f"NVT equilibration ({simtime_ns_nvt_equil} ns)"):
+        simulation.step(int(1000 * simtime_ns_nvt_equil / integrator_timestep_ps / 100))
 
     # NPT equilibration with normal friction
     logger.debug(f"running {simtime_ns_npt_equil} ns constrained MD equilibration (NPT)")
     simulation.system.addForce(mm.MonteCarloBarostat(1 * u.bar, temperature_K))
     simulation.integrator.setFriction(1.0 / u.picoseconds)
     simulation.context.reinitialize(preserveState=True)
-    simulation.step(simulation.step(int(1000 * simtime_ns_npt_equil / integrator_timestep_ps)))
+
+    for _ in tqdm(range(100), leave=False, desc=f"NPT equilibration ({simtime_ns_npt_equil} ns)"):
+        simulation.step(
+            simulation.step(int(1000 * simtime_ns_npt_equil / integrator_timestep_ps / 100))
+        )
 
 
 def _switch_off_constraints(
@@ -310,6 +316,8 @@ def _run_md(
     integrator_timestep_ps: float,
     simtime_ns: float,
     atom_subset: list[int],
+    outpath: str,
+    file_prefix: str,
 ) -> None:
     """Add reporters and run MD simulation from given setup.
 
@@ -320,6 +328,8 @@ def _run_md(
         integrator_timestep_ps: integrator timestep (ps)
         simtime_ns: simulation time (ns)
         atom_subset: indices of atoms to write to output file
+        outpath: directory to write output trajectory to
+        file_prefix: prefix for output xtc file
     """
     state_data_reporter = app.StateDataReporter(
         stdout,
@@ -333,7 +343,9 @@ def _run_md(
     )
     simulation.reporters.append(state_data_reporter)
     xtc_reporter = mdtraj.reporters.XTCReporter(
-        "/tmp/out.xtc", int(100 / integrator_timestep_ps), atomSubset=atom_subset
+        os.path.join(outpath, f"{file_prefix}_md_traj.xtc"),
+        int(100 / integrator_timestep_ps),
+        atomSubset=atom_subset,
     )
     simulation.reporters.append(xtc_reporter)
 
@@ -346,6 +358,8 @@ def run_one_md(
     simtime_ns_nvt_equil: float = 0.1,
     simtime_ns_npt_equil: float = 0.4,
     simtime_ns: float = 0.0,
+    outpath: str = ".",
+    file_prefix: str = "",
 ) -> mdtraj.Trajectory:
     """Run a standard MD protocol with amber99sb and explicit solvent (tip3p).
     Uses a constraint force on backbone atoms to avoid large deviations from
@@ -357,19 +371,22 @@ def run_one_md(
         simtime_ns_nvt_equil: simulation time (ns) for NVT equilibration
         simtime_ns_npt_equil: simulation time (ns) for NPT equilibration
         simtime_ns: simulation time in ns (only used if not `only_energy_minimization`)
-
+        outpath: path to write simulation output to (only used if simtime_ns > 0)
+        file_prefix: prefix for simulation output (only used if simtime_ns > 0)
     Returns:
         equilibrated trajectory (only heavy atoms of protein)
     """
 
     logger.debug("creating MD setup")
-    integrator_timestep_ps = 0.001  # fixed for standard protocol
+
+    # fixed settings for standard protocol
+    integrator_timestep_ps = 0.001
     init_timesteps_ps = [1e-6, 1e-5, 1e-4]
     temperature_K = 300.0 * u.kelvin
-    k = 1000
+    constraint_force_const = 1000
 
     system, modeller = _prepare_system(frame)
-    ext_force_id = _add_constraint_force(system, modeller, k)
+    ext_force_id = _add_constraint_force(system, modeller, constraint_force_const)
 
     # use high Langevin friction to relax the system quicker
     integrator = mm.LangevinIntegrator(
@@ -417,19 +434,24 @@ def run_one_md(
     # free MD simulations if requested:
     if simtime_ns > 0.0:
 
-        _switch_off_constraints(simulation, ext_force_id, integrator_timestep_ps, k)
+        _switch_off_constraints(
+            simulation, ext_force_id, integrator_timestep_ps, constraint_force_const
+        )
 
         logger.debug("running free MD simulation")
 
+        # save topology file for trajectory
         mdtraj.Trajectory(
             np.array(positions.value_in_unit(u.nanometer))[idx], mdtop.subset(idx)
-        ).save_pdb("/tmp/out.pdb")
-        _run_md(simulation, integrator_timestep_ps, simtime_ns, idx)
+        ).save_pdb(os.path.join(outpath, f"{file_prefix}_md_top.pdb"))
+        _run_md(simulation, integrator_timestep_ps, simtime_ns, idx, outpath, file_prefix)
 
     return mdtraj.Trajectory(np.array(positions.value_in_unit(u.nanometer))[idx], mdtop.subset(idx))
 
 
-def run_all_md(samples_all: list[mdtraj.Trajectory], md_protocol: MDProtocol) -> mdtraj.Trajectory:
+def run_all_md(
+    samples_all: list[mdtraj.Trajectory], md_protocol: MDProtocol, outpath: str, simtime_ns: float
+) -> mdtraj.Trajectory:
     """run MD for set of samples.
 
     This function will skip samples that cannot be loaded by openMM default setup generator,
@@ -450,7 +472,11 @@ def run_all_md(samples_all: list[mdtraj.Trajectory], md_protocol: MDProtocol) ->
     ):
 
         equil_frame = run_one_md(
-            frame, only_energy_minimization=md_protocol == MDProtocol.LOCAL_MINIMIZATION
+            frame,
+            only_energy_minimization=md_protocol == MDProtocol.LOCAL_MINIMIZATION,
+            simtime_ns=simtime_ns,
+            outpath=outpath,
+            file_prefix=f"frame{n}",
         )
         equil_frames.append(equil_frame)
 
@@ -467,6 +493,7 @@ def main(
     pdb_path: str = typer.Option(),
     md_equil: bool = True,
     md_protocol: MDProtocol = MDProtocol.LOCAL_MINIMIZATION,
+    simtime_ns: float = 0,
     outpath: str = ".",
     prefix: str = "samples",
 ) -> None:
@@ -481,9 +508,15 @@ def main(
                 local issues like clashes.
             * nvt_equil: Runs local energy minimizer followed by a short constrained MD equilibration. Slower
                 but might resolve more severe issues.
+        simtime_ns: runtime (ns) for unconstrained MD simulation
         outpath: path to write output to
         prefix: prefix for output file names
     """
+    if simtime_ns > 0:
+        assert (
+            md_protocol == MDProtocol.NVT_EQUIL
+        ), "unconstrained MD can only be run using equilibrated structures."
+
     logger.setLevel(logging.DEBUG)
     samples = mdtraj.load_xtc(xtc_path, top=pdb_path)[:1]
     samples_all_heavy = reconstruct_sidechains(samples)
@@ -494,7 +527,9 @@ def main(
 
     # run MD equilibration if requested
     if md_equil:
-        samples_equil = run_all_md(samples_all_heavy, md_protocol)
+        samples_equil = run_all_md(
+            samples_all_heavy, md_protocol, simtime_ns=simtime_ns, outpath=outpath
+        )
 
         samples_equil.save_xtc(os.path.join(outpath, f"{prefix}_md_equil.xtc"))
         samples_equil[0].save_pdb(os.path.join(outpath, f"{prefix}_md_equil.pdb"))
