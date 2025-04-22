@@ -11,8 +11,8 @@ authors = [
 requires-python = ">=3.10"
 dependencies = [
     "mdtraj>=1.9.9",
-    "torch_geometric==2.6.1",
-    "torch==2.6.0",
+    "torch_geometric>=2.6.1",
+    "torch>=2.6.0",
     "modelcif==0.7",
     "bio>=1.5.9",
     "fire==0.7.0",
