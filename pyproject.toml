@@ -31,7 +31,7 @@ dev = [
     "pre-commit",
 ]
 md = [
-    "openmm==8.2.0",
+    "openmm[cuda12]==8.2.0",
     "pdb2pqr==3.4.1"
 ]
 
