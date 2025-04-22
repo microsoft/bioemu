@@ -160,9 +160,7 @@ def run_one_md(
     except Exception:
         # fall back to default
         platform = None
-        logger.warning(
-            "Cannot find CUDA platform. Simulation might be slow.\n Possible fix: `conda install openmm -c conda-forge`"
-        )
+        logger.warning("Cannot find CUDA platform. Simulation might be slow.")
     simulation = app.Simulation(modeller.topology, system, integrator, platform=platform)
 
     simulation.context.setPositions(modeller.positions)
