@@ -43,11 +43,9 @@ def _add_oxt_to_terminus(
             # Add OXT atom to the C-terminal residue
             if residue.id == list(chain.residues())[-1].id:
                 new_topology.addAtom("OXT", app.element.oxygen, new_residue)
-                # Assuming a position for OXT, you might need to adjust this
-
                 atom_positions = {a.name: positions[a.index] for a in residue.atoms()}
 
-                # PDBFixer's OXT heuristic:
+                # slightly modified version of PDBFixer's OXT position heuristic
                 d_ca_o = atom_positions["O"] - atom_positions["CA"]
                 d_ca_c = atom_positions["C"] - atom_positions["CA"]
                 d_ca_c /= u.sqrt(u.dot(d_ca_c, d_ca_c))
@@ -100,7 +98,7 @@ def _prepare_system(
 
     modeller.addSolvent(
         forcefield,
-        padding=0.8 * u.nanometers,
+        padding=padding_nm * u.nanometers,
         ionicStrength=0.1 * u.molar,
         positiveIon="Na+",
         negativeIon="Cl-",

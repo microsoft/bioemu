@@ -170,7 +170,7 @@ def run_one_md(
 
     simulation.context.applyConstraints(1e-7)
 
-    positions = simulation.context.getState(positions=True).getPositions()
+    # get protein heavy atom indices and mdtraj topology
     idx = [a.index for a in modeller.topology.atoms() if _is_protein_noh(a)]
     mdtop = mdtraj.Topology.from_openmm(modeller.topology)
 
@@ -230,15 +230,17 @@ def run_all_md(
     for n, frame in tqdm(
         enumerate(samples_all), leave=False, desc="running MD equilibration", total=len(samples_all)
     ):
-
-        equil_frame = run_one_md(
-            frame,
-            only_energy_minimization=md_protocol == MDProtocol.LOCAL_MINIMIZATION,
-            simtime_ns=simtime_ns,
-            outpath=outpath,
-            file_prefix=f"frame{n}",
-        )
-        equil_frames.append(equil_frame)
+        try:
+            equil_frame = run_one_md(
+                frame,
+                only_energy_minimization=md_protocol == MDProtocol.LOCAL_MINIMIZATION,
+                simtime_ns=simtime_ns,
+                outpath=outpath,
+                file_prefix=f"frame{n}",
+            )
+            equil_frames.append(equil_frame)
+        except ValueError as err:
+            logger.warning(f"Skipping sample {n} for MD setup: Failed with\n {err}")
 
     if not equil_frames:
         raise RuntimeError(
@@ -275,6 +277,7 @@ def main(
         verbose: if True, set log level to DEBUG
     """
     if verbose:
+        original_loglevel = logger.getEffectiveLevel()
         logger.setLevel(logging.DEBUG)
 
     if simtime_ns > 0:
@@ -297,6 +300,9 @@ def main(
 
         samples_equil.save_xtc(os.path.join(outpath, f"{prefix}_md_equil.xtc"))
         samples_equil[0].save_pdb(os.path.join(outpath, f"{prefix}_md_equil.pdb"))
+
+    if verbose:
+        logger.setLevel(original_loglevel)
 
 
 if __name__ == "__main__":
