@@ -87,6 +87,9 @@ python -m bioemu.sidechain_relax --pdb-path path/to/topology.pdb --xtc-path path
 > [!NOTE]
 > The first time this module is invoked, it will attempt to install `hpacker` and its dependencies into a separate `hpacker` conda environment. If you wish for it to be installed in a different location, please set the `HPACKER_ENVNAME` environment variable before using this module for the first time.
 
+> [!NOTE]
+> The side-chain relaxation code requires `cuda >= 12`.
+
 By default, side-chain reconstruction and local energy minimization are performed (no full MD integration for efficiency reasons).
 Note that the runtime of this code scales with the size of the system.
 We suggest running this code on a selection of samples rather than the full set.
