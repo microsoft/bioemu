@@ -48,11 +48,13 @@ def write_fasta(seqs: list[str], fasta_file: StrPath, ids: list[str] | None = No
 
 def _get_colabfold_dir() -> StrPath:
     """
-    Get colabfold environment folder
+    Get colabfold environment folder. Specific to the python executable being used.
     """
-    return os.environ.get(
+    parent_colabfold_dir = os.environ.get(
         "BIOEMU_COLABFOLD_DIR", os.path.join(os.path.expanduser("~"), ".bioemu_colabfold")
     )
+    exec_name = sys.executable.lstrip("/").replace("/", "_")
+    return os.path.join(parent_colabfold_dir, exec_name)
 
 
 def ensure_colabfold_install() -> str:
