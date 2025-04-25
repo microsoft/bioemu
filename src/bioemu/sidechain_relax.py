@@ -30,6 +30,7 @@ from bioemu.md_utils import (
 from bioemu.utils import get_conda_prefix
 
 logger = logging.getLogger(__name__)
+typer_app = typer.Typer(pretty_exceptions_enable=False)
 
 HPACKER_ENVNAME = os.getenv("HPACKER_ENV_NAME", HPACKER_DEFAULT_ENVNAME)
 HPACKER_REPO_DIR = os.getenv("HPACKER_REPO_DIR", HPACKER_DEFAULT_REPO_DIR)
@@ -248,6 +249,7 @@ def run_all_md(
     return mdtraj.join(equil_frames)
 
 
+@typer_app.command()
 def main(
     xtc_path: str = typer.Option(),
     pdb_path: str = typer.Option(),
@@ -304,4 +306,4 @@ def main(
 
 
 if __name__ == "__main__":
-    typer.run(main)
+    typer_app()
