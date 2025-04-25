@@ -1,7 +1,12 @@
 # Copyright (c) Microsoft Corporation.
 # Licensed under the MIT License.
+import functools
 import os
+from collections.abc import Callable
 from pathlib import Path
+from typing import ParamSpec, TypeVar
+
+import stackprinter
 
 
 def format_npz_samples_filename(start_id: int, num_samples: int) -> str:
@@ -39,3 +44,21 @@ def get_conda_prefix() -> str:
         conda_root = os.getenv(conda_prefix_env_name, None)
     assert conda_root is not None, _conda_not_installed_errmsg
     return conda_root
+
+
+P = ParamSpec("P")
+T = TypeVar("T")
+
+
+def print_traceback_on_exception(func: Callable[P, T]) -> Callable[P, T]:
+    """Wraps a function with stackprinter error logging."""
+
+    @functools.wraps(func)
+    def with_stackprint(*args: P.args, **kwargs: P.kwargs) -> T:
+        try:
+            return func(*args, **kwargs)
+        except:
+            stackprinter.show()
+            raise
+
+    return with_stackprint
