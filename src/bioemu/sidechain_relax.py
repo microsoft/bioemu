@@ -283,7 +283,7 @@ def main(
             md_protocol == MDProtocol.MD_EQUIL
         ), "unconstrained MD can only be run using equilibrated structures."
 
-    samples = mdtraj.load_xtc(xtc_path, top=pdb_path)[:1]
+    samples = mdtraj.load_xtc(xtc_path, top=pdb_path)
     samples_all_heavy = reconstruct_sidechains(samples)
 
     # write out sidechain reconstructed output
