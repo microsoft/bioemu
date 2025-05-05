@@ -86,7 +86,7 @@ You can compute side-chain reconstructions via the `bioemu.sidechains_relax` mod
 python -m bioemu.sidechain_relax --pdb-path path/to/topology.pdb --xtc-path path/to/samples.xtc
 ```
 
-When using the `hpacker` sidechain reconstruction, please cite this publication:
+When using `hpacker` sidechain reconstruction, please cite this publication:
 ```bibtex
 @InProceedings{HPacker2024,
   author = {Visani, Gian Marco and Galvin, William and Pun, Michael and Nourmohammad, Armita},
