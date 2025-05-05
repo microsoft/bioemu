@@ -86,6 +86,21 @@ You can compute side-chain reconstructions via the `bioemu.sidechains_relax` mod
 python -m bioemu.sidechain_relax --pdb-path path/to/topology.pdb --xtc-path path/to/samples.xtc
 ```
 
+When using the `hpacker` sidechain reconstruction, please cite this publication:
+```bibtex
+@InProceedings{HPacker2024,
+  author = {Visani, Gian Marco and Galvin, William and Pun, Michael and Nourmohammad, Armita},
+  title = {H-Packer: Holographic Rotationally Equivariant Convolutional Neural Network for Protein Side-Chain Packing},
+  booktitle = {Proceedings of the 18th Machine Learning in Computational Biology meeting},
+  pages = {230--249},
+  year = {2024},
+  volume = {240},
+  series = {Proceedings of Machine Learning Research},
+  publisher = {PMLR},
+  url = {https://proceedings.mlr.press/v240/visani24a.html}
+}
+```
+
 > [!NOTE]
 > The first time this module is invoked, it will attempt to install `hpacker` and its dependencies into a separate `hpacker` conda environment. If you wish for it to be installed in a different location, please set the `HPACKER_ENVNAME` environment variable before using this module for the first time.
 
