@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "bioemu"
-version = "0.1.10"
+dynamic = ["version"]
 description = "Biomolecular emulator"
 authors = [
 ]
@@ -23,6 +23,11 @@ dependencies = [
     "typer"
 ]
 readme = "README.md"
+
+
+[tool.setuptools.dynamic]
+version = {attr = "bioemu.__version__"}
+
 
 [project.optional-dependencies]
 dev = [
