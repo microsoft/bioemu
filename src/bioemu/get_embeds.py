@@ -80,7 +80,7 @@ def ensure_colabfold_install() -> str:
             log_file.write(result.stdout)
         logger.info(f"Install log saved in {log_file_path}.")
         assert result.returncode == 0, (
-            f"Something went wrong during colabfold install: {result.stdout.decode()}."
+            f"Something went wrong during colabfold install:\n{result.stdout.decode()}\n"
             f"Please check the colabfold install log saved in {log_file_path}."
         )
     return colabfold_bin_dir
