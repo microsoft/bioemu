@@ -11,7 +11,6 @@ from typing import Literal
 
 import hydra
 import numpy as np
-import stackprinter
 import torch
 import yaml
 from huggingface_hub import hf_hub_download
@@ -24,10 +23,11 @@ from .get_embeds import get_colabfold_embeds
 from .models import DiGConditionalScoreModel
 from .sde_lib import SDE
 from .seq_io import parse_sequence, write_fasta
-from .utils import count_samples_in_output_dir, format_npz_samples_filename
-
-stackprinter.set_excepthook(style="darkbg2")
-
+from .utils import (
+    count_samples_in_output_dir,
+    format_npz_samples_filename,
+    print_traceback_on_exception,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -62,6 +62,7 @@ def maybe_download_checkpoint(
     return str(ckpt_path), str(model_config_path)
 
 
+@print_traceback_on_exception
 @torch.no_grad()
 def main(
     sequence: str | Path,

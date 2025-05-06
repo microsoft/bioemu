@@ -56,6 +56,8 @@ Sampling times will depend on sequence length and available infrastructure. The 
  |             300 |         40 |
  |             600 |        150 |
 
+By default, unphysical structures (steric clashes or chain discontinuities) will be filtered out, so you will typically get fewer samples in the output than requested. The difference can be very large if your protein has large disordered regions which are very likely to produce clashes. If you want to get all generated samples in the output, irrespective of whether they are physically valid, use the '--filter_samples=False' argument.
+``
 
 > [!NOTE]
 > If you wish to use your own generated MSA instead of the ones retrieved via Colabfold, you can pass an A3M file containing the query sequence as the first row to the `sequence` argument. Additionally, the `msa_host_url` argument can be used to override the default Colabfold MSA query server. See [sample.py](./src/bioemu/sample.py) for more options.
@@ -82,6 +84,21 @@ pip install bioemu[md]
 You can compute side-chain reconstructions via the `bioemu.sidechains_relax` module:
 ```bash
 python -m bioemu.sidechain_relax --pdb-path path/to/topology.pdb --xtc-path path/to/samples.xtc
+```
+
+When using `hpacker` sidechain reconstruction, please cite this publication:
+```bibtex
+@InProceedings{HPacker2024,
+  author = {Visani, Gian Marco and Galvin, William and Pun, Michael and Nourmohammad, Armita},
+  title = {H-Packer: Holographic Rotationally Equivariant Convolutional Neural Network for Protein Side-Chain Packing},
+  booktitle = {Proceedings of the 18th Machine Learning in Computational Biology meeting},
+  pages = {230--249},
+  year = {2024},
+  volume = {240},
+  series = {Proceedings of Machine Learning Research},
+  publisher = {PMLR},
+  url = {https://proceedings.mlr.press/v240/visani24a.html}
+}
 ```
 
 > [!NOTE]
