@@ -74,9 +74,15 @@ def ensure_colabfold_install() -> str:
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
         )
-        assert (
-            result.returncode == 0
-        ), f"Something went wrong during colabfold install: {result.stdout.decode()}"
+        # dump log into a log file
+        log_file_path = f"{colabfold_dir}/install_log.txt"
+        with open(log_file_path, mode="wb") as log_file:
+            log_file.write(result.stdout)
+        logger.info(f"Install log saved in {log_file_path}.")
+        assert result.returncode == 0, (
+            f"Something went wrong during colabfold install: {result.stdout.decode()}."
+            f"Please check the colabfold install log saved in {log_file_path}."
+        )
     return colabfold_bin_dir
 
 
@@ -185,7 +191,10 @@ def get_colabfold_embeds(
         else:
             res = run_colabfold(fasta_file, res_dir, colabfold_env, msa_host_url)
             embed_prefix = f"{seqsha}__unknown_description_"
-        assert res.returncode == 0, f"Failed to run colabfold_batch: {res.stdout.decode()}"
+        if res.returncode != 0:
+            raise RuntimeError(
+                f"{res.stdout.decode()}\nFailed to run colabfold_batch due to the above error."
+            )
 
         single_rep_tempfile = os.path.join(
             res_dir,
