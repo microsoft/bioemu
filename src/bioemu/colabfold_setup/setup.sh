@@ -7,7 +7,6 @@ BASE_PYTHON=$1
 VENV_FOLDER=$2
 
 ${BASE_PYTHON} -m venv --without-pip ${VENV_FOLDER}
-${BASE_PYTHON} -m pip install uv
 ${BASE_PYTHON} -m uv pip install --python ${VENV_FOLDER}/bin/python 'colabfold[alphafold-minus-jax]==1.5.4'
 ${BASE_PYTHON} -m uv pip install --python ${VENV_FOLDER}/bin/python --force-reinstall \
     "jax[cuda12]==0.4.35" \
