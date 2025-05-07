@@ -20,7 +20,8 @@ dependencies = [
     "hydra-core",
     "dm-tree",
     "stackprinter",
-    "typer"
+    "typer",
+    "uv",
 ]
 readme = "README.md"
 
