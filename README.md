@@ -106,23 +106,18 @@ data = {
     }
 }
 
-response = requests.post(
-    url=ENDPOINT_URL,
-    headers=headers,
-    json=data,
-)
+response = requests.post(url=ENDPOINT_URL, headers=headers, json=data)
 try:
     result = response.json()
 except BaseException as e:
-    raise RuntimeError(f"Got status code {response.status_code}. Detailed message\n{response.text}") from e
+    raise RuntimeError(
+        f"Got status code {response.status_code}. Detailed message\n{response.text}"
+    ) from e
 if result["status"] != "success":
     raise RuntimeError(f"Inference failed with the following error:\n{result['message']}")
 
 print(f"Writing results to {OUTPUT_DIR}")
-base64_decode_results(
-    output_dir=OUTPUT_DIR,
-    result=result["results"],
-)
+base64_decode_results(output_dir=OUTPUT_DIR, result=result["results"])
 ```
 
 
