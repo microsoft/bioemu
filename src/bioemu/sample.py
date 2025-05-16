@@ -41,7 +41,7 @@ SUPPORTED_MODEL_NAMES = list(typing.get_args(SupportedModelNames))
 
 def maybe_download_checkpoint(
     *,
-    model_name: str | None,
+    model_name: SupportedModelNames | None,
     ckpt_path: str | Path | None = None,
     model_config_path: str | Path | None = None,
 ) -> tuple[str, str]:
@@ -75,7 +75,7 @@ def main(
     num_samples: int,
     output_dir: str | Path,
     batch_size_100: int = 10,
-    model_name: str | None = "bioemu-v1.0",
+    model_name: SupportedModelNames | None = "bioemu-v1.0",
     ckpt_path: str | Path | None = None,
     model_config_path: str | Path | None = None,
     denoiser_type: SupportedDenoisersLiteral | None = "dpm",
