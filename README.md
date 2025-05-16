@@ -56,8 +56,8 @@ Sampling times will depend on sequence length and available infrastructure. The 
  |             300 |         40 |
  |             600 |        150 |
 
-By default, unphysical structures (steric clashes or chain discontinuities) will be filtered out, so you will typically get fewer samples in the output than requested. The difference can be very large if your protein has large disordered regions which are very likely to produce clashes. If you want to get all generated samples in the output, irrespective of whether they are physically valid, use the '--filter_samples=False' argument.
-``
+By default, unphysical structures (steric clashes or chain discontinuities) will be filtered out, so you will typically get fewer samples in the output than requested. The difference can be very large if your protein has large disordered regions which are very likely to produce clashes. If you want to get all generated samples in the output, irrespective of whether they are physically valid, use the `--filter_samples=False` argument.
+
 
 > [!NOTE]
 > If you wish to use your own generated MSA instead of the ones retrieved via Colabfold, you can pass an A3M file containing the query sequence as the first row to the `sequence` argument. Additionally, the `msa_host_url` argument can be used to override the default Colabfold MSA query server. See [sample.py](./src/bioemu/sample.py) for more options.
@@ -70,10 +70,10 @@ The `bioemu-v1.0` checkpoint contains the model weights used to produce the resu
 
 
 ## Side-chain reconstruction and MD-relaxation
-BioEmu outputs structures in backbone frame representation. To reconstruct the side-chains, several tools are available. As an example, we interface with HPacker (https://github.com/gvisani/hpacker) to conduct side-chain reconstruction, and also provide basic tooling for running a short molecular dynamics (MD) equilibration.
+BioEmu outputs structures in backbone frame representation. To reconstruct the side-chains, several tools are available. As an example, we interface with [HPacker](https://github.com/gvisani/hpacker) to conduct side-chain reconstruction, and also provide basic tooling for running a short molecular dynamics (MD) equilibration.
 
 > [!WARNING]
-> This code is experimental and relies on a [conda-based package manager](https://docs.conda.io/projects/conda/en/latest/user-guide/install/index.html) due to `hpacker` having `conda` as a dependency. Make sure that `conda` is in your `PATH` before running the following code.
+> This code is experimental and relies on a [conda-based package manager](https://docs.conda.io/projects/conda/en/latest/user-guide/install/index.html) due to `hpacker` having `conda` as a dependency. Make sure that `conda` is in your `PATH` and that you have CUDA12-compatible drivers before running the following code.
 
 Install optional dependencies:
 
@@ -86,26 +86,9 @@ You can compute side-chain reconstructions via the `bioemu.sidechains_relax` mod
 python -m bioemu.sidechain_relax --pdb-path path/to/topology.pdb --xtc-path path/to/samples.xtc
 ```
 
-When using `hpacker` sidechain reconstruction, please cite this publication:
-```bibtex
-@InProceedings{HPacker2024,
-  author = {Visani, Gian Marco and Galvin, William and Pun, Michael and Nourmohammad, Armita},
-  title = {H-Packer: Holographic Rotationally Equivariant Convolutional Neural Network for Protein Side-Chain Packing},
-  booktitle = {Proceedings of the 18th Machine Learning in Computational Biology meeting},
-  pages = {230--249},
-  year = {2024},
-  volume = {240},
-  series = {Proceedings of Machine Learning Research},
-  publisher = {PMLR},
-  url = {https://proceedings.mlr.press/v240/visani24a.html}
-}
-```
 
 > [!NOTE]
 > The first time this module is invoked, it will attempt to install `hpacker` and its dependencies into a separate `hpacker` conda environment. If you wish for it to be installed in a different location, please set the `HPACKER_ENVNAME` environment variable before using this module for the first time.
-
-> [!NOTE]
-> The side-chain relaxation code requires `cuda >= 12`.
 
 By default, side-chain reconstruction and local energy minimization are performed (no full MD integration for efficiency reasons).
 Note that the runtime of this code scales with the size of the system.
