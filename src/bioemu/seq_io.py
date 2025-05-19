@@ -11,6 +11,9 @@ from Bio.SeqRecord import SeqRecord
 StrPath = str | os.PathLike
 
 
+IUPACPROTEIN = "ACDEFGHIKLMNPQRSTVWY"
+
+
 def _ensure_seq_records(seqs: list[str | SeqRecord]) -> list[SeqRecord]:
     records = []
     for i, seq in enumerate(seqs):

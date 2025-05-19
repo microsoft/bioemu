@@ -22,7 +22,7 @@ from .convert_chemgraph import save_pdb_and_xtc
 from .get_embeds import get_colabfold_embeds
 from .models import DiGConditionalScoreModel
 from .sde_lib import SDE
-from .seq_io import parse_sequence, write_fasta
+from .seq_io import IUPACPROTEIN, parse_sequence, write_fasta
 from .utils import (
     count_samples_in_output_dir,
     format_npz_samples_filename,
@@ -68,6 +68,12 @@ def maybe_download_checkpoint(
     return str(ckpt_path), str(model_config_path)
 
 
+def check_protein_valid(seq: str) -> None:
+    """Checks that input protein sequence is consistent with the standard IUPAC 20 amino acid types"""
+    for aa in seq:
+        assert aa in IUPACPROTEIN, f"Sequence conteins non-valid protein character: {aa}"
+
+
 @print_traceback_on_exception
 @torch.no_grad()
 def main(
@@ -107,6 +113,8 @@ def main(
         msa_host_url: MSA server URL. If not set, this defaults to colabfold's remote server. If sequence is an a3m file, this is ignored.
         filter_samples: Filter out unphysical samples with e.g. long bond distances or steric clashes.
     """
+    # Check input sequence is valid
+
     output_dir = Path(output_dir).expanduser().resolve()
     output_dir.mkdir(parents=True, exist_ok=True)  # Fail fast if output_dir is non-writeable
 
