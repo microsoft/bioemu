@@ -11,7 +11,7 @@ from Bio.SeqRecord import SeqRecord
 StrPath = str | os.PathLike
 
 
-IUPACPROTEIN = "ACDEFGHIKLMNPQRSTVWY"
+IUPACPROTEIN = frozenset("ACDEFGHIKLMNPQRSTVWY")
 
 
 def _ensure_seq_records(seqs: list[str | SeqRecord]) -> list[SeqRecord]:
@@ -53,3 +53,9 @@ def parse_sequence(sequence: StrPath) -> str:
         # is_file() failed because the file name is too long.
         pass
     return str(sequence)
+
+
+def check_protein_valid(seq: str) -> None:
+    """Checks that input protein sequence is consistent with the standard IUPAC 20 amino acid types"""
+    for aa in seq:
+        assert aa in IUPACPROTEIN, f"Sequence conteins non-valid protein character: {aa}"

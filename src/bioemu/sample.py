@@ -22,7 +22,7 @@ from .convert_chemgraph import save_pdb_and_xtc
 from .get_embeds import get_colabfold_embeds
 from .models import DiGConditionalScoreModel
 from .sde_lib import SDE
-from .seq_io import IUPACPROTEIN, parse_sequence, write_fasta
+from .seq_io import check_protein_valid, parse_sequence, write_fasta
 from .utils import (
     count_samples_in_output_dir,
     format_npz_samples_filename,
@@ -66,12 +66,6 @@ def maybe_download_checkpoint(
         repo_id="microsoft/bioemu", filename=f"checkpoints/{model_name}/config.yaml"
     )
     return str(ckpt_path), str(model_config_path)
-
-
-def check_protein_valid(seq: str) -> None:
-    """Checks that input protein sequence is consistent with the standard IUPAC 20 amino acid types"""
-    for aa in seq:
-        assert aa in IUPACPROTEIN, f"Sequence conteins non-valid protein character: {aa}"
 
 
 @print_traceback_on_exception
