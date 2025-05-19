@@ -1,5 +1,7 @@
 # 🚀 How to run BioEmu on Azure AI Foundry
 
+[![](https://dcbadge.limes.pink/api/server/https://discord.gg/azureaifoundry)](https://discord.gg/azureaifoundry)
+
 First, navigate to [BioEmu](https://ai.azure.com/explore/models/BioEmu/version/1/registry/azureml) in the Azure AI Foundry [model catalog](https://ai.azure.com/explore/models).
 
 Then click on "Sign in" button (if you don't have an Azure account, you can create one for free).
@@ -68,3 +70,5 @@ base64_decode_results(output_dir=OUTPUT_DIR, result=result["results"])
 
 > [!TIP]
 > Sign-in to Azure is required if you wish to browse and download the model files (checkpoint and config) from the "Artifact" tab.
+
+Please join the [discord channel](https://discord.gg/azureaifoundry) if you have general questions about Azure AI Foundry.
