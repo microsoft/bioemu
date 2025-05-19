@@ -63,5 +63,8 @@ print(f"Writing results to {OUTPUT_DIR}")
 base64_decode_results(output_dir=OUTPUT_DIR, result=result["results"])
 ```
 
+`samples.xtc`, `sequence.fasta`, `topology.pdb` files are written to `OUTPUT_DIR`. Please see the main [`README.md`](README.md) for instructions on further analysis.
+
+
 > [!TIP]
 > Sign-in to Azure is required if you wish to browse and download the model files (checkpoint and config) from the "Artifact" tab.
