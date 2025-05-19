@@ -1,4 +1,4 @@
-# 🚀 How to run BioEmu in Azure AI Foundry
+# 🚀 How to run BioEmu on Azure AI Foundry
 
 First, navigate to [BioEmu](https://ai.azure.com/explore/models/BioEmu/version/1/registry/azureml) in the Azure AI Foundry [model catalog](https://ai.azure.com/explore/models).
 

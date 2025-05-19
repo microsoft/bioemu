@@ -67,7 +67,7 @@ This code only supports sampling structures of monomers. You can try to sample m
 
 
 ## Azure AI Foundry
-BioEmu is also available on [Azure AI Foundry](https://ai.azure.com/). See [How to run BioEmu in Azure AI Foundry](AZURE_AI_FOUNDRY.md) for more details.
+BioEmu is also available on [Azure AI Foundry](https://ai.azure.com/). See [How to run BioEmu on Azure AI Foundry](AZURE_AI_FOUNDRY.md) for more details.
 
 
 ## Reproducing results from the preprint
