@@ -35,10 +35,13 @@ DEFAULT_DENOISER_CONFIG_DIR = Path(__file__).parent / "config/denoiser/"
 SupportedDenoisersLiteral = Literal["dpm", "heun"]
 SUPPORTED_DENOISERS = list(typing.get_args(SupportedDenoisersLiteral))
 
+SupportedModelNamesLiteral = Literal["bioemu-v1.0", "bioemu-rev"]
+SUPPORTED_MODEL_NAMES = list(typing.get_args(SupportedModelNamesLiteral))
+
 
 def maybe_download_checkpoint(
     *,
-    model_name: str | None,
+    model_name: SupportedModelNamesLiteral | None,
     ckpt_path: str | Path | None = None,
     model_config_path: str | Path | None = None,
 ) -> tuple[str, str]:
@@ -53,6 +56,9 @@ def maybe_download_checkpoint(
     assert (
         model_config_path is None
     ), f"Named model {model_name} comes with its own config. Do not provide model_config_path."
+
+    if model_name not in SUPPORTED_MODEL_NAMES:
+        raise ValueError(f"model_name must be one of: {SUPPORTED_MODEL_NAMES}")
     ckpt_path = hf_hub_download(
         repo_id="microsoft/bioemu", filename=f"checkpoints/{model_name}/checkpoint.ckpt"
     )
@@ -69,7 +75,7 @@ def main(
     num_samples: int,
     output_dir: str | Path,
     batch_size_100: int = 10,
-    model_name: str | None = "bioemu-v1.0",
+    model_name: SupportedModelNamesLiteral | None = "bioemu-v1.0",
     ckpt_path: str | Path | None = None,
     model_config_path: str | Path | None = None,
     denoiser_type: SupportedDenoisersLiteral | None = "dpm",
