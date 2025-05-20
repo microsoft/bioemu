@@ -449,10 +449,6 @@ def save_pdb_and_xtc(
         num_samples_unfiltered = len(traj)
         logger.info("Filtering samples ...")
         filtered_traj = filter_unphysical_traj(traj)
-        logger.info(
-            f"Filtered {num_samples_unfiltered} samples down to {len(filtered_traj)} "
-            "based on structure criteria. Filtering can be disabled with `--filter_samples=False`."
-        )
 
         if filtered_traj.n_frames == 0:
             xtc_path = Path(xtc_path).with_suffix("_unphysical.xtc")
@@ -467,6 +463,11 @@ def save_pdb_and_xtc(
             """
             )
         else:
+            if len(filtered_traj) < num_samples_unfiltered:
+                logger.info(
+                    f"Filtered {num_samples_unfiltered} samples down to {len(filtered_traj)} "
+                    "based on structure criteria. Filtering can be disabled with `--filter_samples=False`."
+                )
             traj = filtered_traj
 
     traj.superpose(reference=traj, frame=0)
