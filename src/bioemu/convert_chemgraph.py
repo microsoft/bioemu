@@ -448,14 +448,26 @@ def save_pdb_and_xtc(
     if filter_samples:
         num_samples_unfiltered = len(traj)
         logger.info("Filtering samples ...")
-        traj = filter_unphysical_traj(traj)
+        filtered_traj = filter_unphysical_traj(traj)
         logger.info(
-            f"Filtered {num_samples_unfiltered} samples down to {len(traj)} "
+            f"Filtered {num_samples_unfiltered} samples down to {len(filtered_traj)} "
             "based on structure criteria. Filtering can be disabled with `--filter_samples=False`."
         )
-        assert (
-            traj.n_frames > 0
-        ), "Ended up with no samples after filtering. Disable filtering of unphysical samples with `--filter_samples=False`"
+
+        if filtered_traj.n_frames == 0:
+            xtc_path = Path(xtc_path).with_suffix("_unphysical.xtc")
+            logger.warning(
+                """Ended up with no physical samples after filtering.
+            Here's a few things you can try to solve this:
+            1. Increase the number of requested samples.
+            2. Try with a different `denoiser_type` (e.g., `'heun'`), or increase the number of denoising steps through the
+               `denoiser_config_path` parameter. Some config examples can be found in `bioemu.sample.DEFAULT_DENOISER_CONFIG_DIR`
+            3. Disable the default filtering of unphysical samples by setting `filter_samples=False`.
+            All unphysical samples have been saved with the suffix `_unphysical.xtc`.
+            """
+            )
+        else:
+            traj = filtered_traj
 
     traj.superpose(reference=traj, frame=0)
     traj.save_xtc(xtc_path)
