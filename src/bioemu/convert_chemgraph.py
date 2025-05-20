@@ -453,6 +453,9 @@ def save_pdb_and_xtc(
             f"Filtered {num_samples_unfiltered} samples down to {len(traj)} "
             "based on structure criteria. Filtering can be disabled with `--filter_samples=False`."
         )
+        assert (
+            traj.n_frames > 0
+        ), "Ended up with no samples after filtering. Disable filtering of unphysical samples with `--filter_samples=False`"
 
     traj.superpose(reference=traj, frame=0)
     traj.save_xtc(xtc_path)
