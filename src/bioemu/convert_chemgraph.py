@@ -453,8 +453,7 @@ def save_pdb_and_xtc(
         if filtered_traj.n_frames == 0:
             xtc_path = Path(xtc_path).with_suffix("_unphysical.xtc")
             logger.warning(
-                """Ended up with no physical samples after filtering.
-            Here's a few things you can try to solve this:
+                """Ended up with no physical samples after filtering. Here's a few things you can try to solve this:
             1. Increase the number of requested samples.
             2. Try with a different `denoiser_type` (e.g., `'heun'`), or increase the number of denoising steps through the
                `denoiser_config_path` parameter. Some config examples can be found in `bioemu.sample.DEFAULT_DENOISER_CONFIG_DIR`
