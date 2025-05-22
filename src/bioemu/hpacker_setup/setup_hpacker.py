@@ -8,14 +8,14 @@ HPACKER_INSTALL_SCRIPT = os.path.join(
     os.path.dirname(os.path.realpath(__file__)), "setup_sidechain_relax.sh"
 )
 HPACKER_DEFAULT_ENVNAME = "hpacker"
-HPACKER_DEFAULT_REPO_DIR = os.path.join(os.path.expanduser("~"), ".hpacker")
+HPACKER_REPO_DIR = os.getenv("HPACKER_REPO_DIR", os.path.join(os.path.expanduser("~"), ".hpacker"))
 
 logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger(__name__)
 
 
 def ensure_hpacker_install(
-    envname: str = HPACKER_DEFAULT_ENVNAME, repo_dir: str = HPACKER_DEFAULT_REPO_DIR
+    envname: str = HPACKER_DEFAULT_ENVNAME, repo_dir: str = HPACKER_REPO_DIR
 ) -> None:
     """
     Ensures hpacker and its dependencies are installed under conda environment
