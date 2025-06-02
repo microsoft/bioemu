@@ -151,7 +151,19 @@ def heun_denoiser(
     score_model: torch.nn.Module,
     noise: float,
 ) -> ChemGraph:
-    """Sample from prior and then denoise."""
+    """Sample from prior and then denoise.
+    
+    Args:
+        sdes: Dictionary of SDEs, with "pos" and "node_orientations" keys.
+        N: Number of denoising steps.
+        eps_t: Minimum timestep, i.e. lowest noise level.
+        max_t: Maximum timestep, i.e. highest noise level.
+        device: Device to run the computation on.
+        batch: Batch of ChemGraph data. The values in the "pos" and "node_orientations" fields will be ignored, except for their shapes.
+            The "single_embeds" and "pair_embeds" fields are used to compute the score.
+        score_model: typically DiGConditionalScoreModel, parametrized to predict a multiple of the score.
+        noise: parameter controlling how much 're-noising' happens at each denoising step.
+    """
 
     batch = batch.to(device)
     if isinstance(score_model, torch.nn.Module):
@@ -264,12 +276,24 @@ def dpm_solver(
     max_t: float,
     eps_t: float,
     device: torch.device,
-) -> tuple[ChemGraph, ChemGraph, list[ChemGraph] | None, list[ChemGraph] | None]:
+    record_grad_steps: set[int] = set(),
+) -> ChemGraph:
 
     """
     Implements the DPM solver for the VPSDE, with the Cosine noise schedule.
     Following this paper: https://arxiv.org/abs/2206.00927 Algorithm 1 DPM-Solver-2.
     DPM solver is used only for positions, not node orientations.
+
+    Args:
+        sdes: Dictionary of SDEs, with "pos" and "node_orientations" keys.
+        batch: Batch of ChemGraph data. The values in the "pos" and "node_orientations" fields will be ignored, except for their shapes.
+            The "single_embeds" and "pair_embeds" fields are used to compute the score.
+        N: Number of denoising steps.
+        score_model: typically DiGConditionalScoreModel, parametrized to predict a multiple of the score.
+        max_t: Maximum timestep, i.e. highest noise level.
+        eps_t: Minimum timestep, i.e. lowest noise level.
+        device: Device to run the computation on.
+        record_grad_steps: Set of denoising steps at which to record gradients, used for PPFT.
     """
     assert isinstance(batch, ChemGraph)
     assert max_t < 1.0
@@ -300,7 +324,8 @@ def dpm_solver(
         t = torch.full((batch.num_graphs,), timesteps[i], device=device)
 
         # Evaluate score
-        score = _get_score(batch=batch, t=t, score_model=score_model, sdes=sdes)
+        with torch.set_grad_enabled(i in record_grad_steps):
+            score = _get_score(batch=batch, t=t, score_model=score_model, sdes=sdes)
         # t_{i-1} in the algorithm is the current t
         batch_idx = batch.batch
         alpha_t, sigma_t = pos_sde.mean_coeff_and_std(x=batch.pos, t=t, batch_idx=batch_idx)
@@ -358,7 +383,8 @@ def dpm_solver(
 
         # Correction step
         # Evaluate score at updated pos and node orientations
-        score_u = _get_score(batch=batch_u, t=t_lambda, sdes=sdes, score_model=score_model)
+        with torch.set_grad_enabled(i in record_grad_steps):
+            score_u = _get_score(batch=batch_u, t=t_lambda, sdes=sdes, score_model=score_model)
 
         pos_next = (
             alpha_t_next / alpha_t * batch.pos

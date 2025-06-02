@@ -22,7 +22,7 @@ def mock_score_model(batch, t):
     }
 
 
-def test_generate_batch(tmp_path):
+def test_generate_batch():
     sequence = TEST_SEQ
     sdes = {"node_orientations": DiGSO3SDE(), "pos": CosineVPSDE()}
     batch_size = 2

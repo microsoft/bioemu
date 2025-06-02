@@ -68,6 +68,34 @@ def maybe_download_checkpoint(
     return str(ckpt_path), str(model_config_path)
 
 
+def load_model(ckpt_path: str | Path, model_config_path: str | Path) -> DiGConditionalScoreModel:
+    """Load score model from checkpoint and config."""
+    assert os.path.isfile(ckpt_path), f"Checkpoint {ckpt_path} not found"
+    assert os.path.isfile(model_config_path), f"Model config {model_config_path} not found"
+
+    with open(model_config_path) as f:
+        model_config = yaml.safe_load(f)
+
+    model_state = torch.load(ckpt_path, map_location="cpu", weights_only=True)
+    score_model: DiGConditionalScoreModel = hydra.utils.instantiate(model_config["score_model"])
+    score_model.load_state_dict(model_state)
+    return score_model
+
+
+def load_sdes(
+    model_config_path: str | Path, cache_so3_dir: str | Path | None = None
+) -> dict[str, SDE]:
+    """Instantiate SDEs from config."""
+    with open(model_config_path) as f:
+        sdes_config = yaml.safe_load(f)["sdes"]
+
+    if cache_so3_dir is not None:
+        sdes_config["node_orientations"]["cache_dir"] = cache_so3_dir
+
+    sdes: dict[str, SDE] = hydra.utils.instantiate(sdes_config)
+    return sdes
+
+
 @print_traceback_on_exception
 @torch.no_grad()
 def main(
@@ -114,15 +142,9 @@ def main(
     ckpt_path, model_config_path = maybe_download_checkpoint(
         model_name=model_name, ckpt_path=ckpt_path, model_config_path=model_config_path
     )
+    score_model = load_model(ckpt_path, model_config_path)
 
-    assert os.path.isfile(ckpt_path), f"Checkpoint {ckpt_path} not found"
-    assert os.path.isfile(model_config_path), f"Model config {model_config_path} not found"
-
-    with open(model_config_path) as f:
-        model_config = yaml.safe_load(f)
-
-    if cache_so3_dir is not None:
-        model_config["sdes"]["node_orientations"]["cache_dir"] = cache_so3_dir
+    sdes = load_sdes(model_config_path=model_config_path, cache_so3_dir=cache_so3_dir)
 
     # User may have provided an MSA file instead of a sequence. This will be used for embeddings.
     msa_file = sequence if str(sequence).endswith(".a3m") else None
@@ -145,11 +167,6 @@ def main(
     else:
         # Save FASTA file in output_dir
         write_fasta([sequence], fasta_path)
-
-    model_state = torch.load(ckpt_path, map_location="cpu", weights_only=True)
-    score_model: DiGConditionalScoreModel = hydra.utils.instantiate(model_config["score_model"])
-    score_model.load_state_dict(model_state)
-    sdes: dict[str, SDE] = hydra.utils.instantiate(model_config["sdes"])
 
     if denoiser_config_path is None:
         assert (
