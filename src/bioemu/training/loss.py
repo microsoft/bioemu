@@ -41,6 +41,7 @@ def calc_ppft_loss(
         mid_t=mid_t,
         N_rollout=N_rollout,
         record_grad_steps=record_grad_steps,
+        device=device,
     )
 
     loss = torch.tensor(0.0, device=device)
@@ -67,13 +68,14 @@ def _fast_sample(
     mid_t: float,
     N_rollout: int,
     record_grad_steps: set[int],
+    device: torch.device,
 ):
     """Fast rollout to get a sampled structure in a small number of steps.
     Note that in the last step, only the positions are calculated, and not the orientations,
     because the orientations are not used to compute foldedness.
     """
     batch_size = batch.num_graphs
-    device = score_model.device
+
     # Perform a few denoising steps to get a partially denoised sample `x_mid`.
     x_mid: ChemGraph = dpm_solver(
         sdes=sdes,
