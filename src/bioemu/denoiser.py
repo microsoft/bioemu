@@ -148,7 +148,7 @@ def heun_denoiser(
     max_t: float,
     device: torch.device,
     batch: Batch,
-    score_model: torch.nn.Module,  # should be DiGConditionalScoreModel
+    score_model: torch.nn.Module,
     noise: float,
 ) -> ChemGraph:
     """Sample from prior and then denoise."""
