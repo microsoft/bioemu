@@ -152,7 +152,7 @@ def heun_denoiser(
     noise: float,
 ) -> ChemGraph:
     """Sample from prior and then denoise.
-    
+
     Args:
         sdes: Dictionary of SDEs, with "pos" and "node_orientations" keys.
         N: Number of denoising steps.

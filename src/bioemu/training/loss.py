@@ -100,7 +100,6 @@ def _get_x0_given_xt_and_score(
     return (x + sigma_t**2 * score) / alpha_t
 
 
-
 def stat_matching_cross_loss(
     batch: list[ChemGraph], *, reference_info: ReferenceInfo, target_info: TargetInfo
 ) -> torch.Tensor:

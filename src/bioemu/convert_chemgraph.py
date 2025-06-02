@@ -424,7 +424,9 @@ def save_pdb_and_xtc(
     # PDB files contain coordinates in Angstroms, while mdtraj.Trajectory objects
     # contain coordinates in nm.
     pos_angstrom = pos_nm * 10.0  # Convert to Angstroms
-    pos_angstrom = pos_angstrom - pos_angstrom.mean(axis=1, keepdims=True)  # Center every structure at the origin
+    pos_angstrom = pos_angstrom - pos_angstrom.mean(
+        axis=1, keepdims=True
+    )  # Center every structure at the origin
 
     # .pdb files contain coordinates in Angstrom
     _write_pdb(
