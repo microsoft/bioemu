@@ -3,7 +3,6 @@ from torch_geometric.data import Batch
 
 from bioemu.chemgraph import ChemGraph
 from bioemu.denoiser import dpm_solver
-from bioemu.scatter import scatter
 from bioemu.sde_lib import SDE
 from bioemu.so3_sde import SO3SDE
 from bioemu.training.foldedness import (
@@ -132,33 +131,3 @@ def stat_matching_cross_loss(
     # (sum_i x_i)^2 - sum_i x_i^2 = sum_{i\neq j} x_i x_j
     sum_diff = torch.sum(p_fold_diff, dim=0)
     return (sum_diff**2 - torch.sum(p_fold_diff**2, dim=0)) / (n * (n - 1))
-
-
-def _center_zero(
-    pos: torch.Tensor,
-    batch_indexes: torch.LongTensor,
-    mask: torch.LongTensor | None = None,
-) -> torch.Tensor:
-    """
-    Move the molecule center to zero for sparse position tensors. Works with or without masked nodes.
-
-    Args:
-        pos: [N, 3] batch positions of atoms in the molecule in sparse batch format.
-        batch_indexes: [N] batch index for each atom in sparse batch format.
-        mask: [N] binary mask indicating which elements should be considered (1) and which should be ignored (0).
-
-    Returns:
-        pos: [N, 3] zero-centered batch positions of atoms in the molecule in sparse batch format.
-    """
-
-    assert len(pos.shape) == 2 and pos.shape[-1] == 3, "pos must have shape [N, 3]"
-
-    if mask is None:
-        means = scatter(pos, batch_indexes, dim=0, reduce="mean")
-        return pos - means[batch_indexes]
-    else:
-        mask = mask.unsqueeze(1)
-        pos = pos * mask
-        nodes_per_sample = scatter(mask, batch_indexes, dim=0, reduce="sum")
-        means = scatter(pos, batch_indexes, dim=0, reduce="sum") / nodes_per_sample
-        return pos - means[batch_indexes] * mask
