@@ -148,22 +148,10 @@ def heun_denoiser(
     max_t: float,
     device: torch.device,
     batch: Batch,
-    score_model: torch.nn.Module,
+    score_model: torch.nn.Module,  # should be DiGConditionalScoreModel
     noise: float,
 ) -> ChemGraph:
-    """Sample from prior and then denoise.
-
-    Args:
-        sdes: Dictionary of SDEs, with "pos" and "node_orientations" keys.
-        N: Number of denoising steps.
-        eps_t: Minimum timestep, i.e. lowest noise level.
-        max_t: Maximum timestep, i.e. highest noise level.
-        device: Device to run the computation on.
-        batch: Batch of ChemGraph data. The values in the "pos" and "node_orientations" fields will be ignored, except for their shapes.
-            The "single_embeds" and "pair_embeds" fields are used to compute the score.
-        score_model: typically DiGConditionalScoreModel, parametrized to predict a multiple of the score.
-        noise: parameter controlling how much 're-noising' happens at each denoising step.
-    """
+    """Sample from prior and then denoise."""
 
     batch = batch.to(device)
     if isinstance(score_model, torch.nn.Module):
@@ -283,17 +271,6 @@ def dpm_solver(
     Implements the DPM solver for the VPSDE, with the Cosine noise schedule.
     Following this paper: https://arxiv.org/abs/2206.00927 Algorithm 1 DPM-Solver-2.
     DPM solver is used only for positions, not node orientations.
-
-    Args:
-        sdes: Dictionary of SDEs, with "pos" and "node_orientations" keys.
-        batch: Batch of ChemGraph data. The values in the "pos" and "node_orientations" fields will be ignored, except for their shapes.
-            The "single_embeds" and "pair_embeds" fields are used to compute the score.
-        N: Number of denoising steps.
-        score_model: typically DiGConditionalScoreModel, parametrized to predict a multiple of the score.
-        max_t: Maximum timestep, i.e. highest noise level.
-        eps_t: Minimum timestep, i.e. lowest noise level.
-        device: Device to run the computation on.
-        record_grad_steps: Set of denoising steps at which to record gradients, used for PPFT.
     """
     assert isinstance(batch, ChemGraph)
     assert max_t < 1.0
