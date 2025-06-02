@@ -5,7 +5,7 @@ from bioemu.chemgraph import ChemGraph
 from bioemu.denoiser import dpm_solver
 from bioemu.scatter import scatter
 from bioemu.sde_lib import SDE
-from bioemu.so3_sde import SO3SDE, rotmat_to_rotvec
+from bioemu.so3_sde import SO3SDE
 from bioemu.training.foldedness import (
     ReferenceInfo,
     TargetInfo,
@@ -132,87 +132,6 @@ def stat_matching_cross_loss(
     # (sum_i x_i)^2 - sum_i x_i^2 = sum_{i\neq j} x_i x_j
     sum_diff = torch.sum(p_fold_diff, dim=0)
     return (sum_diff**2 - torch.sum(p_fold_diff**2, dim=0)) / (n * (n - 1))
-
-
-def calc_score_matching_loss(
-    *,
-    score_model: torch.nn.Module,
-    coords_sde: SDE,
-    orientations_sde: SO3SDE,
-    batch: ChemGraph,
-    eps: float = 1e-3,
-) -> tuple[torch.Tensor, torch.Tensor]:
-    """Denoising score matching loss.
-
-    Args:
-        score_model: Score model.
-        coords_sde: SDE that corrupts the CA positions.
-        orientations_sde: SDE that corrupts the residue orientations.
-        batch: batch of ChemGraph objects.
-        eps: minimum t to sample
-
-    Returns:
-        positions loss, orientations loss
-    """
-    # convert coordinates to nm
-    assert isinstance(batch, Batch)
-    batch = batch.replace(pos=batch.pos / 10.0)  # Convert angstrom to nm
-
-    ground_truth = batch.clone()
-
-    device = batch.pos.device
-
-    orientations_sde = orientations_sde.to(device)
-    batch_size = batch.num_graphs
-
-    # sample diffusion timesteps
-    t = torch.rand(batch_size, device=device) * (1 - eps) + eps
-
-    # add noise based on the different SDEs
-    batch = batch.replace(
-        pos=coords_sde.sample_marginal(batch.pos, t=t, batch_idx=batch.batch),
-        node_orientations=orientations_sde.sample_marginal(
-            batch.node_orientations.float(), t=t, batch_idx=batch.batch
-        ),
-    )
-
-    # predict the score
-    score_model_output: ChemGraph = score_model(batch, t)
-
-    # position loss
-    x_mean, std = coords_sde.marginal_prob(ground_truth.pos, t=t, batch_idx=batch.batch)
-    raw_noise = (batch.pos - x_mean) / std
-
-    position_loss = _center_zero(score_model_output.pos + raw_noise, batch.batch).square()
-
-    # orientation loss
-    raw_noise_so3 = rotmat_to_rotvec(
-        torch.einsum(
-            "...ij,...ik->...jk",
-            ground_truth["node_orientations"].float(),
-            batch["node_orientations"],
-        )
-    )
-
-    so3_score_target = orientations_sde.compute_score(  # [N, 3]
-        raw_noise_so3, t, batch_idx=batch.batch
-    ).detach()
-
-    score_scaling = orientations_sde.get_score_scaling(t, batch_idx=batch.batch)[:, None]  # [N, 1]
-
-    orientations_loss = (
-        score_model_output.node_orientations - so3_score_target / score_scaling
-    ).square()  # [N, 3]
-
-    # Average over residues within each sample
-    position_loss = scatter(position_loss, batch.batch, dim=0, reduce="mean")
-    orientations_loss = scatter(orientations_loss, batch.batch, dim=0, reduce="mean")
-
-    # Average over samples
-    position_loss = position_loss.mean()
-    orientations_loss = orientations_loss.mean()
-
-    return position_loss, orientations_loss
 
 
 def _center_zero(

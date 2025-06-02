@@ -6,23 +6,8 @@ import torch
 
 from bioemu.chemgraph import ChemGraph
 from bioemu.models import EVOFORMER_EDGE_DIM, EVOFORMER_NODE_DIM
-from bioemu.sde_lib import SDE
 from bioemu.training.foldedness import TargetInfo, compute_contacts
-from bioemu.training.loss import calc_ppft_loss, calc_score_matching_loss
-
-
-def test_denoising_loss(default_batch, tiny_model, sdes: dict[str, SDE]):
-    loss = calc_score_matching_loss(
-        score_model=tiny_model,
-        batch=default_batch,
-        coords_sde=sdes["pos"],
-        orientations_sde=sdes["node_orientations"],
-        eps=0.1,
-    )
-    assert isinstance(loss, tuple)
-    assert len(loss) == 2
-    assert all(isinstance(l, torch.Tensor) for l in loss)
-    # TODO: set random seed or patch rng, and assert specific values
+from bioemu.training.loss import calc_ppft_loss
 
 
 @pytest.mark.parametrize(
