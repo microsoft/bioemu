@@ -21,7 +21,7 @@ CONTACT_CUTOFF_ANGSTROM = 10.0
 
 @dataclass
 class ReferenceInfo:
-    """Describes contacts in a reference structure, which we'll use to compute fraction of native contacts."""
+    """Describes contacts between residues in a reference structure."""
 
     contact_indices: np.ndarray  # Indices of residues which contact each other. Shape (2, n_contacts)
     contact_distances_angstrom: np.ndarray  # Distances between residues which contact each other. Shape (n_contacts,)
@@ -30,10 +30,7 @@ class ReferenceInfo:
 
 @dataclass
 class TargetInfo:
-    """Parameters to compute foldedness from fraction of native contacts, and target mean foldedness.
-
-    'foldedness' or 'p_fold' is computed from the fraction of native contacts (FNC) as sigmoid(2 * steepness * (FNC - p_fold_thr))
-    """
+    """Parameters to compute foldedness from fraction of native contacts."""
 
     p_fold_thr: float  # This FNC has foldedness 0.5
     steepness: float  # Steepness of foldedness w.r.t. FNC
@@ -61,9 +58,9 @@ def foldedness_from_fnc(fnc: torch.Tensor, p_fold_thr: float, steepness: float) 
     Compute foldedness from fraction of native contacts (FNC).
 
     Args:
-        fnc (torch.Tensor): Fraction of native contacts.
-        p_fold_thr (float): FNC that has foldedness 0.5.
-        steepness (float): Steepness of the sigmoid function.
+        fnc: Fraction of native contacts.
+        p_fold_thr: FNC that has foldedness 0.5.
+        steepness: Steepness of the sigmoid function.
 
     Returns:
         Foldedness values.

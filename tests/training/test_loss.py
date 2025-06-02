@@ -54,8 +54,7 @@ def test_ppft_loss(tiny_model, p_fold_target, expected_loss, sdes, chignolin_pdb
     torch.manual_seed(1)
     ppft_loss = calc_ppft_loss(
         score_model=tiny_model,
-        coords_sde=sdes["pos"],
-        orientations_sde=sdes["node_orientations"],
+        sdes=sdes,
         batch=chemgraph_list,
         n_replications=2,
         mid_t=0.5,

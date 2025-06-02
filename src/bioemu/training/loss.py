@@ -16,8 +16,7 @@ from bioemu.training.foldedness import (
 def calc_ppft_loss(
     *,
     score_model: torch.nn.Module,
-    coords_sde: SDE,
-    orientations_sde: SO3SDE,
+    sdes: dict[str, SDE],
     batch: list[ChemGraph],
     n_replications: int,
     mid_t: float,
@@ -26,7 +25,6 @@ def calc_ppft_loss(
     reference_info_lookup: dict[str, ReferenceInfo],
     target_info_lookup: dict[str, TargetInfo],
 ) -> torch.Tensor:
-    # TODO the input batch should not need to have positions or orientations, only sequences.
     device = batch[0].pos.device
     assert record_grad_steps.issubset(
         set(range(1, N_rollout + 1))
@@ -36,12 +34,50 @@ def calc_ppft_loss(
     num_systems_sampled = len(batch)
 
     x_in = Batch.from_data_list(batch * n_replications)
-    batch_size = x_in.num_graphs
+    x0 = _fast_sample(
+        batch=x_in,
+        sdes=sdes,
+        score_model=score_model,
+        mid_t=mid_t,
+        N_rollout=N_rollout,
+        record_grad_steps=record_grad_steps,
+    )
 
+    loss = torch.tensor(0.0, device=device)
+    for i in range(num_systems_sampled):
+        single_system_batch: list[ChemGraph] = [
+            x0.get_example(i + j * num_systems_sampled) for j in range(n_replications)
+        ]
+        system_id = single_system_batch[0].system_id
+
+        reference_info = reference_info_lookup[system_id]
+        target_info = target_info_lookup[system_id]
+        loss += _estimate_squared_mean_error(
+            single_system_batch, reference_info=reference_info, target_info=target_info
+        )
+        assert loss.numel() == 1
+
+    return loss / num_systems_sampled
+
+
+def _fast_sample(
+    batch: Batch,
+    sdes: dict[str, SDE],
+    score_model,
+    mid_t: float,
+    N_rollout: int,
+    record_grad_steps: set[int],
+):
+    """Fast rollout to get a sampled structure in a small number of steps.
+    Note that in the last step, only the positions are calculated, and not the orientations,
+    because the orientations are not used to compute foldedness.
+    """
+    batch_size = batch.num_graphs
+    device = score_model.device
     # Perform a few denoising steps to get a partially denoised sample `x_mid`.
     x_mid: ChemGraph = dpm_solver(
-        sdes={"pos": coords_sde, "node_orientations": orientations_sde},
-        batch=x_in,
+        sdes=sdes,
+        batch=batch,
         eps_t=mid_t,
         max_t=0.99,  # see dpm.yaml
         N=N_rollout,
@@ -57,29 +93,14 @@ def calc_ppft_loss(
 
     # No need to compute orientations, because they are not used to compute foldedness.
     x0_pos = _get_x0_given_xt_and_score(
-        sde=coords_sde,
+        sde=sdes["pos"],
         x=x_mid.pos,
-        t=torch.full((batch_size,), mid_t, device=x_in.pos.device),
+        t=torch.full((batch_size,), mid_t, device=device),
         batch_idx=x_mid.batch,
         score=score_mid_t,
     )
 
-    x0 = x_mid.replace(pos=x0_pos)
-    loss = torch.tensor(0.0, device=device)
-    for i in range(num_systems_sampled):
-        single_system_batch: list[ChemGraph] = [
-            x0.get_example(i + j * num_systems_sampled) for j in range(n_replications)
-        ]
-        system_id = single_system_batch[0].system_id
-
-        reference_info = reference_info_lookup[system_id]
-        target_info = target_info_lookup[system_id]
-        loss += stat_matching_cross_loss(
-            single_system_batch, reference_info=reference_info, target_info=target_info
-        )
-        assert loss.numel() == 1
-
-    return loss / batch_size
+    return x_mid.replace(pos=x0_pos)
 
 
 def _get_x0_given_xt_and_score(
@@ -99,16 +120,22 @@ def _get_x0_given_xt_and_score(
     return (x + sigma_t**2 * score) / alpha_t
 
 
-def stat_matching_cross_loss(
+def _estimate_squared_mean_error(
     batch: list[ChemGraph], *, reference_info: ReferenceInfo, target_info: TargetInfo
 ) -> torch.Tensor:
     """
-    Compute the loss given the clean samples and the target statistics.
+    Compute a loss which is an unbiased estimate of [(mean foldedness of samples) - (target mean foldedness)]^2.
+
+    If X_i is the foldedness of sample i, then the loss is computed as the average of
+    (X_i - target)*(X_j - target) over all pairs i != j in the batch.
+
     Args:
-        batch_replications: ChemGraph batch, of length n_replications, all from single system.
+        batch: several sampled structures for the same system.
+        reference_info: reference contacts, used to compute FNC for each sample.
+        target_info: target foldedness information, used to convert FNC to foldedness and compare it to the target.
 
     Returns:
-        loss: torch.Tensor, the loss value. Mean over samples.
+        loss: an estimate of [(mean foldedness of samples) - (target mean foldedness)]^2.
     """
     assert isinstance(batch, list)  # Not a Batch!
     sequences = [x.sequence for x in batch]
