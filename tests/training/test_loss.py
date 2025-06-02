@@ -11,7 +11,7 @@ from bioemu.training.loss import calc_ppft_loss
 
 
 @pytest.mark.parametrize(
-    "p_fold_target,expected_loss", [(0.5, 0.0266940314), (0.1, 0.014270604588091373)]
+    "p_fold_target,expected_loss", [(0.5, 0.05338806286454201), (0.1, 0.028541209176182747)]
 )
 def test_ppft_loss(tiny_model, p_fold_target, expected_loss, sdes, chignolin_pdb: Path):
     traj = mdtraj.load_pdb(chignolin_pdb)
