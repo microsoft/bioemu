@@ -1,5 +1,0 @@
-_target_: bioemu.training.loss._fast_sample
-_partial_: true
-mid_t: 0.786
-N_rollout: 7
-record_grad_steps: []
