@@ -2,7 +2,7 @@ import torch
 from torch_geometric.data import Batch
 
 from bioemu.chemgraph import ChemGraph
-from bioemu.denoiser import dpm_solver
+from bioemu.denoiser import dpm_solver, get_score
 from bioemu.sde_lib import SDE
 from bioemu.so3_sde import SO3SDE
 from bioemu.training.foldedness import (
@@ -25,6 +25,7 @@ def calc_ppft_loss(
     reference_info_lookup: dict[str, ReferenceInfo],
     target_info_lookup: dict[str, TargetInfo],
 ) -> torch.Tensor:
+    record_grad_steps = set(record_grad_steps)  # If config is loaded from a file, it may be a list.
     device = batch[0].pos.device
     assert record_grad_steps.issubset(
         set(range(1, N_rollout + 1))
@@ -34,7 +35,7 @@ def calc_ppft_loss(
     num_systems_sampled = len(batch)
 
     x_in = Batch.from_data_list(batch * n_replications)
-    x0 = _fast_sample(
+    x0 = _rollout(
         batch=x_in,
         sdes=sdes,
         score_model=score_model,
@@ -61,7 +62,7 @@ def calc_ppft_loss(
     return loss / num_systems_sampled
 
 
-def _fast_sample(
+def _rollout(
     batch: Batch,
     sdes: dict[str, SDE],
     score_model,
@@ -81,7 +82,7 @@ def _fast_sample(
         sdes=sdes,
         batch=batch,
         eps_t=mid_t,
-        max_t=0.99,  # see dpm.yaml
+        max_t=0.99,
         N=N_rollout,
         device=device,
         record_grad_steps=record_grad_steps,
@@ -91,7 +92,9 @@ def _fast_sample(
     # Predict clean x (x0) from x_mid in a single jump.
     # This step is always with gradient.
     mid_t_expanded = torch.full((batch_size,), mid_t, device=device)
-    score_mid_t = score_model(x_mid, mid_t_expanded)["pos"]
+    score_mid_t = get_score(batch=x_mid, sdes=sdes, t=mid_t_expanded, score_model=score_model)[
+        "pos"
+    ]
 
     # No need to compute orientations, because they are not used to compute foldedness.
     x0_pos = _get_x0_given_xt_and_score(

@@ -107,7 +107,7 @@ class EulerMaruyamaPredictor:
         return self.update_given_drift_and_diffusion(x=x, dt=dt, drift=drift, diffusion=diffusion)
 
 
-def _get_score(
+def get_score(
     batch: ChemGraph, sdes: dict[str, SDE], score_model: torch.nn.Module, t: torch.Tensor
 ) -> dict[str, torch.Tensor]:
     """
@@ -203,7 +203,7 @@ def heun_denoiser(
             )[0]
         batch_hat = batch.replace(**vals_hat)
 
-        score = _get_score(batch=batch_hat, t=t_hat, score_model=score_model, sdes=sdes)
+        score = get_score(batch=batch_hat, t=t_hat, score_model=score_model, sdes=sdes)
 
         # First-order denoising step from t_hat to t_next.
         drift_hat = {}
@@ -222,7 +222,7 @@ def heun_denoiser(
 
         # Apply 2nd order correction.
         if t_next[0] > 0.0:
-            score = _get_score(batch=batch, t=t_next, score_model=score_model, sdes=sdes)
+            score = get_score(batch=batch, t=t_next, score_model=score_model, sdes=sdes)
 
             drifts = {}
             avg_drift = {}
@@ -302,7 +302,7 @@ def dpm_solver(
 
         # Evaluate score
         with torch.set_grad_enabled(i in record_grad_steps):
-            score = _get_score(batch=batch, t=t, score_model=score_model, sdes=sdes)
+            score = get_score(batch=batch, t=t, score_model=score_model, sdes=sdes)
         # t_{i-1} in the algorithm is the current t
         batch_idx = batch.batch
         alpha_t, sigma_t = pos_sde.mean_coeff_and_std(x=batch.pos, t=t, batch_idx=batch_idx)
@@ -361,7 +361,7 @@ def dpm_solver(
         # Correction step
         # Evaluate score at updated pos and node orientations
         with torch.set_grad_enabled(i in record_grad_steps):
-            score_u = _get_score(batch=batch_u, t=t_lambda, sdes=sdes, score_model=score_model)
+            score_u = get_score(batch=batch_u, t=t_lambda, sdes=sdes, score_model=score_model)
 
         pos_next = (
             alpha_t_next / alpha_t * batch.pos
