@@ -1156,8 +1156,6 @@ class BaseSampleSO3(nn.Module):
         sigma_grid_tmp = sigma_grid.to(torch.float64)
 
         # If cuda is available, initialize everything on GPU.
-        # Even if Pytorch Lightning usually handles GPU allocation after initialization, this is
-        # required to initialize the module in GPU reducing the initializaiton time by orders of magnitude.
         if torch.cuda.is_available():
             sigma_grid_tmp = sigma_grid_tmp.to(device="cuda")
 
