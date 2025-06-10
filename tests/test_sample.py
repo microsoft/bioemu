@@ -37,7 +37,6 @@ def test_generate_batch():
     with patch("bioemu.get_embeds.run_colabfold", side_effect=mock_run_colabfold), patch(
         "bioemu.get_embeds.ensure_colabfold_install"
     ):
-        rng_state = torch.random.get_rng_state()
         batch = generate_batch(
             score_model=mock_score_model,
             sequence=sequence,
@@ -47,10 +46,7 @@ def test_generate_batch():
             denoiser=denoiser,
             cache_embeds_dir=None,
         )
-        new_state = torch.random.get_rng_state()
-        assert torch.equal(
-            rng_state, new_state
-        ), "RNG state should not change after batch generation"
+
     assert "pos" in batch
     assert "node_orientations" in batch
     assert batch["pos"].shape == (batch_size, len(sequence), 3)

@@ -238,24 +238,23 @@ def generate_batch(
         msa_host_url: MSA server URL for colabfold.
     """
 
-    with torch.random.fork_rng():
-        torch.manual_seed(seed)
+    torch.manual_seed(seed)
 
-        context_chemgraph = get_context_chemgraph(
-            sequence=sequence,
-            cache_embeds_dir=cache_embeds_dir,
-            msa_file=msa_file,
-            msa_host_url=msa_host_url,
-        )
-        context_batch = Batch.from_data_list([context_chemgraph] * batch_size)
+    context_chemgraph = get_context_chemgraph(
+        sequence=sequence,
+        cache_embeds_dir=cache_embeds_dir,
+        msa_file=msa_file,
+        msa_host_url=msa_host_url,
+    )
+    context_batch = Batch.from_data_list([context_chemgraph] * batch_size)
 
-        device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-        sampled_chemgraph_batch = denoiser(
-            sdes=sdes,
-            device=device,
-            batch=context_batch,
-            score_model=score_model,
-        )
+    device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+    sampled_chemgraph_batch = denoiser(
+        sdes=sdes,
+        device=device,
+        batch=context_batch,
+        score_model=score_model,
+    )
     assert isinstance(sampled_chemgraph_batch, Batch)
     sampled_chemgraphs = sampled_chemgraph_batch.to_data_list()
     pos = torch.stack([x.pos for x in sampled_chemgraphs]).to("cpu")
