@@ -185,14 +185,13 @@ def get_context_chemgraph(
         msa_file=msa_file,
         msa_host_url=msa_host_url,
     )
-    single_embeds = np.load(single_embeds_file)
-    pair_embeds = np.load(pair_embeds_file)
+    single_embeds = torch.from_numpy(np.load(single_embeds_file))
+    pair_embeds = torch.from_numpy(np.load(pair_embeds_file))
     assert pair_embeds.shape[0] == pair_embeds.shape[1] == n
     assert single_embeds.shape[0] == n
     assert len(single_embeds.shape) == 2
     _, _, n_pair_feats = pair_embeds.shape  # [seq_len, seq_len, n_pair_feats]
 
-    single_embeds, pair_embeds = torch.from_numpy(single_embeds), torch.from_numpy(pair_embeds)
     pair_embeds = pair_embeds.view(n**2, n_pair_feats)
 
     edge_index = torch.cat(
@@ -239,23 +238,24 @@ def generate_batch(
         msa_host_url: MSA server URL for colabfold.
     """
 
-    torch.manual_seed(seed)
+    with torch.random.fork_rng():
+        torch.manual_seed(seed)
 
-    context_chemgraph = get_context_chemgraph(
-        sequence=sequence,
-        cache_embeds_dir=cache_embeds_dir,
-        msa_file=msa_file,
-        msa_host_url=msa_host_url,
-    )
-    context_batch = Batch.from_data_list([context_chemgraph] * batch_size)
+        context_chemgraph = get_context_chemgraph(
+            sequence=sequence,
+            cache_embeds_dir=cache_embeds_dir,
+            msa_file=msa_file,
+            msa_host_url=msa_host_url,
+        )
+        context_batch = Batch.from_data_list([context_chemgraph] * batch_size)
 
-    device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-    sampled_chemgraph_batch = denoiser(
-        sdes=sdes,
-        device=device,
-        batch=context_batch,
-        score_model=score_model,
-    )
+        device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+        sampled_chemgraph_batch = denoiser(
+            sdes=sdes,
+            device=device,
+            batch=context_batch,
+            score_model=score_model,
+        )
     assert isinstance(sampled_chemgraph_batch, Batch)
     sampled_chemgraphs = sampled_chemgraph_batch.to_data_list()
     pos = torch.stack([x.pos for x in sampled_chemgraphs]).to("cpu")
