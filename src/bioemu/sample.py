@@ -3,7 +3,6 @@
 """Script for sampling from a trained model."""
 
 import logging
-import os
 import typing
 from collections.abc import Callable
 from pathlib import Path
@@ -13,14 +12,13 @@ import hydra
 import numpy as np
 import torch
 import yaml
-from huggingface_hub import hf_hub_download
 from torch_geometric.data.batch import Batch
 from tqdm import tqdm
 
 from .chemgraph import ChemGraph
 from .convert_chemgraph import save_pdb_and_xtc
 from .get_embeds import get_colabfold_embeds
-from .models import DiGConditionalScoreModel
+from .model_utils import load_model, load_sdes, maybe_download_checkpoint
 from .sde_lib import SDE
 from .seq_io import check_protein_valid, parse_sequence, write_fasta
 from .utils import (
@@ -35,66 +33,6 @@ DEFAULT_DENOISER_CONFIG_DIR = Path(__file__).parent / "config/denoiser/"
 SupportedDenoisersLiteral = Literal["dpm", "heun"]
 SUPPORTED_DENOISERS = list(typing.get_args(SupportedDenoisersLiteral))
 
-SupportedModelNamesLiteral = Literal["bioemu-v1.0", "bioemu-rev"]
-SUPPORTED_MODEL_NAMES = list(typing.get_args(SupportedModelNamesLiteral))
-
-
-def maybe_download_checkpoint(
-    *,
-    model_name: SupportedModelNamesLiteral | None,
-    ckpt_path: str | Path | None = None,
-    model_config_path: str | Path | None = None,
-) -> tuple[str, str]:
-    """If ckpt_path and model config_path are specified, return them, else download named model from huggingface.
-    Returns:
-        tuple[str, str]: path to checkpoint, path to model config
-    """
-    if ckpt_path is not None:
-        assert model_config_path is not None, "Must provide model_config_path if ckpt_path is set."
-        return str(ckpt_path), str(model_config_path)
-    assert model_name is not None
-    assert (
-        model_config_path is None
-    ), f"Named model {model_name} comes with its own config. Do not provide model_config_path."
-
-    if model_name not in SUPPORTED_MODEL_NAMES:
-        raise ValueError(f"model_name must be one of: {SUPPORTED_MODEL_NAMES}")
-    ckpt_path = hf_hub_download(
-        repo_id="microsoft/bioemu", filename=f"checkpoints/{model_name}/checkpoint.ckpt"
-    )
-    model_config_path = hf_hub_download(
-        repo_id="microsoft/bioemu", filename=f"checkpoints/{model_name}/config.yaml"
-    )
-    return str(ckpt_path), str(model_config_path)
-
-
-def load_model(ckpt_path: str | Path, model_config_path: str | Path) -> DiGConditionalScoreModel:
-    """Load score model from checkpoint and config."""
-    assert os.path.isfile(ckpt_path), f"Checkpoint {ckpt_path} not found"
-    assert os.path.isfile(model_config_path), f"Model config {model_config_path} not found"
-
-    with open(model_config_path) as f:
-        model_config = yaml.safe_load(f)
-
-    model_state = torch.load(ckpt_path, map_location="cpu", weights_only=True)
-    score_model: DiGConditionalScoreModel = hydra.utils.instantiate(model_config["score_model"])
-    score_model.load_state_dict(model_state)
-    return score_model
-
-
-def load_sdes(
-    model_config_path: str | Path, cache_so3_dir: str | Path | None = None
-) -> dict[str, SDE]:
-    """Instantiate SDEs from config."""
-    with open(model_config_path) as f:
-        sdes_config = yaml.safe_load(f)["sdes"]
-
-    if cache_so3_dir is not None:
-        sdes_config["node_orientations"]["cache_dir"] = cache_so3_dir
-
-    sdes: dict[str, SDE] = hydra.utils.instantiate(sdes_config)
-    return sdes
-
 
 @print_traceback_on_exception
 @torch.no_grad()
@@ -103,7 +41,7 @@ def main(
     num_samples: int,
     output_dir: str | Path,
     batch_size_100: int = 10,
-    model_name: SupportedModelNamesLiteral | None = "bioemu-v1.0",
+    model_name: str | None = "bioemu-v1.0",
     ckpt_path: str | Path | None = None,
     model_config_path: str | Path | None = None,
     denoiser_type: SupportedDenoisersLiteral | None = "dpm",
@@ -233,31 +171,12 @@ def main(
     logger.info(f"Completed. Your samples are in {output_dir}.")
 
 
-def generate_batch(
-    score_model: torch.nn.Module,
+def get_context_chemgraph(
     sequence: str,
-    sdes: dict[str, SDE],
-    batch_size: int,
-    seed: int,
-    denoiser: Callable,
-    cache_embeds_dir: str | Path | None,
+    cache_embeds_dir: str | Path | None = None,
     msa_file: str | Path | None = None,
     msa_host_url: str | None = None,
-) -> dict[str, torch.Tensor]:
-    """Generate one batch of samples, using GPU if available.
-
-    Args:
-        score_model: Score model.
-        sequence: Amino acid sequence.
-        sdes: SDEs defining corruption process. Keys should be 'node_orientations' and 'pos'.
-        embeddings_file: Path to embeddings file.
-        batch_size: Batch size.
-        seed: Random seed.
-        msa_file: Optional path to an MSA A3M file.
-        msa_host_url: MSA server URL for colabfold.
-    """
-
-    torch.manual_seed(seed)
+) -> Batch:
     n = len(sequence)
 
     single_embeds_file, pair_embeds_file = get_colabfold_embeds(
@@ -286,14 +205,49 @@ def generate_batch(
     pos = torch.full((n, 3), float("nan"))
     node_orientations = torch.full((n, 3, 3), float("nan"))
 
-    chemgraph = ChemGraph(
+    return ChemGraph(
         edge_index=edge_index,
         pos=pos,
         node_orientations=node_orientations,
         single_embeds=single_embeds,
         pair_embeds=pair_embeds,
+        sequence=sequence,
     )
-    context_batch = Batch.from_data_list([chemgraph for _ in range(batch_size)])
+
+
+def generate_batch(
+    score_model: torch.nn.Module,
+    sequence: str,
+    sdes: dict[str, SDE],
+    batch_size: int,
+    seed: int,
+    denoiser: Callable,
+    cache_embeds_dir: str | Path | None,
+    msa_file: str | Path | None = None,
+    msa_host_url: str | None = None,
+) -> dict[str, torch.Tensor]:
+    """Generate one batch of samples, using GPU if available.
+
+    Args:
+        score_model: Score model.
+        sequence: Amino acid sequence.
+        sdes: SDEs defining corruption process. Keys should be 'node_orientations' and 'pos'.
+        embeddings_file: Path to embeddings file.
+        batch_size: Batch size.
+        seed: Random seed.
+        msa_file: Optional path to an MSA A3M file.
+        msa_host_url: MSA server URL for colabfold.
+    """
+
+    torch.manual_seed(seed)
+
+    context_chemgraph = get_context_chemgraph(
+        sequence=sequence,
+        cache_embeds_dir=cache_embeds_dir,
+        msa_file=msa_file,
+        msa_host_url=msa_host_url,
+    )
+    context_batch = Batch.from_data_list([context_chemgraph] * batch_size)
 
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
     sampled_chemgraph_batch = denoiser(

@@ -272,6 +272,7 @@ def dpm_solver(
     Following this paper: https://arxiv.org/abs/2206.00927 Algorithm 1 DPM-Solver-2.
     DPM solver is used only for positions, not node orientations.
     """
+    grad_is_enabled = torch.is_grad_enabled()
     assert isinstance(batch, ChemGraph)
     assert max_t < 1.0
 
@@ -301,7 +302,7 @@ def dpm_solver(
         t = torch.full((batch.num_graphs,), timesteps[i], device=device)
 
         # Evaluate score
-        with torch.set_grad_enabled(i in record_grad_steps):
+        with torch.set_grad_enabled(grad_is_enabled and i in record_grad_steps):
             score = get_score(batch=batch, t=t, score_model=score_model, sdes=sdes)
         # t_{i-1} in the algorithm is the current t
         batch_idx = batch.batch
@@ -360,7 +361,7 @@ def dpm_solver(
 
         # Correction step
         # Evaluate score at updated pos and node orientations
-        with torch.set_grad_enabled(i in record_grad_steps):
+        with torch.set_grad_enabled(grad_is_enabled and i in record_grad_steps):
             score_u = get_score(batch=batch_u, t=t_lambda, sdes=sdes, score_model=score_model)
 
         pos_next = (
