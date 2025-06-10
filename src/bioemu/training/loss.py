@@ -162,6 +162,6 @@ def _estimate_squared_mean_error(
     p_fold_diff = foldedness - target_info.p_fold_target
 
     # Compute the cross product loss for each pair of i.i.d. samples.
-    # (sum_i x_i)^2 - sum_i x_i^2 = sum_{i\neq j} x_i x_j
+    # (sum_i diff_i)^2 - sum_i diff_i^2 = sum_{i\neq j} diff_i * diff_j where diff_i = X_i - target
     sum_diff = torch.sum(p_fold_diff, dim=0)
     return (sum_diff**2 - torch.sum(p_fold_diff**2, dim=0)) / (n * (n - 1))
