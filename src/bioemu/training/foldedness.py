@@ -189,10 +189,6 @@ def compute_contacts(traj: mdtraj.Trajectory) -> ReferenceInfo:
         if abs(res_position_i - res_position_j) > SEQUENCE_SEPARATION:
             heavy_pairs.append((i, j))
 
-            # TODO: why do we need this? This extra pair is redundant
-            # Make symmetric for per-residue resolution of contacts:
-            heavy_pairs.append((j, i))
-
     # Compute the distances between the valid heavy pairs.
     heavy_pairs = np.array(heavy_pairs)
     heavy_pairs_distances_angstrom = mdtraj.compute_distances(traj, heavy_pairs)[0] * 10.0
