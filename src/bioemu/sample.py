@@ -176,7 +176,7 @@ def get_context_chemgraph(
     cache_embeds_dir: str | Path | None = None,
     msa_file: str | Path | None = None,
     msa_host_url: str | None = None,
-) -> Batch:
+) -> ChemGraph:
     n = len(sequence)
 
     single_embeds_file, pair_embeds_file = get_colabfold_embeds(
