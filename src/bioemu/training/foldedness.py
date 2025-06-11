@@ -1,3 +1,5 @@
+# Copyright (c) Microsoft Corporation.
+# Licensed under the MIT License.
 from dataclasses import dataclass
 from itertools import combinations
 
