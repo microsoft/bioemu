@@ -22,7 +22,7 @@ def mock_score_model(batch, t):
     }
 
 
-def test_generate_batch(tmp_path):
+def test_generate_batch():
     sequence = TEST_SEQ
     sdes = {"node_orientations": DiGSO3SDE(), "pos": CosineVPSDE()}
     batch_size = 2
@@ -37,7 +37,6 @@ def test_generate_batch(tmp_path):
     with patch("bioemu.get_embeds.run_colabfold", side_effect=mock_run_colabfold), patch(
         "bioemu.get_embeds.ensure_colabfold_install"
     ):
-        # cache_embeds_dir could be None when input to get_colabfold_embeds
         batch = generate_batch(
             score_model=mock_score_model,
             sequence=sequence,

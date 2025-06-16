@@ -416,34 +416,36 @@ def save_pdb_and_xtc(
         filter_samples: Filter out unphysical samples with e.g. long bond distances or steric
           clashes.
     """
-    assert len(pos_nm.shape) == 3
-    assert len(node_orientations.shape) == 4
-    assert len(sequence) == pos_nm.shape[1] == node_orientations.shape[1]
-    assert node_orientations.shape[0] == pos_nm.shape[0]  # batch size
-    assert node_orientations.shape[2:] == (3, 3)
+    batch_size, _, _ = pos_nm.shape
+    assert pos_nm.shape == (batch_size, len(sequence), 3)
+    assert node_orientations.shape == (batch_size, len(sequence), 3, 3)
 
-    pos = pos_nm * 10.0  # Convert to Angstroms
-    pos = pos - pos.mean(axis=1, keepdims=True)  # Center every structure at the origin
+    # The unit conversions here look strange but they are necessary:
+    # PDB files contain coordinates in Angstroms, while mdtraj.Trajectory objects
+    # contain coordinates in nm.
+    pos_angstrom = pos_nm * 10.0  # Convert to Angstroms
+    pos_angstrom = pos_angstrom - pos_angstrom.mean(
+        axis=1, keepdims=True
+    )  # Center every structure at the origin
 
+    # .pdb files contain coordinates in Angstrom
     _write_pdb(
-        pos=pos[0],
+        pos=pos_angstrom[0],
         node_orientations=node_orientations[0],
         sequence=sequence,
         filename=topology_path,
     )
 
-    batch_size, _, _ = pos.shape
-    xyz = []
+    xyz_angstrom = []
     for i in range(batch_size):
         atom_37, atom_37_mask, _ = get_atom37_from_frames(
-            pos=pos[i], node_orientations=node_orientations[i], sequence=sequence
+            pos=pos_angstrom[i], node_orientations=node_orientations[i], sequence=sequence
         )
-        xyz.append(atom_37.view(-1, 3)[atom_37_mask.flatten()].cpu().numpy())
+        xyz_angstrom.append(atom_37.view(-1, 3)[atom_37_mask.flatten()].cpu().numpy())
 
     topology = mdtraj.load_topology(topology_path)
 
-    # Convert positions back to nm for saving to xtc.
-    traj = mdtraj.Trajectory(xyz=np.stack(xyz) * 0.1, topology=topology)
+    traj = mdtraj.Trajectory(xyz=np.stack(xyz_angstrom) * 0.1, topology=topology)
 
     if filter_samples:
         num_samples_unfiltered = len(traj)
@@ -465,7 +467,7 @@ def _write_pdb(
     Convert coarse-grained frame info to backbone atom positions and write to a PDB file.
 
     Args:
-        pos: (N, 3) tensor of positions in nm.
+        pos: (N, 3) tensor of positions in Angstrom.
         node_orientations: (N, 3, 3) tensor of node orientations.
         sequence: Amino acid sequence.
         filename: Output filename.

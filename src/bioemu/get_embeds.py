@@ -143,7 +143,7 @@ def get_colabfold_embeds(
 
     Args:
         seq: Protein sequence to query
-        cache_embeds_dir: Cache directory where embeddings will be stored. If None, defaults to a child of the colabfold install directory.
+        cache_embeds_dir: Cache directory where embeddings will be stored. If None, defaults to ~/.bioemu_embeds_cache.
         msa_file: MSA A3M file to use as input. If None, the sequence is used as input.
         msa_host_url: MSA host URL. If None, defaults to the colabfold default, which is a remote server.
 

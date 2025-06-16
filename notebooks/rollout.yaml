@@ -1,0 +1,7 @@
+# Copyright (c) Microsoft Corporation.
+# Licensed under the MIT License.
+_target_: bioemu.training.loss._rollout
+_partial_: true
+mid_t: 0.786
+N_rollout: 7
+record_grad_steps: [3,4,5] # Steps with larger N are higher noise levels; pick a few of these.
