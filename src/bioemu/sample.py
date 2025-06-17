@@ -106,10 +106,6 @@ def main(
     output_dir = Path(output_dir).expanduser().resolve()
     output_dir.mkdir(parents=True, exist_ok=True)  # Fail fast if output_dir is non-writeable
 
-    if model_name == "bioemu-rev":
-        logger.info(
-            "The default bioemu model has changed in the 1.0 release. If you wish to replicate previous behaviour, please set `model_name='bioemu-v1.0'`"
-        )
     ckpt_path, model_config_path = maybe_download_checkpoint(
         model_name=model_name, ckpt_path=ckpt_path, model_config_path=model_config_path
     )
