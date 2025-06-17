@@ -92,7 +92,7 @@ def main(
         model_name: Name of pretrained model to use. If this is set, you do not need to provide `ckpt_path` or `model_config_path`.
             The model will be retrieved from huggingface; the following models are currently available:
             - bioemu-v1.0: checkpoint used in the original preprint (https://www.biorxiv.org/content/10.1101/2024.12.05.626885v2)
-            - bioemu-v1.1: checkpoint with improved protein stability behavior
+            - bioemu-v1.1: checkpoint with improved protein stability performance
         ckpt_path: Path to the model checkpoint. If this is set, `model_name` will be ignored.
         model_config_path: Path to the model config, defining score model architecture and the corruption process the model was trained with.
            Only required if `ckpt_path` is set.
