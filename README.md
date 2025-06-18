@@ -20,8 +20,9 @@ This repository contains inference code and model weights.
 ## Table of Contents
 - [Installation](#installation)
 - [Sampling structures](#sampling-structures)
-- [Citation](#citation)
+- [Azure AI Foundry](#azure-ai-foundry)
 - [Get in touch](#get-in-touch)
+- [Citation](#citation)
 
 ## Installation
 bioemu is provided as a Linux-only pip-installable package:
@@ -63,6 +64,12 @@ By default, unphysical structures (steric clashes or chain discontinuities) will
 > If you wish to use your own generated MSA instead of the ones retrieved via Colabfold, you can pass an A3M file containing the query sequence as the first row to the `sequence` argument. Additionally, the `msa_host_url` argument can be used to override the default Colabfold MSA query server. See [sample.py](./src/bioemu/sample.py) for more options.
 
 This code only supports sampling structures of monomers. You can try to sample multimers using the [linker trick](https://x.com/ag_smith/status/1417063635000598528), but in our limited experiments, this has not worked well.
+
+
+## Azure AI Foundry
+BioEmu is also available on [Azure AI Foundry](https://ai.azure.com/). See [How to run BioEmu on Azure AI Foundry](AZURE_AI_FOUNDRY.md) for more details.
+
+
 ## Reproducing results from the preprint
 You can use this code together with code from [bioemu-benchmarks](https://github.com/microsoft/bioemu-benchmarks) to approximately reproduce results from our [preprint](https://www.biorxiv.org/content/10.1101/2024.12.05.626885v1).
 
