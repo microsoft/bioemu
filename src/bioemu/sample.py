@@ -41,7 +41,7 @@ def main(
     num_samples: int,
     output_dir: str | Path,
     batch_size_100: int = 10,
-    model_name: str | None = "bioemu-v1.0",
+    model_name: Literal["bioemu-v1.0", "bioemu-v1.1"] | None = "bioemu-v1.1",
     ckpt_path: str | Path | None = None,
     model_config_path: str | Path | None = None,
     denoiser_type: SupportedDenoisersLiteral | None = "dpm",
@@ -61,8 +61,10 @@ def main(
         output_dir: Directory to save the samples. Each batch of samples will initially be dumped as .npz files. Once all batches are sampled, they will be converted to .xtc and .pdb.
         batch_size_100: Batch size you'd use for a sequence of length 100. The batch size will be calculated from this, assuming
            that the memory requirement to compute each sample scales quadratically with the sequence length.
-        model_name: Name of pretrained model to use. The model will be retrieved from huggingface. If not set,
-           this defaults to `bioemu-v1.0`. If this is set, you do not need to provide `ckpt_path` or `model_config_path`.
+        model_name: Name of pretrained model to use. If this is set, you do not need to provide `ckpt_path` or `model_config_path`.
+            The model will be retrieved from huggingface; the following models are currently available:
+            - bioemu-v1.0: checkpoint used in the original preprint (https://www.biorxiv.org/content/10.1101/2024.12.05.626885v2)
+            - bioemu-v1.1: checkpoint with improved protein stability performance
         ckpt_path: Path to the model checkpoint. If this is set, `model_name` will be ignored.
         model_config_path: Path to the model config, defining score model architecture and the corruption process the model was trained with.
            Only required if `ckpt_path` is set.
