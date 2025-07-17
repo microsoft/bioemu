@@ -117,11 +117,12 @@ If you have any questions not covered here, please create an issue or contact th
 ## Citation
 If you are using our code or model, please consider citing our work:
 ```bibtex
-@article {BioEmu2024,
-    author = {Lewis, Sarah and Hempel, Tim and Jim{\'e}nez-Luna, Jos{\'e} and Gastegger, Michael and Xie, Yu and Foong, Andrew Y. K. and Satorras, Victor Garc{\'\i}a and Abdin, Osama and Veeling, Bastiaan S. and Zaporozhets, Iryna and Chen, Yaoyi and Yang, Soojung and Schneuing, Arne and Nigam, Jigyasa and Barbero, Federico and Stimper, Vincent and Campbell, Andrew and Yim, Jason and Lienen, Marten and Shi, Yu and Zheng, Shuxin and Schulz, Hannes and Munir, Usman and Clementi, Cecilia and No{\'e}, Frank},
-    title = {Scalable emulation of protein equilibrium ensembles with generative deep learning},
-    year = {2024},
-    doi = {10.1101/2024.12.05.626885},
-    journal = {bioRxiv}
+@article{bioemu2025,
+  title={Scalable emulation of protein equilibrium ensembles with generative deep learning},
+  author={Lewis, Sarah and Hempel, Tim and Jim{\'e}nez-Luna, Jos{\'e} and Gastegger, Michael and Xie, Yu and Foong, Andrew YK and Satorras, Victor Garc{\'\i}a and Abdin, Osama and Veeling, Bastiaan S and Zaporozhets, Iryna and others},
+  journal={Science},
+  pages={eadv9817},
+  year={2025},
+  publisher={American Association for the Advancement of Science}
 }
 ```
