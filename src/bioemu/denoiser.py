@@ -153,6 +153,8 @@ def heun_denoiser(
 ) -> ChemGraph:
     """Sample from prior and then denoise."""
 
+    # TODO: implement fk steering
+
     batch = batch.to(device)
     if isinstance(score_model, torch.nn.Module):
         # permits unit-testing with dummy model
@@ -266,7 +268,6 @@ def dpm_solver(
     device: torch.device,
     record_grad_steps: set[int] = set(),
 ) -> ChemGraph:
-
     """
     Implements the DPM solver for the VPSDE, with the Cosine noise schedule.
     Following this paper: https://arxiv.org/abs/2206.00927 Algorithm 1 DPM-Solver-2.
