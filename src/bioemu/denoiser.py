@@ -154,6 +154,11 @@ def heun_denoiser(
     """Sample from prior and then denoise."""
 
     # TODO: implement fk steering
+    '''
+    Get x0(x_t) from score
+    Create batch of samples with the same information
+    Implement idealized bond lengths between neighboring C_a atoms and clash potentials between non-neighboring
+    '''
 
     batch = batch.to(device)
     if isinstance(score_model, torch.nn.Module):
