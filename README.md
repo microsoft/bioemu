@@ -13,7 +13,7 @@
 
 Biomolecular Emulator (BioEmu for short) is a model that samples from the approximated equilibrium distribution of structures for a protein monomer, given its amino acid sequence.
 
-For more information see our [paper](assets/bioemu_paper.pdf), [citation below](#citation).
+For more information see our <a href="assets/bioemu_paper.pdf" target="_blank">paper</a>, [citation below](#citation).
 
 This repository contains inference code and model weights.
 
