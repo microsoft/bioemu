@@ -18,7 +18,8 @@ from bioemu.so3_sde import DiGSO3SDE, rotmat_to_rotvec
 
 
 @pytest.mark.parametrize(
-    "solver,denoiser_kwargs", [(dpm_solver, {}), (dpm_solver, {"noise": 0.5}), (heun_denoiser, {"noise": 0.5})]
+    "solver,denoiser_kwargs",
+    [(dpm_solver, {}), (dpm_solver, {"noise": 0.5}), (heun_denoiser, {"noise": 0.5})],
 )
 def test_reverse_sampling(solver, denoiser_kwargs):
     torch.manual_seed(1)

@@ -311,7 +311,6 @@ def dpm_solver(
         t = torch.full((batch.num_graphs,), timesteps[i], device=device)
         t_hat = t - noise * dt if (i > 0 and t[0] > ts_min and t[0] < ts_max) else t
 
-
         # Apply noise.
         vals_hat = {}
         for field in fields:
@@ -320,11 +319,10 @@ def dpm_solver(
             )[0]
         batch_hat = batch.replace(**vals_hat)
 
-
         # Evaluate score
         with torch.set_grad_enabled(grad_is_enabled and (i in record_grad_steps)):
             score = get_score(batch=batch_hat, t=t_hat, score_model=score_model, sdes=sdes)
-        
+
         # t_{i-1} in the algorithm is the current t
         batch_idx = batch_hat.batch
         alpha_t, sigma_t = pos_sde.mean_coeff_and_std(x=batch.pos, t=t_hat, batch_idx=batch_idx)
