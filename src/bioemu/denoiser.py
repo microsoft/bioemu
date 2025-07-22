@@ -301,12 +301,6 @@ def dpm_solver(
     ts_min = 0.0
     ts_max = 1.0
     fields = list(sdes.keys())
-    predictors = {
-        name: EulerMaruyamaPredictor(
-            corruption=sde, noise_weight=0.0, marginal_concentration_factor=1.0
-        )
-        for name, sde in sdes.items()
-    }
     noisers = {
         name: EulerMaruyamaPredictor(
             corruption=sde, noise_weight=1.0, marginal_concentration_factor=1.0
@@ -360,14 +354,6 @@ def dpm_solver(
             + sigma_t_lambda * sigma_t * (torch.exp(h_t / 2) - 1) * score["pos"]
         )
 
-        # # SDE version
-        # print("SDE version")
-        # u = (
-        #     alpha_t_lambda / alpha_t * batch.pos
-        #     + 2.0 * sigma_t_lambda * sigma_t * (torch.exp(h_t / 2) - 1) * score["pos"]
-        #     + sigma_t * torch.sqrt(torch.exp(h_t) - 1) * torch.randn_like(batch.pos)
-        # )
-
         # Update positions to the intermediate timestep t_lambda
         batch_u = batch.replace(pos=u)
 
@@ -403,20 +389,12 @@ def dpm_solver(
             alpha_t_next / alpha_t * batch_hat.pos
             + sigma_t_next * sigma_t_lambda * (torch.exp(h_t) - 1) * score_u["pos"]
         )
-        # print("SDE version")
-        # pos_next = (
-        #     alpha_t_next / alpha_t * batch_hat.pos
-        #     + 2.0 * sigma_t_next * sigma_t_lambda * (torch.exp(h_t) - 1) * score_u["pos"]
-        #     + sigma_t * torch.sqrt(torch.exp(2.0 * h_t) - 1) * torch.randn_like(batch.pos)
-        # )
-
         batch_next = batch.replace(pos=pos_next)
 
         assert score_u["node_orientations"].shape == (u.shape[0], 3)
 
         # Try a 2nd order correction
         dt_hat = t + dt - t_hat
-        # print(score_u["node_orientations"].shape, score["node_orientations"].shape, t_lambda.shape, t_hat.shape, dt_hat.shape)
         node_score = (
             score_u["node_orientations"]
             + 0.5
@@ -436,15 +414,6 @@ def dpm_solver(
             diffusion=0.0,
             dt=dt_hat[0],
         )  # dt is negative, diffusion is 0
-        # print("SO3 SDE")
-        # sample, _ = so3_predictor.update_given_drift_and_diffusion(
-        #     x=batch.node_orientations,
-        #     drift=2.0 * drift,
-        #     diffusion=diffusion,
-        #     dt=dt,
-        # )  # dt is negative, diffusion is 0
         batch = batch_next.replace(node_orientations=sample)
 
     return batch
-
-
