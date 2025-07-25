@@ -1,14 +1,17 @@
 # Copyright (c) Microsoft Corporation.
 # Licensed under the MIT License.
-from typing import cast
+from typing import cast, Callable, List
 
 import numpy as np
 import torch
+import copy
 from torch_geometric.data.batch import Batch
 
 from .chemgraph import ChemGraph
 from .sde_lib import SDE, CosineVPSDE
 from .so3_sde import SO3SDE, apply_rotvec_to_rotmat
+from bioemu.steering import get_pos0_rot0, CaCaDistancePotential, StructuralViolation, resample_batch
+from bioemu.convert_chemgraph import _write_batch_pdb
 
 TwoBatches = tuple[Batch, Batch]
 
@@ -273,6 +276,7 @@ def dpm_solver(
     device: torch.device,
     record_grad_steps: set[int] = set(),
     noise: float = 0.0,
+    fk_potentials: List[Callable] | None = None,
 ) -> ChemGraph:
     """
     Implements the DPM solver for the VPSDE, with the Cosine noise schedule.
@@ -313,6 +317,8 @@ def dpm_solver(
         )
         for name, sde in sdes.items()
     }
+    x0, R0 = [], []
+    previous_energy = None
     for i in range(N - 1):
         t = torch.full((batch.num_graphs,), timesteps[i], device=device)
         t_hat = t - noise * dt if (i > 0 and t[0] > ts_min and t[0] < ts_max) else t
@@ -420,4 +426,19 @@ def dpm_solver(
         )  # dt is negative, diffusion is 0
         batch = batch_next.replace(node_orientations=sample)
 
-    return batch
+        # Steering
+        seq_length = len(batch.sequence[0])
+        x0_t, R0_t = get_pos0_rot0(sdes=sdes, batch=batch, t=t, score=score)
+        # x0_t = batch.pos.reshape(batch.batch_size, seq_length, 3).detach().cpu()
+        # R0_t = batch.node_orientations.reshape(batch.batch_size, seq_length, 3, 3).detach().cpu()
+        x0 += [x0_t]
+        R0 += [R0_t]
+
+        total_energy = StructuralViolation()(x0_t, R0_t, batch.sequence, t=i / (N - 1))
+        if total_energy is not None:
+            batch = resample_batch(batch, total_energy, previous_energy)
+
+        print(i, total_energy)
+    x0 = [x0[-1]] + x0  # add the last clean sample to the front to make Protein Viewer display it nicely
+    R0 = [R0[-1]] + R0
+    return batch, (x0, R0)

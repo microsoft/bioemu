@@ -50,6 +50,7 @@ def main(
     cache_so3_dir: str | Path | None = None,
     msa_host_url: str | None = None,
     filter_samples: bool = True,
+    fk_potentials: list[Callable] | None = None,
 ) -> None:
     """
     Generate samples for a specified sequence, using a trained model.
@@ -149,7 +150,9 @@ def main(
             cache_embeds_dir=cache_embeds_dir,
             msa_file=msa_file,
             msa_host_url=msa_host_url,
+            fk_potentials=fk_potentials,
         )
+        # torch.testing.assert_allclose(batch['pos'], batch['denoised_pos'][:, -1])
         batch = {k: v.cpu().numpy() for k, v in batch.items()}
         np.savez(npz_path, **batch, sequence=sequence)
 
@@ -159,9 +162,15 @@ def main(
     if set(sequences) != {sequence}:
         raise ValueError(f"Expected all sequences to be {sequence}, but got {set(sequences)}")
     positions = torch.tensor(np.concatenate([np.load(f)["pos"] for f in samples_files]))
+    denoised_positions = torch.tensor(np.concatenate([np.load(f)["denoised_pos"] for f in samples_files], axis=0))
     node_orientations = torch.tensor(
         np.concatenate([np.load(f)["node_orientations"] for f in samples_files])
     )
+    denoised_node_orientations = torch.tensor(
+        np.concatenate([np.load(f)["denoised_node_orientations"] for f in samples_files])
+    )
+    # torch.testing.assert_allclose(positions, denoised_positions[:, -1])
+    # torch.testing.assert_allclose(node_orientations, denoised_node_orientations[:, -1])
     save_pdb_and_xtc(
         pos_nm=positions,
         node_orientations=node_orientations,
@@ -169,6 +178,14 @@ def main(
         xtc_path=output_dir / "samples.xtc",
         sequence=sequence,
         filter_samples=filter_samples,
+    )
+    save_pdb_and_xtc(
+        pos_nm=denoised_positions[0],
+        node_orientations=denoised_node_orientations[0],
+        topology_path=output_dir / "denoising_trajectory.pdb",
+        xtc_path=output_dir / "denoising_samples.xtc",
+        sequence=sequence,
+        filter_samples=False,
     )
     logger.info(f"Completed. Your samples are in {output_dir}.")
 
@@ -226,6 +243,7 @@ def generate_batch(
     cache_embeds_dir: str | Path | None,
     msa_file: str | Path | None = None,
     msa_host_url: str | None = None,
+    fk_potentials: list[Callable] | None = None,
 ) -> dict[str, torch.Tensor]:
     """Generate one batch of samples, using GPU if available.
 
@@ -251,18 +269,22 @@ def generate_batch(
     context_batch = Batch.from_data_list([context_chemgraph] * batch_size)
 
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-    sampled_chemgraph_batch = denoiser(
+    sampled_chemgraph_batch, denoising_trajectory = denoiser(
         sdes=sdes,
         device=device,
         batch=context_batch,
         score_model=score_model,
+        fk_potentials=fk_potentials,
     )
     assert isinstance(sampled_chemgraph_batch, Batch)
     sampled_chemgraphs = sampled_chemgraph_batch.to_data_list()
     pos = torch.stack([x.pos for x in sampled_chemgraphs]).to("cpu")
     node_orientations = torch.stack([x.node_orientations for x in sampled_chemgraphs]).to("cpu")
-
-    return {"pos": pos, "node_orientations": node_orientations}
+    denoised_pos = torch.stack(denoising_trajectory[0], axis=1)
+    denoised_node_orientations = torch.stack(denoising_trajectory[1], axis=1)
+    # Denoising
+    # torch.testing.assert_allclose(pos[0], denoised_pos[0, -1])
+    return {"pos": pos, "node_orientations": node_orientations, 'denoised_pos': denoised_pos, 'denoised_node_orientations': denoised_node_orientations}
 
 
 if __name__ == "__main__":

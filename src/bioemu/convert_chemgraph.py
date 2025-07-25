@@ -430,10 +430,16 @@ def save_pdb_and_xtc(
 
     # .pdb files contain coordinates in Angstrom
     _write_pdb(
-        pos=pos_angstrom[0],
-        node_orientations=node_orientations[0],
+        pos=pos_angstrom[-1],
+        node_orientations=node_orientations[-1],
         sequence=sequence,
         filename=topology_path,
+    )
+    _write_batch_pdb(
+        pos=pos_angstrom,
+        node_orientations=node_orientations,
+        sequence=sequence,
+        filename=str(topology_path),
     )
 
     xyz_angstrom = []
@@ -483,8 +489,46 @@ def _write_pdb(
         atom_positions=atom_37.cpu().numpy(),
         aatype=aatype.cpu().numpy(),
         atom_mask=atom_37_mask.cpu().numpy(),
-        residue_index=np.arange(num_residues, dtype=np.int64),
+        residue_index=np.arange(num_residues, dtype=np.int64) + 1,
         b_factors=np.zeros((num_residues, 37)),
     )
     with open(filename, "w") as f:
         f.write(to_pdb(protein))
+
+
+def _write_batch_pdb(
+    pos: torch.Tensor,
+    node_orientations: torch.Tensor,
+    sequence: str,
+    filename: str | Path,
+) -> None:
+    """
+    Write a batch of coarse-grained structures to a single PDB file, each as a MODEL entry.
+
+    Args:
+        pos_batch: (B, N, 3) tensor of positions in Angstrom.
+        node_orientations_batch: (B, N, 3, 3) tensor of node orientations.
+        sequence: Amino acid sequence.
+        filename: Output filename.
+    """
+    batch_size, num_residues, _ = pos.shape
+    assert node_orientations.shape == (batch_size, num_residues, 3, 3)
+    pdb_entries = []
+    for i in range(batch_size):
+        atom_37, atom_37_mask, aatype = get_atom37_from_frames(
+            pos=pos[i], node_orientations=node_orientations[i], sequence=sequence
+        )
+        protein = Protein(
+            atom_positions=atom_37.cpu().numpy(),
+            aatype=aatype.cpu().numpy(),
+            atom_mask=atom_37_mask.cpu().numpy(),
+            residue_index=np.arange(num_residues, dtype=np.int64) + 1,
+            b_factors=np.zeros((num_residues, 37)),
+        )
+        pdb_str = to_pdb(protein)
+        pdb_str = pdb_str.replace("\nEND\n", "")
+        pdb_entries.append(f"MODEL        {i + 1}\n{pdb_str}\nENDMDL\n")
+    pdb_entries.append('END')
+    filename = str(filename).replace(".pdb", "_batch.pdb")
+    with open(filename, "w") as f:
+        f.writelines(pdb_entries)
