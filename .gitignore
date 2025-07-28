@@ -4,6 +4,8 @@
 #vs code
 .vscode
 .vscode/
+.github/copilot-instructions.md
+outputs/
 
 # Jetbrains
 .idea
