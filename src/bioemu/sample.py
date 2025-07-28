@@ -51,6 +51,7 @@ def main(
     msa_host_url: str | None = None,
     filter_samples: bool = True,
     fk_potentials: list[Callable] | None = None,
+    num_fk_samples: int | None = 10,
 ) -> None:
     """
     Generate samples for a specified sequence, using a trained model.
@@ -75,10 +76,15 @@ def main(
         cache_so3_dir: Directory to store SO3 precomputations. If not set, this defaults to `~/sampling_so3_cache`.
         msa_host_url: MSA server URL. If not set, this defaults to colabfold's remote server. If sequence is an a3m file, this is ignored.
         filter_samples: Filter out unphysical samples with e.g. long bond distances or steric clashes.
+        fk_potentials: List of callable potentials to steer the sampling process. If None, no steering is applied.
+        num_fk_samples: Number of samples to generate for from we do resampling a la Sequential Monte Carlo
     """
 
     output_dir = Path(output_dir).expanduser().resolve()
     output_dir.mkdir(parents=True, exist_ok=True)  # Fail fast if output_dir is non-writeable
+
+    if num_fk_samples is None:
+        num_fk_samples = 1
 
     ckpt_path, model_config_path = maybe_download_checkpoint(
         model_name=model_name, ckpt_path=ckpt_path, model_config_path=model_config_path
@@ -144,13 +150,14 @@ def main(
             score_model=score_model,
             sequence=sequence,
             sdes=sdes,
-            batch_size=min(batch_size, n),
+            batch_size=min(batch_size, n) * num_fk_samples,
             seed=seed,
             denoiser=denoiser,
             cache_embeds_dir=cache_embeds_dir,
             msa_file=msa_file,
             msa_host_url=msa_host_url,
             fk_potentials=fk_potentials,
+            num_fk_samples=num_fk_samples,
         )
         # torch.testing.assert_allclose(batch['pos'], batch['denoised_pos'][:, -1])
         batch = {k: v.cpu().numpy() for k, v in batch.items()}
@@ -244,6 +251,7 @@ def generate_batch(
     msa_file: str | Path | None = None,
     msa_host_url: str | None = None,
     fk_potentials: list[Callable] | None = None,
+    num_fk_samples: int = 10,
 ) -> dict[str, torch.Tensor]:
     """Generate one batch of samples, using GPU if available.
 
@@ -275,6 +283,7 @@ def generate_batch(
         batch=context_batch,
         score_model=score_model,
         fk_potentials=fk_potentials,
+        num_fk_samples=num_fk_samples,
     )
     assert isinstance(sampled_chemgraph_batch, Batch)
     sampled_chemgraphs = sampled_chemgraph_batch.to_data_list()

@@ -345,6 +345,51 @@ def _filter_unphysical_traj_masks(
     return frames_match_ca_seq_distance, frames_match_cn_seq_distance, frames_non_clash
 
 
+def kabsch_align(P: np.ndarray, Q: np.ndarray) -> tuple[torch.Tensor, torch.Tensor]:
+    """
+    Computes the optimal rotation and translation (using the Kabsch algorithm)
+    that aligns point cloud P to point cloud Q, and applies the transformation
+    to both P and Q (returns aligned versions).
+
+    Args:
+        P: (N, 3) torch tensor of points to be aligned.
+        Q: (N, 3) torch tensor of reference points.
+
+    Returns:
+        R: (3, 3) optimal rotation matrix (torch tensor).
+        t: (3,) optimal translation vector (torch tensor).
+        P_aligned: (N, 3) P transformed to best align with Q.
+        Q_centered: (N, 3) Q centered at origin (for reference).
+    """
+    assert P.shape == Q.shape and P.shape[1] == 3
+
+    # Center the point clouds
+    P_centroid = P.mean(dim=0)
+    Q_centroid = Q.mean(dim=0)
+    P_centered = P - P_centroid
+    Q_centered = Q - Q_centroid
+
+    # Covariance matrix
+    H = P_centered.T @ Q_centered
+
+    # SVD
+    U, S, Vt = torch.linalg.svd(H)
+    R = Vt.T @ U.T
+
+    # Ensure right-handed coordinate system (determinant = +1)
+    if torch.det(R) < 0:
+        Vt[-1, :] *= -1
+        R = Vt.T @ U.T
+
+    t = Q_centroid - R @ P_centroid
+
+    # Apply transformation to P and Q
+    P_aligned = (R @ P.T).T + t
+    Q_centered = Q - Q_centroid  # Q centered at origin
+
+    return R, t  # ,P_aligned, Q_centered
+
+
 def _get_physical_traj_indices(
     traj: mdtraj.Trajectory,
     max_ca_seq_distance: float = 4.5,
@@ -461,6 +506,8 @@ def save_pdb_and_xtc(
             f"Filtered {num_samples_unfiltered} samples down to {len(traj)} "
             "based on structure criteria. Filtering can be disabled with `--filter_samples=False`."
         )
+        print(f"Filtered {num_samples_unfiltered} samples down to {len(traj)} ",
+              "based on structure criteria. Filtering can be disabled with `--filter_samples=False`.")
 
     traj.superpose(reference=traj, frame=0)
     traj.save_xtc(xtc_path)
@@ -514,10 +561,22 @@ def _write_batch_pdb(
     batch_size, num_residues, _ = pos.shape
     assert node_orientations.shape == (batch_size, num_residues, 3, 3)
     pdb_entries = []
+    ref_atom37 = None
     for i in range(batch_size):
         atom_37, atom_37_mask, aatype = get_atom37_from_frames(
             pos=pos[i], node_orientations=node_orientations[i], sequence=sequence
         )
+        # if ref_atom37 is None:
+        #     ref_atom37 = atom_37
+        # else:
+        #     # Align the current frame to the reference frame
+        #     R, t = kabsch_align(ref_atom37.view(-1, 3).cpu(), atom_37.view(-1, 3).cpu())
+        #     # Center atom_37, apply rotation, then shift back
+        #     atom_37_flat = atom_37.view(-1, 3).cpu()
+        #     centroid = atom_37_flat.mean(dim=0)
+        #     atom_37_centered = atom_37_flat - centroid
+        #     atom_37_rot = (R @ atom_37_centered.T).T + t
+        #     atom_37 = atom_37_rot.reshape(atom_37.shape)
         protein = Protein(
             atom_positions=atom_37.cpu().numpy(),
             aatype=aatype.cpu().numpy(),

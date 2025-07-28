@@ -165,7 +165,7 @@ def cos_bondangle(pos_atom1, pos_atom2, pos_atom3):
 
 @dataclass
 class Potential:
-    tolerance_relaxation: float = 1.0
+    tolerance: float = 0.
     loss_fn_type: str = "relu"
 
     def __post_init__(self):
@@ -191,25 +191,23 @@ class CaCaDistancePotential(Potential):
         Compute the potential energy based on neighboring Ca-Ca distances.
         Only considers |i-j| == 1 (adjacent residues).
         """
-
+        # nanometer to Angstrom
         ca_ca_dist = 10 * (pos[..., :-1, :] - pos[..., 1:, :]).pow(2).sum(dim=-1).pow(0.5)
         # Atom37: [N, Ca, C, O, ...]
-        # atom37, atom37_mask, atom37_aa = batch_frames_to_atom37(pos, rot, seq)
 
         # Target Ca-Ca distance is 0.388 nm (3.88 Å), allow a tolerance
         target_distance = self.ca_ca  # 3.88A -> 0.388 nm
 
         # Compute deviation from target, subtract tolerance, apply relu for both sides
-        dist_diff = torch.relu((ca_ca_dist - target_distance).abs() - self.tolerance) ** 2
-
-        return dist_diff
+        dist_diff = torch.relu((ca_ca_dist - target_distance).abs() - self.tolerance)
+        # print(f'Ca Dist: {ca_ca_dist.mean().item():.4f}(+/-{ca_ca_dist.std().item():.4f})')
+        return dist_diff.mean(dim=-1)  # [BS]
 
 
 @dataclass
 class CNDistancePotential(Potential):
-    tolerance_relaxation: float = 1.0
 
-    def __call__(self, atom37, t):
+    def __call__(self, pos, rot, seq, t=None):
         """
         Compute the potential energy based on C_i - N_{i+1} bond lengths.
         Args:
@@ -217,25 +215,28 @@ class CNDistancePotential(Potential):
                     [N, Ca, C, ...]
         Returns:
             bondlength_loss: Scalar loss for C-N bond lengths
+
+        C_i: atom37[..., 2, :] (C atom), N_{i+1}: atom37[..., 0, :] (N atom)
         """
-        # C_i: atom37[..., 2, :] (C atom), N_{i+1}: atom37[..., 0, :] (N atom)
-        C_pos = atom37[:, :-1, 2, :]
-        N_pos_next = atom37[:, 1:, 0, :]
+
+        atom37, _, _ = batch_frames_to_atom37(pos, rot, seq)
+        C_pos = atom37[..., :-1, 2, :]
+        N_pos_next = atom37[..., 1:, 0, :]
         bondlength_CN_pred = torch.linalg.vector_norm(C_pos - N_pos_next, dim=-1)
         bondlength_lit = between_res_bond_length_c_n[0]
         bondlength_std_lit = between_res_bond_length_stddev_c_n[0]
         bondlength_loss = self.loss_fn(
             (bondlength_CN_pred - bondlength_lit).abs(),
-            self.tolerance_relaxation * 12 * bondlength_std_lit,
+            self.tolerance * 12 * bondlength_std_lit,
         )
         return bondlength_loss
 
 
 @dataclass
 class CaClashPotential(Potential):
-    tolerance: float = 0.5
+    # tolerance: float = 0.
 
-    def __call__(self, pos, t):
+    def __call__(self, pos, rot, seq, t):
         """
         Compute the potential energy based on clashes.
         """
@@ -256,14 +257,15 @@ class CaClashPotential(Potential):
         # lit: target minimum distance (e.g., 0.38 nm), τ: tolerance
         lit = 2 * van_der_waals_radius['C']
         potential_energy = torch.relu(lit - self.tolerance - offdiag_distances)
-        return potential_energy
+        return potential_energy.mean(-1)  # [BS]
 
 
 class CaCNAnglePotential(Potential):
-    tolerance_relaxation: float = 1.0
+    # tolerance_relaxation: float = 0.
 
-    def __call__(self, atom37, t):
+    def __call__(self, pos, rot, seq, t):
 
+        atom37, atom37_mask, atom37_aa = batch_frames_to_atom37(10 * pos, rot, seq)
         N_pos, Ca_pos, C_pos = atom37[..., 0, :], atom37[..., 1, :], atom37[..., 2, :]
         Ca_i_pos = Ca_pos[:, :-1]
         C_i_pos = C_pos[:, :-1]
@@ -273,16 +275,17 @@ class CaCNAnglePotential(Potential):
         bondangle_CaCN_std_lit = between_res_cos_angles_ca_c_n[1]
         bondangle_CaCN_loss = self.loss_fn(
             (bondangle_CaCN_pred - bondangle_CaCN_lit).abs(),
-            self.tolerance_relaxation * 12 * bondangle_CaCN_std_lit,
+            self.tolerance * 12 * bondangle_CaCN_std_lit,
         )
         return bondangle_CaCN_loss
 
 
 @dataclass
 class CNCaAnglePotential(Potential):
-    tolerance_relaxation: float = 1.0
+    # tolerance_relaxation: float = 0.
 
-    def __call__(self, atom37, t):
+    def __call__(self, pos, rot, seq, t):
+        atom37, atom37_mask, atom37_aa = batch_frames_to_atom37(10 * pos, rot, seq)
         N_pos, Ca_pos, C_pos = atom37[..., 0, :], atom37[..., 1, :], atom37[..., 2, :]
         C_i_pos = C_pos[:, :-1]
         N_ip1_pos = N_pos[:, 1:]
@@ -292,16 +295,17 @@ class CNCaAnglePotential(Potential):
         bondangle_CNCa_std_lit = between_res_cos_angles_c_n_ca[1]
         bondangle_CNCa_loss = self.loss_fn(
             (bondangle_CNCa_pred - bondangle_CNCa_lit).abs(),
-            self.tolerance_relaxation * 12 * bondangle_CNCa_std_lit,
+            self.tolerance * 12 * bondangle_CNCa_std_lit,
         )
         return bondangle_CNCa_loss
 
 
 @dataclass
 class ClashPotential(Potential):
-    tolerance_relaxation: float = 1.0
+    # tolerance_relaxation: float = 0.
 
-    def __call__(self, atom37, t):
+    def __call__(self, pos, rot, seq, t):
+        atom37, atom37_mask, atom37_aa = batch_frames_to_atom37(10 * pos, rot, seq)
         assert atom37.ndim == 4, f"Expected atom37 to have 4 dimensions [BS, L, Atom37, 3], got {atom37.shape}"
         NCaCO = torch.index_select(
             atom37, 2, torch.tensor([0, 1, 2, 4], device=atom37.device)
@@ -311,7 +315,7 @@ class ClashPotential(Potential):
             device=atom37.device,
         )
         pairwise_distances, vdw_sum = compute_clash_loss(NCaCO, vdw_radii)
-        clash = self.loss_fn(vdw_sum - pairwise_distances, self.tolerance_relaxation * 1.5)
+        clash = self.loss_fn(vdw_sum - pairwise_distances, self.tolerance * 1.5)
         mask = bond_mask(num_frames=NCaCO.shape[1])
         masked_loss = clash[einops.repeat(mask, '... -> b ...', b=atom37.shape[0]).bool()]
         denominator = masked_loss.numel()
@@ -334,16 +338,16 @@ class StructuralViolation(Potential):
         pos: [BS, Frames, 3] with Atoms = [N, C_a, C, O] in nm
         rot: [BS, Frames, 3, 3]
         '''
-        if t < 0.2:
+        if t < 0.5:
             # If t < 0.5, we assume the potential is not applied yet
             return None
         atom37, atom37_mask, atom37_aa = batch_frames_to_atom37(10 * pos, rot, seq)
         caca_bondlength_loss = self.ca_ca_distance(pos, rot, seq, t)
-        caclash_potential = self.caclash_potential(pos, t)
-        cn_bondlength_loss = self.c_n_distance(atom37, t)
-        bondangle_CaCN_loss = self.ca_c_n_angle(atom37, t)
-        bondangle_CNCa_loss = self.c_n_ca_angle(atom37, t)
-        clash_loss = self.clash_potential(atom37, t)
+        # caclash_potential = self.caclash_potential(pos, t)
+        # cn_bondlength_loss = self.c_n_distance(atom37, t)
+        # bondangle_CaCN_loss = self.ca_c_n_angle(atom37, t)
+        # bondangle_CNCa_loss = self.c_n_ca_angle(atom37, t)
+        # clash_loss = self.clash_potential(atom37, t)
         # print(f"{caca_bondlength_loss.mean().item()=:.4f}, \
         #         {caclash_potential.mean().item()=:.4f}, \
         #         {cn_bondlength_loss.mean().item()=:.4f}, \
@@ -351,11 +355,11 @@ class StructuralViolation(Potential):
         #         {bondangle_CNCa_loss.mean().item()=:.4f}, \
         #         {clash_loss.mean().item()=:.4f}")
         loss = (
-            einops.reduce(bondangle_CaCN_loss, 'b ... -> b', "mean")
-            + einops.reduce(bondangle_CNCa_loss, 'b ... -> b', "mean")
-            + einops.reduce(caca_bondlength_loss, 'b ... -> b', "mean")
-            + einops.reduce(cn_bondlength_loss, 'b ... -> b', "mean")
-            + einops.reduce(caclash_potential, 'b ... -> b', "mean")
+            # einops.reduce(bondangle_CaCN_loss, 'b ... -> b', "mean")
+            # + einops.reduce(bondangle_CNCa_loss, 'b ... -> b', "mean")
+            einops.reduce(caca_bondlength_loss, 'b ... -> b', "mean")
+            # + einops.reduce(cn_bondlength_loss, 'b ... -> b', "mean")
+            # + einops.reduce(caclash_potential, 'b ... -> b', "mean")
             # + clash_loss
         )  # mean over all trailing dimensions
         # return loss, {
@@ -367,7 +371,7 @@ class StructuralViolation(Potential):
         return loss
 
 
-def resample_batch(batch, energy, previous_energy=None):
+def resample_batch(batch, num_fk_samples, num_samples, energy, previous_energy=None):
     """
     Resample the batch based on the energy.
     If previous_energy is provided, it is used to compute the resampling probability.
@@ -378,10 +382,21 @@ def resample_batch(batch, energy, previous_energy=None):
     elif previous_energy is None:
         # If no previous energy is provided, use the energy directly
         resample_prob = torch.exp(-energy)
-    indices = torch.multinomial(resample_prob, num_samples=energy.shape[0], replacement=True)
-    if len(set(indices.tolist())) < energy.shape[0]:
-        dropped = set(range(energy.shape[0])) - set(indices.tolist())
-        print(f"Dropped indices during resampling: {sorted(dropped)}")
+
+    # Sample indices per sample in mini batch
+    BS = energy.shape[0] // num_fk_samples
+    resample_prob = resample_prob.reshape(BS, num_fk_samples)
+    indices = torch.multinomial(resample_prob, num_samples=num_samples, replacement=True)  # [BS, num_fk_samples]
+    BS_offset = torch.arange(BS).unsqueeze(-1) * num_fk_samples  # [0, 1xnum_fk_samples, 2xnum_fk_samples, ...]
+    # We have set of per sample indices [0,1, 2, ..., num_fk_samples-1] for each batch sample
+    # We need to add the batch offset to get the correct indices in the energy tensor
+    # e.g. [0, 1, 2]+(0xnum_fk_samples) + [0, 3, 6]+(1xnum_fk_samples) ... for num_fk_samples=3
+    indices = (indices + BS_offset.to(indices.device)).flatten()  # [BS, num_fk_samples] -> [BS*num_fk_samples] with offset
+    # if len(set(indices.tolist())) < energy.shape[0]:
+    #     dropped = set(range(energy.shape[0])) - set(indices.tolist())
+    #     print(f"Dropped indices during resampling: {sorted(dropped)}")
+
+    # Resample samples
     data_list = batch.to_data_list()
     resampled_data_list = [data_list[i] for i in indices]
     batch = Batch.from_data_list(resampled_data_list)

@@ -274,6 +274,7 @@ def dpm_solver(
     max_t: float,
     eps_t: float,
     device: torch.device,
+    num_fk_samples: int,
     record_grad_steps: set[int] = set(),
     noise: float = 0.0,
     fk_potentials: List[Callable] | None = None,
@@ -426,7 +427,13 @@ def dpm_solver(
         )  # dt is negative, diffusion is 0
         batch = batch_next.replace(node_orientations=sample)
 
-        # Steering
+        '''
+        Steering
+        Currently [BS, ...]
+        expand to [BS, MC, ...] for steering
+        Batchsize is now BS, MC and we do [BS x MC, ...] predictions, reshape it to [BS, MC, ...]
+        then apply per sample a filtering op
+        '''
         seq_length = len(batch.sequence[0])
         x0_t, R0_t = get_pos0_rot0(sdes=sdes, batch=batch, t=t, score=score)
         # x0_t = batch.pos.reshape(batch.batch_size, seq_length, 3).detach().cpu()
@@ -434,11 +441,16 @@ def dpm_solver(
         x0 += [x0_t]
         R0 += [R0_t]
 
-        total_energy = StructuralViolation()(x0_t, R0_t, batch.sequence, t=i / (N - 1))
-        if total_energy is not None:
-            batch = resample_batch(batch, total_energy, previous_energy)
+        if fk_potentials is not None:  # always eval potentials
+            total_energy = torch.stack([potential_(x0_t, R0_t, batch.sequence, t=i / (N - 2)) for potential_ in fk_potentials], dim=-1).sum(-1)
+            if num_fk_samples > 1:  # if resampling implicitely given by num_fk_samples > 1
+                if N // 2 < i < N - 2 and i % 3 == 0:
+                    batch = resample_batch(batch=batch, energy=total_energy, previous_energy=previous_energy, num_fk_samples=num_fk_samples, num_samples=num_fk_samples)
+                    previous_energy = total_energy
+                elif i == N - 2:
+                    # print('Final Resampling back to BS')
+                    batch = resample_batch(batch=batch, energy=total_energy, previous_energy=previous_energy, num_fk_samples=num_fk_samples, num_samples=1)
 
-        print(i, total_energy)
     x0 = [x0[-1]] + x0  # add the last clean sample to the front to make Protein Viewer display it nicely
     R0 = [R0[-1]] + R0
     return batch, (x0, R0)
