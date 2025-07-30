@@ -339,18 +339,17 @@ def _filter_unphysical_traj_masks(
 
     # Clashes between any two atoms from different residues
     frames_non_clash = np.full(len(traj), True, dtype=bool)
+    atom2res = np.asarray([a.residue.index for a in traj[0].topology._atoms])
+
     for i, frame in enumerate(traj):
         frame_kdtree = KDTree(frame.xyz[0, :, :])
-        frame_res_pairs = frame_kdtree.query_pairs(r=0.1 * clash_distance)
+        frame_atom_pairs = frame_kdtree.query_pairs(r=0.1 * clash_distance)
 
-        for res_pair in frame_res_pairs:
+        for atom_pair in frame_atom_pairs:
             # mdtraj.compute_contacts ignores the residue pairs (i,i+1) and (i,i+2)
-            ri = frame.topology.atom(res_pair[0]).residue.index
-            rj = frame.topology.atom(res_pair[1]).residue.index
-            if rj - ri < 3:
-                pass
-            else:
+            if atom2res[atom_pair[1]] - atom2res[atom_pair[0]] > 2:
                 frames_non_clash[i] = False
+                break
     return frames_match_ca_seq_distance, frames_match_cn_seq_distance, frames_non_clash
 
 
