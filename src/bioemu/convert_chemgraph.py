@@ -3,10 +3,10 @@
 import logging
 from pathlib import Path
 
-from scipy.spatial import KDTree
 import mdtraj
 import numpy as np
 import torch
+from scipy.spatial import KDTree
 
 from .openfold.np import residue_constants
 from .openfold.np.protein import Protein, to_pdb
