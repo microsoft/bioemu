@@ -3,6 +3,7 @@
 import logging
 from pathlib import Path
 
+from scipy.spatial import KDTree
 import mdtraj
 import numpy as np
 import torch
@@ -337,11 +338,19 @@ def _filter_unphysical_traj_masks(
     frames_match_cn_seq_distance = np.all(cn_seq_distances < max_cn_seq_distance, axis=1)
 
     # Clashes between any two atoms from different residues
-    rest_distances, _ = mdtraj.compute_contacts(traj, periodic=False)
-    frames_non_clash = np.all(
-        mdtraj.utils.in_units_of(rest_distances, "nanometers", "angstrom") > clash_distance,
-        axis=1,
-    )
+    frames_non_clash = np.full(len(traj), True, dtype=bool)
+    for i, frame in enumerate(traj):
+        frame_kdtree = KDTree(frame.xyz[0, :, :])
+        frame_res_pairs = frame_kdtree.query_pairs(r=0.1 * clash_distance)
+
+        for res_pair in frame_res_pairs:
+            # mdtraj.compute_contacts ignores the residue pairs (i,i+1) and (i,i+2)
+            ri = frame.topology.atom(res_pair[0]).residue.index
+            rj = frame.topology.atom(res_pair[1]).residue.index
+            if rj - ri < 3:
+                pass
+            else:
+                frames_non_clash[i] = False
     return frames_match_ca_seq_distance, frames_match_cn_seq_distance, frames_non_clash
 
 
