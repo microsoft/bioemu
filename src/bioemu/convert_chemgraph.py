@@ -343,7 +343,9 @@ def _filter_unphysical_traj_masks(
 
     for i, frame in enumerate(traj):
         frame_kdtree = KDTree(frame.xyz[0, :, :])
-        frame_atom_pairs = frame_kdtree.query_pairs(r=0.1 * clash_distance)
+        frame_atom_pairs = frame_kdtree.query_pairs(
+            r=mdtraj.utils.in_units_of(clash_distance, "angstrom", "nanometers")
+        )
 
         for atom_pair in frame_atom_pairs:
             # mdtraj.compute_contacts ignores the residue pairs (i,i+1) and (i,i+2)
