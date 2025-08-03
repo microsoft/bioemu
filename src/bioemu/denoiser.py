@@ -1,14 +1,17 @@
 # Copyright (c) Microsoft Corporation.
 # Licensed under the MIT License.
-from typing import cast
+from typing import cast, Callable, List
 
 import numpy as np
 import torch
+import copy
 from torch_geometric.data.batch import Batch
 
 from .chemgraph import ChemGraph
 from .sde_lib import SDE, CosineVPSDE
 from .so3_sde import SO3SDE, apply_rotvec_to_rotmat
+from bioemu.steering import get_pos0_rot0, CaCaDistancePotential, StructuralViolation, resample_batch
+from bioemu.convert_chemgraph import _write_batch_pdb
 
 TwoBatches = tuple[Batch, Batch]
 
@@ -153,6 +156,13 @@ def heun_denoiser(
 ) -> ChemGraph:
     """Sample from prior and then denoise."""
 
+    # TODO: implement fk steering
+    '''
+    Get x0(x_t) from score
+    Create batch of samples with the same information
+    Implement idealized bond lengths between neighboring C_a atoms and clash potentials between non-neighboring
+    '''
+
     batch = batch.to(device)
     if isinstance(score_model, torch.nn.Module):
         # permits unit-testing with dummy model
@@ -264,10 +274,11 @@ def dpm_solver(
     max_t: float,
     eps_t: float,
     device: torch.device,
+    num_fk_samples: int,
     record_grad_steps: set[int] = set(),
     noise: float = 0.0,
+    fk_potentials: List[Callable] | None = None,
 ) -> ChemGraph:
-
     """
     Implements the DPM solver for the VPSDE, with the Cosine noise schedule.
     Following this paper: https://arxiv.org/abs/2206.00927 Algorithm 1 DPM-Solver-2.
@@ -307,6 +318,8 @@ def dpm_solver(
         )
         for name, sde in sdes.items()
     }
+    x0, R0 = [], []
+    previous_energy = None
     for i in range(N - 1):
         t = torch.full((batch.num_graphs,), timesteps[i], device=device)
         t_hat = t - noise * dt if (i > 0 and t[0] > ts_min and t[0] < ts_max) else t
@@ -414,4 +427,30 @@ def dpm_solver(
         )  # dt is negative, diffusion is 0
         batch = batch_next.replace(node_orientations=sample)
 
-    return batch
+        '''
+        Steering
+        Currently [BS, ...]
+        expand to [BS, MC, ...] for steering
+        Batchsize is now BS, MC and we do [BS x MC, ...] predictions, reshape it to [BS, MC, ...]
+        then apply per sample a filtering op
+        '''
+        seq_length = len(batch.sequence[0])
+        x0_t, R0_t = get_pos0_rot0(sdes=sdes, batch=batch, t=t, score=score)
+        # x0_t = batch.pos.reshape(batch.batch_size, seq_length, 3).detach().cpu()
+        # R0_t = batch.node_orientations.reshape(batch.batch_size, seq_length, 3, 3).detach().cpu()
+        x0 += [x0_t]
+        R0 += [R0_t]
+
+        if fk_potentials is not None:  # always eval potentials
+            total_energy = torch.stack([potential_(x0_t, R0_t, batch.sequence, t=i / (N - 2)) for potential_ in fk_potentials], dim=-1).sum(-1)
+            if num_fk_samples > 1:  # if resampling implicitely given by num_fk_samples > 1
+                if N // 2 < i < N - 2 and i % 3 == 0:
+                    batch = resample_batch(batch=batch, energy=total_energy, previous_energy=previous_energy, num_fk_samples=num_fk_samples, num_samples=num_fk_samples)
+                    previous_energy = total_energy
+                elif i == N - 2:
+                    # print('Final Resampling back to BS')
+                    batch = resample_batch(batch=batch, energy=total_energy, previous_energy=previous_energy, num_fk_samples=num_fk_samples, num_samples=1)
+
+    x0 = [x0[-1]] + x0  # add the last clean sample to the front to make Protein Viewer display it nicely
+    R0 = [R0[-1]] + R0
+    return batch, (x0, R0)
