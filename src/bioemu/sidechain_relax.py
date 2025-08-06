@@ -105,7 +105,7 @@ def reconstruct_sidechains(traj: mdtraj.Trajectory) -> mdtraj.Trajectory:
         for n, frame in enumerate(reconstructed[1:]):
             if frame.topology == concatenated.topology:
                 concatenated = mdtraj.join(
-                    concatenated, frame, check_topology=False
+                    [concatenated, frame], check_topology=False
                 )  # already checked
             else:
                 logger.warning(f"skipping frame {n+1} due to different reconstructed topology")
