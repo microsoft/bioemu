@@ -1,0 +1,19 @@
+do_steering: true
+num_particles: 2
+start: 0.5
+resample_every_n_steps: 5
+potentials:
+  cacadist:
+    _target_: bioemu.steering.CaCaDistancePotential
+    tolerance: 1.
+    slope: 1.
+    max_value: 100
+    order: 1
+    linear_from: 1.
+    weight: 1.0
+  caclash:
+    _target_: bioemu.steering.CaClashPotential
+    tolerance: 0.
+    dist: 1.
+    slope: 1.
+    weight: 1.0

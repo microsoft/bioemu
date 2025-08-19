@@ -2,10 +2,13 @@
 # Licensed under the MIT License.
 import logging
 from pathlib import Path
+import os
 
+from matplotlib.pylab import f
 import mdtraj
 import numpy as np
 import torch
+import wandb
 
 from .openfold.np import residue_constants
 from .openfold.np.protein import Protein, to_pdb
@@ -154,7 +157,7 @@ def get_atom37_from_frames(
     assert isinstance(pos, torch.Tensor) and isinstance(node_orientations, torch.Tensor)
     assert len(pos.shape) == 2 and pos.shape[1] == 3
     assert len(node_orientations.shape) == 3 and node_orientations.shape[1:] == (3, 3)
-    assert len(sequence) == pos.shape[0] == node_orientations.shape[0]
+    assert len(sequence) == pos.shape[0] == node_orientations.shape[0], f"{len(sequence)=} vs {pos.shape=}, {node_orientations.shape=}"
     positions: torch.Tensor = pos.view(1, -1, 3)  # (1, N, 3)
     device = positions.device
     orientations: torch.Tensor = node_orientations.view(1, -1, 3, 3)  # (1, N, 3, 3)
@@ -209,6 +212,28 @@ def compute_backbone(
     atom37_bb_pos[..., 4, :] = atom14_pos[..., 3, :]
     atom37_mask = torch.any(atom37_bb_pos, axis=-1)
     return atom37_bb_pos, atom37_mask
+
+
+def batch_frames_to_atom37(pos, rot, seq):
+    """
+    Batch transforms backbone frame parameterization (pos, rot, seq) into atom37 coordinates.
+    Args:
+        pos: Tensor of shape (batch, L, 3) - backbone frame positions
+        rot: Tensor of shape (batch, L, 3, 3) - backbone frame orientations
+        seq: List or tensor of sequence strings or indices, length batch
+    Returns:
+        atom37: Tensor of shape (batch, L, 37, 3) - atom coordinates
+    """
+    batch_size, L, _ = pos.shape
+    atom37, atom37_mask, aa_type = [], [], []
+    for i in range(batch_size):
+        atom37_i, atom_37_mask_i, aatype_i = get_atom37_from_frames(
+            pos[i], rot[i], seq[i]
+        )  # (L, 37, 3)
+        atom37.append(atom37_i)
+        atom37_mask.append(atom_37_mask_i)
+        aa_type.append(aatype_i)
+    return torch.stack(atom37, dim=0), torch.stack(atom37_mask, dim=0), torch.stack(aa_type, dim=0)
 
 
 def _adjust_oxygen_pos(
@@ -342,6 +367,17 @@ def _filter_unphysical_traj_masks(
         mdtraj.utils.in_units_of(rest_distances, "nanometers", "angstrom") > clash_distance,
         axis=1,
     )
+    # Ludi: Analysis Code
+    violations = {'ca_ca': ca_seq_distances,
+                  'cn_seq': cn_seq_distances,
+                  'rest_distances': 10 * rest_distances}
+    path = str(Path('.').absolute()) + f'/outputs/{wandb.run.id}'
+    np.savez(path, **violations)
+    wandb.log({'MDTraj/ca_ca >4.5': (ca_seq_distances > 4.5).astype(float).sum(axis=-1).mean(),
+               'MDTraj/cn_seq >2.0': (cn_seq_distances > 2.0).astype(float).sum(axis=-1).mean(),
+               'MDTraj/all_clash <1.0': (10 * rest_distances < 1.0).astype(float).sum(axis=(-1)).mean()})
+    wandb.run.save(path + '.npz')
+    # data = np.load(os.getcwd()+f'/outputs/{wandb.run.id}.npz'); {key: data[key] for key in data.keys()}
     return frames_match_ca_seq_distance, frames_match_cn_seq_distance, frames_non_clash
 
 
@@ -496,7 +532,7 @@ def save_pdb_and_xtc(
 
     topology = mdtraj.load_topology(topology_path)
 
-    traj = mdtraj.Trajectory(xyz=np.stack(xyz_angstrom) * 0.1, topology=topology)
+    traj = mdtraj.Trajectory(xyz=np.stack(xyz_angstrom) * 0.1, topology=topology)  # Nanometer
 
     if filter_samples:
         num_samples_unfiltered = len(traj)
@@ -508,7 +544,7 @@ def save_pdb_and_xtc(
         )
         print(f"Filtered {num_samples_unfiltered} samples down to {len(traj)} ",
               "based on structure criteria. Filtering can be disabled with `--filter_samples=False`.")
-
+        wandb.log({'Filtered': len(traj) / num_samples_unfiltered})
     traj.superpose(reference=traj, frame=0)
     traj.save_xtc(xtc_path)
 

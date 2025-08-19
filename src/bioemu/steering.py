@@ -1,15 +1,25 @@
-from dataclasses import dataclass, field
-from typing import Callable
 
+
+import sys
 import torch
 import einops
+import wandb
 
+import numpy as np
+import matplotlib.pyplot as plt
+
+from torch.nn.functional import relu
 from torch_geometric.data import Batch
 
 from bioemu.sde_lib import SDE
 from .so3_sde import SO3SDE, apply_rotvec_to_rotmat
 from bioemu.openfold.np.residue_constants import ca_ca, van_der_waals_radius, between_res_bond_length_c_n, between_res_bond_length_stddev_c_n, between_res_cos_angles_ca_c_n, between_res_cos_angles_c_n_ca
-from bioemu.convert_chemgraph import get_atom37_from_frames
+from bioemu.convert_chemgraph import get_atom37_from_frames, batch_frames_to_atom37
+
+
+import torch.autograd.profiler as profiler
+
+plt.style.use('default')
 
 
 def _get_x0_given_xt_and_score(
@@ -60,8 +70,8 @@ def get_pos0_rot0(sdes, batch, t, score):
         score=score['node_orientations'],
     )
     seq_length = len(batch.sequence[0])
-    x0_t = x0_t.reshape(batch.batch_size, seq_length, 3).detach().cpu()
-    R0_t = R0_t.reshape(batch.batch_size, seq_length, 3, 3).detach().cpu()
+    x0_t = x0_t.reshape(batch.batch_size, seq_length, 3).detach()
+    R0_t = R0_t.reshape(batch.batch_size, seq_length, 3, 3).detach()
     return x0_t, R0_t
 
 
@@ -103,28 +113,6 @@ def bond_mask(num_frames, show_plot=False):
     return mask
 
 
-def batch_frames_to_atom37(pos, rot, seq):
-    """
-    Batch transforms backbone frame parameterization (pos, rot, seq) into atom37 coordinates.
-    Args:
-        pos: Tensor of shape (batch, L, 3) - backbone frame positions
-        rot: Tensor of shape (batch, L, 3, 3) - backbone frame orientations
-        seq: List or tensor of sequence strings or indices, length batch
-    Returns:
-        atom37: Tensor of shape (batch, L, 37, 3) - atom coordinates
-    """
-    batch_size, L, _ = pos.shape
-    atom37, atom37_mask, aa_type = [], [], []
-    for i in range(batch_size):
-        atom37_i, atom_37_mask_i, aatype_i = get_atom37_from_frames(
-            pos[i], rot[i], seq[i]
-        )  # (L, 37, 3)
-        atom37.append(atom37_i)
-        atom37_mask.append(atom_37_mask_i)
-        aa_type.append(aatype_i)
-    return torch.stack(atom37, dim=0), torch.stack(atom37_mask, dim=0), torch.stack(aa_type, dim=0)
-
-
 def compute_clash_loss(atom14, vdw_radii):
     """
     atom14: [BS, Frames, Atoms=4, Pos] with Atoms = [N, C_a, C, O]
@@ -163,105 +151,280 @@ def cos_bondangle(pos_atom1, pos_atom2, pos_atom3):
     return cos_theta
 
 
-@dataclass
-class Potential:
-    tolerance: float = 0.
-    loss_fn_type: str = "relu"
+def plot_caclashes(distances, loss_fn, t):
+    """
+        Plot histogram and loss curve for Ca-Ca clashes.
+    """
+    distances_np = distances.detach().cpu().numpy().flatten()
+    fig = plt.figure(figsize=(7, 4), dpi=200)
+    plt.hist(distances_np, bins=100, range=(0, 6), alpha=0.7, color='skyblue', label='Ca-Ca Distance', density=True)
 
-    def __post_init__(self):
-        self.loss_fn: Callable = {
-            "relu": lambda diff, tol: torch.nn.functional.relu(diff - tol),
-            "mse": lambda diff, tol: (diff).pow(2),
-        }[self.loss_fn_type]
+    # Draw vertical lines for optimal (3.8) and physicality breach (1.0)
+    plt.axvline(3.8, color='green', linestyle='--', linewidth=2, label='Optimal (3.8 Å)')
+    plt.axvline(1.0, color='red', linestyle='--', linewidth=2, label='Physicality Breach (1.0 Å)')
+
+    # Plot loss_fn curve
+    x_vals = np.linspace(0, 6, 200)
+    loss_curve = loss_fn(torch.from_numpy(x_vals))
+    plt.plot(x_vals, loss_curve.detach().cpu().numpy(), color='purple', label='Loss')
+
+    plt.xlabel('Ca-Ca Distance (Å)')
+    plt.ylabel('Frequency / Loss')
+    plt.title(f'CaClash: Ca-Ca Distances (<1.0: {(distances < 1.0).float().mean().item():.3f}), {t=:.2f}')
+    plt.legend()
+    plt.ylim(0, 5)
+    plt.tight_layout()
+    return fig  # Compute potential: relu(lit - τ - di_pred, 0)
+
+
+def plot_ca_ca_distances(ca_ca_dist, loss_fn, t=None):
+    """
+    Print the string only if it hasn't been printed before.
+    checks in _printed_strings whether string already existed once.
+    Useful for for-loops.
+    """
+    ca_ca_dist_np = ca_ca_dist.detach().cpu().numpy().flatten()
+    target_distance = ca_ca  # 3.88A == 0.388 nm
+    fig = plt.figure(figsize=(7, 4), dpi=200)
+    x_vals = np.linspace(0, 6, 200)
+    # target_distance = np.clip(ca_ca_dist_np, 0, 6)  # Ensure target_distance is within the range of x_vals
+    loss_curve = loss_fn(torch.from_numpy(x_vals)).detach().cpu().numpy()
+    plt.plot(x_vals, loss_curve, color='purple', label=f'Loss')
+    plt.hist(ca_ca_dist_np, bins=50, range=(0, 6), alpha=0.7, color='skyblue', label='Ca-Ca Distance', density=True)
+
+    # Draw vertical lines for optimal (3.8) and physicality breach (4.5)
+    plt.axvline(3.8, color='green', linestyle='--', linewidth=2, label='Optimal (3.8 Å)')
+    plt.axvline(4.8, color='red', linestyle='--', linewidth=2, label='Physicality Breach (4.8 Å)')
+    plt.axvline(2.8, color='red', linestyle='--', linewidth=2, label='Physicality Breach (2.8 Å)')
+
+    # Plot loss_fn curve
+
+    plt.xlabel('Ca-Ca Distance (Å)')
+    plt.ylabel('Frequency / Loss')
+    plt.title(f'CaCaDist: Ca-Ca Distances(>4.5: {(ca_ca_dist > 4.5).float().mean().item():.3f}), {t=:.2f}')
+    plt.legend()
+    plt.ylim(0, 5)
+    plt.tight_layout()
+
+    return fig
+
+
+def log_physicality(pos, rot, sequence):
+    '''
+    pos in nM
+    '''
+    pos = 10 * pos  # convert to Angstrom
+    ca_ca_dist = (pos[..., :-1, :] - pos[..., 1:, :]).pow(2).sum(dim=-1).pow(0.5)
+    clash_distances = torch.cdist(pos, pos)  # shape: (batch, L, L)
+    mask = ~torch.eye(pos.shape[1], dtype=torch.bool, device=clash_distances.device)
+    clash_distances = clash_distances[:, mask]
+    atom37, _, _ = batch_frames_to_atom37(pos, rot, [sequence for _ in range(pos.shape[0])])
+    C_pos = atom37[..., :-1, 2, :]
+    N_pos_next = atom37[..., 1:, 0, :]
+    cn_dist = torch.linalg.vector_norm(C_pos - N_pos_next, dim=-1)
+    ca_break = (ca_ca_dist > 4.5).float()
+    ca_clash = (clash_distances < 1.0).float()
+    cn_break = (cn_dist > 2.0).float()
+    wandb.log({f'Physicality/ca_break>4.5 [#]': ca_break.sum(dim=-1).mean(),  # number of breaks sample
+               f'Physicality/ca_break>4.5 [%]': ca_break.mean(dim=-1).mean(),  # overall percentage of all possible links
+               f'Physicality/ca_clash<1.0 [#]': ca_clash.sum(dim=-1).mean(),
+               f'Physicality/ca_clash<1.0 [%]': ca_clash.mean(dim=-1).mean(),
+               f'Physicality/cn_break>2.0 [#]': ca_break.sum(dim=-1).mean(),
+               f'Physicality/cn_break>2.0 [%]': ca_break.mean(dim=-1).mean()}, commit=False)
+    for tolerance in [0, 1, 2, 3, 4, 5]:
+        ca_break_tol = torch.relu(ca_break.sum(dim=-1) - tolerance)
+        ca_clash_tol = torch.relu(ca_clash.sum(dim=-1) - tolerance)
+        cn_break_tol = torch.relu(cn_break.sum(dim=-1) - tolerance)
+        # Count zero elements in x and normalize by number of entries
+        filter_fn = lambda x: (x == 0).float().sum() / x.numel()
+        wandb.log({
+            f'Physicality/ca_break_tol{tolerance}': filter_fn(ca_break_tol),
+            f'Physicality/ca_clash_tol{tolerance}': filter_fn(ca_clash_tol),
+            f'Physicality/cn_break_tol{tolerance}': filter_fn(cn_break_tol),
+            f"Physicality/ca_break_clash_tol{tolerance}": filter_fn(ca_break_tol + ca_clash_tol),
+            f"Physicality/ca_break_clash_cn_break_tol{tolerance}": filter_fn(ca_break_tol + ca_clash_tol + cn_break_tol),
+        }, commit=True)
+
+
+_printed_strings = set()
+
+
+def print_once(s: str):
+    """
+    Print the string only if it hasn't been printed before.
+    checks in _printed_strings whether string already existed once.
+    Useful for for-loops.
+    """
+    if s not in _printed_strings:
+        print(s)
+        _printed_strings.add(s)
+
+
+loss_fn_callables = {
+    "relu": lambda diff, tol: torch.nn.functional.relu(diff - tol),
+    "mse": lambda diff, slope, tol: (slope * torch.nn.functional.relu(diff - tol)).pow(2),
+}
+
+
+def potential_loss_fn(x, target, tolerance, slope, max_value, order, linear_from):
+    """
+    Flat-bottom loss for continuous variables using torch.abs and torch.relu.
+
+    Args:
+            x (Tensor): Input tensor.
+            target (float or Tensor): Target value.
+            tolerance (float): Flat region width around target.
+            slope (float): Slope outside tolerance.
+            max_value (float): Maximum loss value outside tolerance.
+
+    Returns:
+            Tensor: Loss values.
+    """
+    diff = torch.abs(x - target)
+    diff_tol = torch.relu(diff - tolerance)
+
+    # Quadratic region
+    quad_loss = (slope * diff_tol) ** order
+
+    # Matching point
+    u0 = linear_from
+    match_value = (slope * u0) ** order
+    match_slope = slope**order * u0
+
+    # Linear region
+    lin_loss = match_value + match_slope * (diff_tol - u0)
+
+    # Piecewise (continuous and C^1 smooth at u0)
+    loss = torch.where(diff_tol <= u0, quad_loss, lin_loss)
+
+    loss = torch.clamp(loss, max=max_value)
+    return loss
+
+
+class Potential:
 
     def __call__(self, **kwargs):
-        """
-        Compute the potential energy of the batch.
-        """
         raise NotImplementedError("Subclasses should implement this method.")
 
+    def __repr__(self):
 
-@dataclass
+        # List __init__ arguments or attributes for display
+        attrs = [f"{k}={getattr(self, k)!r}" for k in getattr(self, '__dataclass_fields__', {}) or self.__dict__]
+        sig = f"({', '.join(attrs)})" if attrs else ""
+
+        return f"{self.__class__.__name__}{sig}"
+
+
 class CaCaDistancePotential(Potential):
-    ca_ca = ca_ca
-    tolerance: float = 0.
 
-    def __call__(self, pos, rot, seq, t):
+    def __init__(self, tolerance: float = 0., slope: float = 1.0, max_value: float = 5.0, order: float = 1, linear_from: float = 1., weight: float = 1.0):
+        self.ca_ca = ca_ca
+        self.tolerance: float = tolerance
+        self.slope = slope
+        self.max_value = max_value
+        self.order = order
+        self.linear_from = linear_from
+        self.weight = weight
+
+    def __call__(self, N_pos, Ca_pos, C_pos, O_pos, t, N):
         """
-        Compute the potential energy based on neighboring Ca-Ca distances.
-        Only considers |i-j| == 1 (adjacent residues).
+        Compute the potential energy based on neighboring Ca-Ca distances using CA atom positions.
         """
-        # nanometer to Angstrom
-        ca_ca_dist = 10 * (pos[..., :-1, :] - pos[..., 1:, :]).pow(2).sum(dim=-1).pow(0.5)
-        # Atom37: [N, Ca, C, O, ...]
+        ca_ca_dist = (Ca_pos[..., :-1, :] - Ca_pos[..., 1:, :]).pow(2).sum(dim=-1).pow(0.5)
+        target_distance = self.ca_ca
+        loss_fn = lambda x: potential_loss_fn(x, target_distance, self.tolerance, self.slope, self.max_value, self.order, self.linear_from)
+        fig = plot_ca_ca_distances(ca_ca_dist, loss_fn, t)
+        # dist_diff = loss_fn_callables[self.loss_fn]((ca_ca_dist - target_distance).abs().clamp(0, 10), self.slope, self.tolerance)
+        dist_diff = loss_fn(ca_ca_dist)
+        wandb.log({"CaCaDist/ca_ca_dist_mean": ca_ca_dist.mean().item(),
+                   "CaCaDist/ca_ca_dist_std": ca_ca_dist.std().item(),
+                   "CaCaDist/ca_ca_dist_loss": dist_diff.mean().item(),
+                   "CaCaDist/ca_ca_dist > 4.5A [#]": (ca_ca_dist > 4.5).float().sum().item(),
+                   "CaCaDist/ca_ca_dist > 4.5A [%]": (ca_ca_dist > 4.5).float().mean().item(),
+                   "CaCaDist/ca_ca_dist": wandb.Histogram(ca_ca_dist.detach().cpu().flatten().numpy()),
+                   "CaCaDist/ca_ca_dist_hist": wandb.Image(fig)
+                   },
+                  commit=False)
+        plt.close('all')
+        return self.weight * dist_diff.sum(dim=-1)
 
-        # Target Ca-Ca distance is 0.388 nm (3.88 Å), allow a tolerance
-        target_distance = self.ca_ca  # 3.88A -> 0.388 nm
 
-        # Compute deviation from target, subtract tolerance, apply relu for both sides
-        dist_diff = torch.relu((ca_ca_dist - target_distance).abs() - self.tolerance)
-        # print(f'Ca Dist: {ca_ca_dist.mean().item():.4f}(+/-{ca_ca_dist.std().item():.4f})')
-        return dist_diff.mean(dim=-1)  # [BS]
+class CaClashPotential(Potential):
+    def __init__(self, tolerance: float = 0., dist: float = 1.0, slope: float = 1.0, weight: float = 1.0):
+        self.dist = dist
+        self.tolerance: float = tolerance
+        self.weight = weight
+        self.slope = slope
+
+    def __call__(self, N_pos, Ca_pos, C_pos, O_pos, t, N):
+        """
+        Compute the potential energy based on clashes using CA atom positions.
+        """
+        distances = torch.cdist(Ca_pos, Ca_pos)  # shape: (batch, L, L)
+        # lit = 2 * van_der_waals_radius['C']
+        lit = self.dist
+        mask = ~torch.eye(Ca_pos.shape[1], dtype=torch.bool, device=distances.device)
+        distances = distances[:, mask]
+
+        loss_fn = lambda x: torch.relu(self.slope * (lit - self.tolerance - x))
+        fig = plot_caclashes(distances, loss_fn, t)
+        potential_energy = loss_fn(distances)
+        wandb.log({
+            "CaClash/ca_clash_dist": distances.mean().item(),
+            "CaClash/ca_clash_dist": distances.std().item(),
+            "CaClash/potential_energy": potential_energy.mean().item(),
+            "CaClash/ca_ca_dist < 1.A [#]": (distances < 1.0).int().sum().item(),
+            "CaClash/ca_ca_dist < 1.A [%]": (distances < 1.0).float().mean().item(),
+            "CaClash/potential_energy_hist": wandb.Histogram(potential_energy.detach().cpu().flatten().numpy()),
+            "CaClash/ca_ca_dist_hist": wandb.Image(fig)
+        }, commit=False)
+        plt.close('all')
+        return self.weight * potential_energy.sum(dim=(-1))
+
+# @dataclass
+# class CNDistancePotential(Potential):
+#     def __call__(self, N_Ca_C_O_Cb, t=None):
+#         # [BS, SeqLength, 5, 3] : atom37[...,:5]
 
 
-@dataclass
 class CNDistancePotential(Potential):
 
-    def __call__(self, pos, rot, seq, t=None):
-        """
-        Compute the potential energy based on C_i - N_{i+1} bond lengths.
-        Args:
-            atom37: Tensor of shape (batch, L, 37, 3) - atom coordinates
-                    [N, Ca, C, ...]
-        Returns:
-            bondlength_loss: Scalar loss for C-N bond lengths
+    def __init__(self, tolerance: float = 0., slope: float = 1.0, start: float = 0.5, loss_fn: str = 'mse', weight: float = 1.0):
+        self.loss_fn = loss_fn
+        self.tolerance: float = tolerance
+        self.weight = weight
+        self.start = start
+        self.slope = slope
 
-        C_i: atom37[..., 2, :] (C atom), N_{i+1}: atom37[..., 0, :] (N atom)
+    def __call__(self, N_pos, Ca_pos, C_pos, O_pos, t=None, N=None):
         """
+        Compute the potential energy based on C_i - N_{i+1} bond lengths using backbone atom positions.
+        """
+        assert C_pos.ndim == 3, f"Expected C_pos to have 3 dimensions [BS, L, 3], got {C_pos.shape}"
+        assert N_pos.ndim == 3, f"Expected N_pos to have 3 dimensions [BS, L, 3], got {N_pos.shape}"
 
-        atom37, _, _ = batch_frames_to_atom37(pos, rot, seq)
-        C_pos = atom37[..., :-1, 2, :]
-        N_pos_next = atom37[..., 1:, 0, :]
-        bondlength_CN_pred = torch.linalg.vector_norm(C_pos - N_pos_next, dim=-1)
+        C_i = C_pos[..., :-1, :]
+        N_ip1 = N_pos[..., 1:, :]
+        bondlength_CN_pred = torch.linalg.vector_norm(C_i - N_ip1, dim=-1)
         bondlength_lit = between_res_bond_length_c_n[0]
         bondlength_std_lit = between_res_bond_length_stddev_c_n[0]
-        bondlength_loss = self.loss_fn(
+        bondlength_loss = loss_fn_callables[self.loss_fn](
             (bondlength_CN_pred - bondlength_lit).abs(),
+            self.slope,
             self.tolerance * 12 * bondlength_std_lit,
         )
-        return bondlength_loss
-
-
-@dataclass
-class CaClashPotential(Potential):
-    # tolerance: float = 0.
-
-    def __call__(self, pos, rot, seq, t):
-        """
-        Compute the potential energy based on clashes.
-        """
-
-        # Compute pairwise distances between all positions
-        pos = 10 * pos  # nm to Angstrom because VdW radii are in Angstrom
-        distances = torch.cdist(pos, pos)  # shape: (batch, L, L)
-
-        # Create an inverted boolean identity matrix to select off-diagonal elements
-        batch_size, L, _ = pos.shape
-        device = pos.device
-        mask = ~torch.eye(L, dtype=torch.bool, device=device)  # shape: (L, L)
-
-        # Select off-diagonal distances only
-        offdiag_distances = distances[:, mask]
-
-        # Compute potential: relu(lit - τ - di_pred, 0)
-        # lit: target minimum distance (e.g., 0.38 nm), τ: tolerance
-        lit = 2 * van_der_waals_radius['C']
-        potential_energy = torch.relu(lit - self.tolerance - offdiag_distances)
-        return potential_energy.mean(-1)  # [BS]
+        wandb.log({
+            "CNDistance/cn_bondlength_mean": bondlength_CN_pred.mean().item(),
+            "CNDistance/cn_bondlength_std": bondlength_CN_pred.std().item(),
+            "CNDistance/cn_bondlength_loss": bondlength_loss.mean().item(),
+        }, commit=False)
+        return self.weight * bondlength_loss.sum(-1)
 
 
 class CaCNAnglePotential(Potential):
-    # tolerance_relaxation: float = 0.
+    def __init__(self, tolerance: float = 0., loss_fn: str = 'mse'):
+        self.loss_fn = loss_fn
+        self.tolerance: float = tolerance
 
     def __call__(self, pos, rot, seq, t):
 
@@ -273,16 +436,17 @@ class CaCNAnglePotential(Potential):
         bondangle_CaCN_pred = cos_bondangle(Ca_i_pos, C_i_pos, N_ip1_pos)
         bondangle_CaCN_lit = between_res_cos_angles_ca_c_n[0]
         bondangle_CaCN_std_lit = between_res_cos_angles_ca_c_n[1]
-        bondangle_CaCN_loss = self.loss_fn(
+        bondangle_CaCN_loss = loss_fn_callables[loss_fn](
             (bondangle_CaCN_pred - bondangle_CaCN_lit).abs(),
             self.tolerance * 12 * bondangle_CaCN_std_lit,
         )
         return bondangle_CaCN_loss
 
 
-@dataclass
 class CNCaAnglePotential(Potential):
-    # tolerance_relaxation: float = 0.
+    def __init__(self, tolerance: float = 0., loss_fn: str = 'mse'):
+        self.loss_fn = loss_fn
+        self.tolerance: float = tolerance
 
     def __call__(self, pos, rot, seq, t):
         atom37, atom37_mask, atom37_aa = batch_frames_to_atom37(10 * pos, rot, seq)
@@ -293,16 +457,17 @@ class CNCaAnglePotential(Potential):
         bondangle_CNCa_pred = cos_bondangle(C_i_pos, N_ip1_pos, Ca_ip1_pos)
         bondangle_CNCa_lit = between_res_cos_angles_c_n_ca[0]
         bondangle_CNCa_std_lit = between_res_cos_angles_c_n_ca[1]
-        bondangle_CNCa_loss = self.loss_fn(
+        bondangle_CNCa_loss = loss_fn_callables[self.loss_fn](
             (bondangle_CNCa_pred - bondangle_CNCa_lit).abs(),
             self.tolerance * 12 * bondangle_CNCa_std_lit,
         )
         return bondangle_CNCa_loss
 
 
-@dataclass
 class ClashPotential(Potential):
-    # tolerance_relaxation: float = 0.
+    def __init__(self, tolerance: float = 0., loss_fn: str = 'mse'):
+        self.loss_fn = loss_fn
+        self.tolerance: float = tolerance
 
     def __call__(self, pos, rot, seq, t):
         atom37, atom37_mask, atom37_aa = batch_frames_to_atom37(10 * pos, rot, seq)
@@ -315,7 +480,7 @@ class ClashPotential(Potential):
             device=atom37.device,
         )
         pairwise_distances, vdw_sum = compute_clash_loss(NCaCO, vdw_radii)
-        clash = self.loss_fn(vdw_sum - pairwise_distances, self.tolerance * 1.5)
+        clash = loss_fn_callables[loss_fn](vdw_sum - pairwise_distances, self.tolerance * 1.5)
         mask = bond_mask(num_frames=NCaCO.shape[1])
         masked_loss = clash[einops.repeat(mask, '... -> b ...', b=atom37.shape[0]).bool()]
         denominator = masked_loss.numel()
@@ -324,23 +489,50 @@ class ClashPotential(Potential):
         return masked_clash_loss
 
 
-@dataclass
+class TerminiDistancePotential(Potential):
+    def __init__(self, target: float = 1.5, tolerance: float = 0., slope: float = 1.0, max_value: float = 5.0, order: float = 1, linear_from: float = 1., weight: float = 1.0):
+        self.target = target
+        self.tolerance: float = tolerance
+        self.slope = slope
+        self.max_value = max_value
+        self.order = order
+        self.linear_from = linear_from
+        self.weight = weight
+
+    def __call__(self, N_pos, Ca_pos, C_pos, O_pos, t=None, N=None):
+        """
+        Compute the potential energy based on C_i - N_{i+1} bond lengths using backbone atom positions.
+        """
+        termini_distance = torch.linalg.norm(Ca_pos[:, 0] - Ca_pos[:, -1], axis=-1)
+        energy = potential_loss_fn(
+            termini_distance,
+            target=self.target,
+            tolerance=self.tolerance,
+            slope=self.slope,
+            max_value=self.max_value,
+            order=self.order,
+            linear_from=self.linear_from
+        )
+        return self.weight * energy
+
+
 class StructuralViolation(Potential):
-    ca_ca_distance: Callable = field(default_factory=CaCaDistancePotential)
-    caclash_potential: Callable = field(default_factory=CaClashPotential)
-    c_n_distance: Callable = field(default_factory=CNDistancePotential)
-    ca_c_n_angle: Callable = field(default_factory=CaCNAnglePotential)
-    c_n_ca_angle: Callable = field(default_factory=CNCaAnglePotential)
-    clash_potential: Callable = field(default_factory=ClashPotential)
+    def __init__(self, tolerance: float = 0., loss_fn: str = 'mse'):
+        self.ca_ca_distance = CaCaDistancePotential(tolerance=tolerance, loss_fn=loss_fn)
+        self.caclash_potential = CaClashPotential(tolerance=tolerance, loss_fn=loss_fn)
+        self.c_n_distance = CNDistancePotential(tolerance=tolerance, loss_fn=loss_fn)
+        self.ca_c_n_angle = CaCNAnglePotential(tolerance=tolerance, loss_fn=loss_fn)
+        self.c_n_ca_angle = CNCaAnglePotential(tolerance=tolerance, loss_fn=loss_fn)
+        self.clash_potential = ClashPotential(tolerance=tolerance, loss_fn=loss_fn)
 
     def __call__(self, pos, rot, seq, t):
         '''
         pos: [BS, Frames, 3] with Atoms = [N, C_a, C, O] in nm
         rot: [BS, Frames, 3, 3]
         '''
-        if t < 0.5:
-            # If t < 0.5, we assume the potential is not applied yet
-            return None
+        # if t < 0.5:
+        #     # If t < 0.5, we assume the potential is not applied yet
+        #     return None
         atom37, atom37_mask, atom37_aa = batch_frames_to_atom37(10 * pos, rot, seq)
         caca_bondlength_loss = self.ca_ca_distance(pos, rot, seq, t)
         # caclash_potential = self.caclash_potential(pos, t)
@@ -371,26 +563,34 @@ class StructuralViolation(Potential):
         return loss
 
 
-def resample_batch(batch, num_fk_samples, num_samples, energy, previous_energy=None):
+def resample_batch(batch, num_fk_samples, num_resamples, energy, previous_energy=None):
     """
     Resample the batch based on the energy.
     If previous_energy is provided, it is used to compute the resampling probability.
     """
+    BS = energy.shape[0] // num_fk_samples
+    # assert energy.shape == (BS, num_fk_samples), f"Expected energy shape {(BS, num_fk_samples)}, got {energy.shape}"
+
+    energy = energy.reshape(BS, num_fk_samples)
     if previous_energy is not None:
+        previous_energy = previous_energy.reshape(BS, num_fk_samples)
         # Compute the resampling probability based on the energy difference
-        resample_prob = torch.exp(previous_energy - energy)
+        # If previous_energy > energy, high probability to resample since new energy is lower
+        resample_logprob = (previous_energy - energy)
     elif previous_energy is None:
         # If no previous energy is provided, use the energy directly
-        resample_prob = torch.exp(-energy)
+        # resample_prob = torch.exp(-energy).clamp(max=100)  # Avoid overflow
+        resample_logprob = -energy
 
-    # Sample indices per sample in mini batch
-    BS = energy.shape[0] // num_fk_samples
-    resample_prob = resample_prob.reshape(BS, num_fk_samples)
-    indices = torch.multinomial(resample_prob, num_samples=num_samples, replacement=True)  # [BS, num_fk_samples]
+    # Sample indices per sample in mini batch [BS, Replica]
+    # p(i) = exp(-E_i) / Sum[exp(-E_i)]
+    resample_prob = torch.exp(torch.nn.functional.log_softmax(resample_logprob, dim=-1))  # in [0,1]
+    indices = torch.multinomial(resample_prob, num_samples=num_resamples, replacement=True)  # [BS, num_fk_samples]
+    # indices = einops.repeat(torch.argmin(energy, dim=1), 'b -> b n', n=num_resamples)
     BS_offset = torch.arange(BS).unsqueeze(-1) * num_fk_samples  # [0, 1xnum_fk_samples, 2xnum_fk_samples, ...]
-    # We have set of per sample indices [0,1, 2, ..., num_fk_samples-1] for each batch sample
+    # The indices are of shape [BS, num_particles], with 0<= index < num_particles
     # We need to add the batch offset to get the correct indices in the energy tensor
-    # e.g. [0, 1, 2]+(0xnum_fk_samples) + [0, 3, 6]+(1xnum_fk_samples) ... for num_fk_samples=3
+    # e.g. [0, 1, 2]+(0xnum_fk_samples) + [0, 2, 2]+(1xnum_fk_samples) ... for num_fk_samples=3
     indices = (indices + BS_offset.to(indices.device)).flatten()  # [BS, num_fk_samples] -> [BS*num_fk_samples] with offset
     # if len(set(indices.tolist())) < energy.shape[0]:
     #     dropped = set(range(energy.shape[0])) - set(indices.tolist())
@@ -401,4 +601,6 @@ def resample_batch(batch, num_fk_samples, num_samples, energy, previous_energy=N
     resampled_data_list = [data_list[i] for i in indices]
     batch = Batch.from_data_list(resampled_data_list)
 
-    return batch
+    resampled_energy = energy.flatten()[indices]  # [BS*num_fk_samples]
+
+    return batch, resampled_energy

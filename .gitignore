@@ -134,6 +134,15 @@ cython_debug/
 *.pth
 *.pt
 
-# wandb
+# wandb & various
 wandb
 wandb/
+.amltconfig
+notebooks/firstsweep.py
+notebooks/download_wandb_tables.py
+*/wandb/*
+*.npz
+*.pkl
+*amlt*
+*outputs*
+*cache*

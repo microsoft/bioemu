@@ -1,17 +1,24 @@
 # Copyright (c) Microsoft Corporation.
 # Licensed under the MIT License.
+from os import times_result
+import sys
 from typing import cast, Callable, List
 
 import numpy as np
 import torch
+import wandb
 import copy
 from torch_geometric.data.batch import Batch
+import time
+import torch.autograd.profiler as profiler
+from torch.profiler import profile, ProfilerActivity, record_function
+from tqdm.auto import tqdm
 
 from .chemgraph import ChemGraph
 from .sde_lib import SDE, CosineVPSDE
 from .so3_sde import SO3SDE, apply_rotvec_to_rotmat
-from bioemu.steering import get_pos0_rot0, CaCaDistancePotential, StructuralViolation, resample_batch
-from bioemu.convert_chemgraph import _write_batch_pdb
+from bioemu.steering import get_pos0_rot0, CaCaDistancePotential, StructuralViolation, resample_batch, print_once
+from bioemu.convert_chemgraph import _write_batch_pdb, batch_frames_to_atom37
 
 TwoBatches = tuple[Batch, Batch]
 
@@ -156,7 +163,6 @@ def heun_denoiser(
 ) -> ChemGraph:
     """Sample from prior and then denoise."""
 
-    # TODO: implement fk steering
     '''
     Get x0(x_t) from score
     Create batch of samples with the same information
@@ -274,10 +280,10 @@ def dpm_solver(
     max_t: float,
     eps_t: float,
     device: torch.device,
-    num_fk_samples: int,
     record_grad_steps: set[int] = set(),
     noise: float = 0.0,
     fk_potentials: List[Callable] | None = None,
+    steering_config: dict | None = None
 ) -> ChemGraph:
     """
     Implements the DPM solver for the VPSDE, with the Cosine noise schedule.
@@ -289,6 +295,7 @@ def dpm_solver(
     assert max_t < 1.0
 
     batch = batch.to(device)
+
     if isinstance(score_model, torch.nn.Module):
         # permits unit-testing with dummy model
         score_model = score_model.to(device)
@@ -320,7 +327,14 @@ def dpm_solver(
     }
     x0, R0 = [], []
     previous_energy = None
-    for i in range(N - 1):
+
+    # with profile(with_stack=True, activities=[ProfilerActivity.CPU, ProfilerActivity.CUDA], profile_memory=False) as prof:
+
+    for i in tqdm(range(N - 1), position=1, desc="Denoising: ", ncols=0, leave=False):
+
+        # with profiler.record_function(f"Model Call"):
+
+        start_time = time.time()
         t = torch.full((batch.num_graphs,), timesteps[i], device=device)
         t_hat = t - noise * dt if (i > 0 and t[0] > ts_min and t[0] < ts_max) else t
 
@@ -438,19 +452,52 @@ def dpm_solver(
         x0_t, R0_t = get_pos0_rot0(sdes=sdes, batch=batch, t=t, score=score)
         # x0_t = batch.pos.reshape(batch.batch_size, seq_length, 3).detach().cpu()
         # R0_t = batch.node_orientations.reshape(batch.batch_size, seq_length, 3, 3).detach().cpu()
-        x0 += [x0_t]
-        R0 += [R0_t]
+        x0 += [x0_t.cpu()]
+        R0 += [R0_t.cpu()]
+        time_potentials, time_resampling = None, None
+        if steering_config is not None and fk_potentials is not None and steering_config.do_steering:  # always eval potentials
+            start1 = time.time()
+            # atom37, _, _ = batch_frames_to_atom37(10 * x0_t, R0_t, batch.sequence)
+            atom37_conversion_time = time.time() - start1
+            # print('Atom37 Conversion took', atom37_conversion_time, 'seconds')
+            # N_pos, Ca_pos, C_pos, O_pos = atom37[..., 0, :], atom37[..., 1, :], atom37[..., 2, :], atom37[..., 4, :]  # [BS, L, 4, 3] -> [BS, L, 3] for N,Ca,C,O
+            energies = []
+            for potential_ in fk_potentials:
+                # with profiler.record_function(f"{potential_.__class__.__name__}"):
+                # energies += [potential_(N_pos, Ca_pos, C_pos, O_pos, t=i, N=N)]
+                energies += [potential_(None, x0_t, None, None, t=i, N=N)]
 
-        if fk_potentials is not None:  # always eval potentials
-            total_energy = torch.stack([potential_(x0_t, R0_t, batch.sequence, t=i / (N - 2)) for potential_ in fk_potentials], dim=-1).sum(-1)
-            if num_fk_samples > 1:  # if resampling implicitely given by num_fk_samples > 1
-                if N // 2 < i < N - 2 and i % 3 == 0:
-                    batch = resample_batch(batch=batch, energy=total_energy, previous_energy=previous_energy, num_fk_samples=num_fk_samples, num_samples=num_fk_samples)
-                    previous_energy = total_energy
-                elif i == N - 2:
-                    # print('Final Resampling back to BS')
-                    batch = resample_batch(batch=batch, energy=total_energy, previous_energy=previous_energy, num_fk_samples=num_fk_samples, num_samples=1)
+            time_potentials = time.time() - start1
+            # print('Potential Evaluation took', time_potentials, 'seconds')
 
+            total_energy = torch.stack(energies, dim=-1).sum(-1)  # [BS]
+            print(f'Total Energy (Step {i}): ', total_energy.mean().item(), '±', total_energy.std().item())
+            # for j, energy in enumerate(total_energy):
+            # wandb.log({f"Energy SamTple {j // steering_config.num_particles}/Particle {j % steering_config.num_particles}": energy.item()}, commit=False)
+            if steering_config.num_particles > 1:  # if resampling implicitely given by num_fk_samples > 1
+                start2 = time.time()
+                if int(N * steering_config.start) <= i < (N - 2) and i % steering_config.resample_every_n_steps == 0:
+                    wandb.log({'Resampling': 1}, commit=False)
+                    batch, _ = resample_batch(batch=batch, energy=total_energy, previous_energy=previous_energy,
+                                              num_fk_samples=steering_config.num_particles,
+                                              num_resamples=steering_config.num_particles)
+                elif N - 2 <= i:
+                    # print('Final Resampling [BS, FK_particles] back to BS')
+                    batch, _ = resample_batch(batch=batch, energy=total_energy, previous_energy=previous_energy,
+                                              num_fk_samples=steering_config.num_particles, num_resamples=1)
+                else:
+                    wandb.log({'Resampling': 0}, commit=False)
+                time_resampling = time.time() - start2
+            previous_energy = total_energy if steering_config.previous_energy else None
+        end_time = time.time()
+        total_time = end_time - start_time
+        wandb.log({'Time/time_potential': time_potentials / total_time if time_potentials is not None else 0.}, commit=False)
+        wandb.log({'Time/time_resampling': time_resampling / total_time if time_resampling is not None else 0.}, commit=False)
+        wandb.log({'Integration Step': t[0].item(),
+                   'Time/total_time': end_time - start_time,
+                   }, commit=True)
     x0 = [x0[-1]] + x0  # add the last clean sample to the front to make Protein Viewer display it nicely
     R0 = [R0[-1]] + R0
+    '''Examine Structural Violation / Physicality of final sample'''
+
     return batch, (x0, R0)
