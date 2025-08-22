@@ -29,6 +29,7 @@ if torch.cuda.is_available():
 @hydra.main(config_path="config", config_name="bioemu.yaml", version_base="1.2")
 def main(cfg: DictConfig):
 
+    
     print(OmegaConf.to_yaml(cfg))
 
     '''
@@ -71,7 +72,8 @@ def main(cfg: DictConfig):
                             output_dir=output_dir_FK,
                             denoiser_config=cfg.denoiser,
                             fk_potentials=fk_potentials,
-                            steering_config=cfg.steering)
+                            steering_config=cfg.steering,
+                            filter_samples=True)
     pos, rot = backbone['pos'], backbone['rot']
     # max_memory = torch.cuda.max_memory_allocated(self._device) / (1024**2)
     wandb.finish()

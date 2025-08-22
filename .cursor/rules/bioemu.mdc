@@ -1,0 +1,76 @@
+---
+alwaysApply: true
+---
+# BioEMU Development Rules
+
+This file contains development guidelines and best practices for working with the BioEMU project, which focuses on molecular dynamics (MD) simulations and biomolecular data analysis using the Feynman/EMU framework.
+
+## Molecular Dynamics and Simulation
+
+When working with MD trajectories and simulations:
+- Use `mdtraj` for trajectory analysis and manipulation
+- Prefer `load_simulation_from_files` for loading trajectory fragments
+- Use `mdtraj.join()` to combine trajectory fragments
+- Access coordinates via `traj.xyz` (shape: n_frames, n_atoms, 3)
+- Use `traj.topology.select()` DSL for atom selection over manual loops
+- For CA atoms specifically, use `traj.topology.select('name CA')`
+
+## Blob Storage and Data Access
+
+When working with blob storage:
+- Use `blob_storage.uri_to_local()` to get local paths without downloading
+- Use `blob_storage.download_dir()` for directories, `download_file()` for single files
+- Check existence with `blob_storage.uri_file_exists()` before downloading
+- Expect blob URIs in format: `blob-storage://storage-name/path/`
+- Always check if local files exist before downloading to leverage caching
+
+## CuratedMDDir Structure
+
+When working with curated MD data:
+- Expect directory structure: `topology.pdb`, `dataset.json`, `trajs/` subdirectory
+- Use `CuratedMDDir(root=Path(local_path))` to access structured data
+- Access topology via `raw_data.topology_file`
+- Iterate simulations via `raw_data.simulations`
+
+## File Paths and Imports
+
+- Use `pathlib.Path` for path operations instead of string concatenation
+- Add feynman project to path: `sys.path.append('/home/luwinkler')`
+- Import from: `feynman.projects.emu.core.data.blob_storage`
+- Import from: `feynman.projects.emu.core.data.curated_md_dir`
+- Import from: `feynman.projects.emu.core.dataset.processing`
+
+## Analysis Patterns
+
+- For structural analysis, extract CA atoms first for faster computation
+- Use `np.linalg.vector_norm()` for distance calculations
+- Access topology info via `traj.topology.n_atoms`, `traj.topology.n_residues`, etc.
+- Use `traj.topology.to_fasta()` to get sequence information
+- For chain analysis, iterate with `traj.topology.chains`
+
+## Error Handling
+
+- Always check if trajectory fragments exist before joining
+- Verify local paths exist before creating CuratedMDDir objects
+- Handle empty simulation lists gracefully
+
+## Current Focus
+
+- The primary development focus is currently on the "steering" functionality. This involves creating, comparing, and analyzing steered molecular dynamics simulations.
+
+## Steering Functionality
+
+- **Overview**: The steering mechanism guides the diffusion model towards physically plausible structures by applying potential energy functions during the denoising process.
+- **Core Logic**: Steering is implemented within the `dpm_solver` function in `denoiser.py`.
+- **Process**:
+    - At each step of the denoising loop, a "clean" structure (`x0`) is predicted.
+    - A series of potential energy functions (defined in `steering.py`) are evaluated on this `x0` structure.
+    - The calculated energies are used to resample the batch of structures via `resample_batch`. Structures with lower energy (i.e., fewer physical violations) are more likely to be kept.
+- **Potentials (`steering.py`)**:
+    - Potentials are classes that inherit from `Potential`.
+    - Key potentials include `CaCaDistancePotential` (ideal bond lengths), `CaClashPotential` (steric clashes), and `TerminiDistancePotential` (end-to-end distance).
+    - The `potential_loss_fn` provides a customizable flat-bottom loss with linear and quadratic penalties.
+- **Configuration (`steering.yaml`)**:
+    - Steering is enabled via `do_steering: true`.
+    - `num_particles` controls how many parallel samples are run and resampled.
+    - The `potentials` section defines which potential classes from `steering.py` to use and their specific parameters (e.g., target distances, tolerances, weights).

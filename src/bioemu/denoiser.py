@@ -255,11 +255,139 @@ def heun_denoiser(
                         x=batch_hat[field],
                         dt=(t_next - t_hat)[0],
                         drift=avg_drift[field],
-                        diffusion=0.0,
+                        diffusion=1.0,
                     )[0]
                 )
 
-    return batch
+    return batch, None
+
+
+def euler_maruyama_denoiser(
+    *,
+    sdes: dict[str, SDE],
+    N: int,
+    eps_t: float,
+    max_t: float,
+    device: torch.device,
+    batch: Batch,
+    score_model: torch.nn.Module,
+    noise_weight: float = 1.0,
+    fk_potentials: List[Callable] | None = None,
+    steering_config: dict | None = None,
+) -> ChemGraph:
+    """Sample from prior and then denoise using Euler-Maruyama method."""
+
+    batch = batch.to(device)
+    if isinstance(score_model, torch.nn.Module):
+        # permits unit-testing with dummy model
+        score_model = score_model.to(device)
+
+    assert isinstance(sdes["node_orientations"], torch.nn.Module)  # shut up mypy
+    sdes["node_orientations"] = sdes["node_orientations"].to(device)
+    batch = batch.replace(
+        pos=sdes["pos"].prior_sampling(batch.pos.shape, device=device),
+        node_orientations=sdes["node_orientations"].prior_sampling(
+            batch.node_orientations.shape, device=device
+        ),
+    )
+
+    ts_min = 0.0
+    ts_max = 1.0
+    timesteps = torch.linspace(max_t, eps_t, N, device=device)
+    dt = -torch.tensor((max_t - eps_t) / (N - 1)).to(device)
+    fields = list(sdes.keys())
+    predictors = {
+        name: EulerMaruyamaPredictor(
+            corruption=sde, noise_weight=noise_weight, marginal_concentration_factor=1.0
+        )
+        for name, sde in sdes.items()
+    }
+    batch_size = batch.num_graphs
+
+    x0, R0 = [], []
+    previous_energy = None
+
+    for i in tqdm(range(N), position=1, desc="Denoising: ", ncols=0, leave=False):
+        # Set the timestep
+        t = torch.full((batch_size,), timesteps[i], device=device)
+        t_next = t + dt  # dt is negative; t_next is slightly less noisy than t.
+
+        # Get score at current state
+        score = get_score(batch=batch, t=t, score_model=score_model, sdes=sdes)
+
+        # Compute drift for each field
+        drifts = {}
+        diffusions = {}
+        for field in fields:
+            drifts[field], diffusions[field] = predictors[field].reverse_drift_and_diffusion(
+                x=batch[field], t=t, batch_idx=batch.batch, score=score[field]
+            )
+
+        # Apply single Euler-Maruyama step
+        for field in fields:
+            batch[field] = predictors[field].update_given_drift_and_diffusion(
+                x=batch[field],
+                dt=dt,
+                drift=drifts[field],
+                diffusion=diffusions[field],
+            )[0]
+        x0_t, R0_t = get_pos0_rot0(sdes=sdes, batch=batch, t=t, score=score)
+        # x0_t = batch.pos.reshape(batch.batch_size, seq_length, 3).detach().cpu()
+        # R0_t = batch.node_orientations.reshape(batch.batch_size, seq_length, 3, 3).detach().cpu()
+        x0 += [x0_t.cpu()]
+        R0 += [R0_t.cpu()]
+        if steering_config is not None and fk_potentials is not None and steering_config.do_steering:  # always eval potentials
+            start_time = time.time()
+            # seq_length = len(batch.sequence[0])
+            
+            time_potentials, time_resampling = None, None
+            start1 = time.time()
+            # atom37, _, _ = batch_frames_to_atom37(10 * x0_t, R0_t, batch.sequence)
+            atom37_conversion_time = time.time() - start1
+            # print('Atom37 Conversion took', atom37_conversion_time, 'seconds')
+            # N_pos, Ca_pos, C_pos, O_pos = atom37[..., 0, :], atom37[..., 1, :], atom37[..., 2, :], atom37[..., 4, :]  # [BS, L, 4, 3] -> [BS, L, 3] for N,Ca,C,O
+            energies = []
+            for potential_ in fk_potentials:
+                # with profiler.record_function(f"{potential_.__class__.__name__}"):
+                # energies += [potential_(N_pos, Ca_pos, C_pos, O_pos, t=i, N=N)]
+                energies += [potential_(None, 10 * x0_t, None, None, t=i, N=N)]
+
+            time_potentials = time.time() - start1
+            # print('Potential Evaluation took', time_potentials, 'seconds')
+
+            total_energy = torch.stack(energies, dim=-1).sum(-1)  # [BS]
+            wandb.log({'Energy/Total Energy': total_energy.mean().item()}, commit=False)
+            # print(f'Total Energy (Step {i}): ', total_energy.mean().item(), '±', total_energy.std().item())
+
+            # for j, energy in enumerate(total_energy):
+            # wandb.log({f"Energy SamTple {j // steering_config.num_particles}/Particle {j % steering_config.num_particles}": energy.item()}, commit=False)
+            if steering_config.num_particles > 1:  # if resampling implicitely given by num_fk_samples > 1
+                start2 = time.time()
+                if int(N * steering_config.start) <= i < (N - 2) and i % steering_config.resample_every_n_steps == 0:
+                    wandb.log({'Resampling': 1}, commit=False)
+                    batch, _ = resample_batch(batch=batch, energy=total_energy, previous_energy=previous_energy,
+                                              num_fk_samples=steering_config.num_particles,
+                                              num_resamples=steering_config.num_particles)
+                elif N - 1 <= i:
+                    # print('Final Resampling [BS, FK_particles] back to BS')
+                    batch, _ = resample_batch(batch=batch, energy=total_energy, previous_energy=previous_energy,
+                                              num_fk_samples=steering_config.num_particles, num_resamples=1)
+                else:
+                    wandb.log({'Resampling': 0}, commit=False)
+                time_resampling = time.time() - start2
+            previous_energy = total_energy if steering_config.previous_energy else None
+            end_time = time.time()
+            total_time = end_time - start_time
+            wandb.log({'Time/time_potential': time_potentials / total_time if time_potentials is not None else 0.}, commit=False)
+            wandb.log({'Time/time_resampling': time_resampling / total_time if time_resampling is not None else 0.}, commit=False)
+            wandb.log({'Integration Step': t[0].item(),
+                    'Time/total_time': end_time - start_time,
+                    }, commit=True)
+            
+    x0 = [x0[-1]] + x0  # add the last clean sample to the front to make Protein Viewer display it nicely
+    R0 = [R0[-1]] + R0
+
+    return batch, (x0, R0)
 
 
 def _t_from_lambda(sde: CosineVPSDE, lambda_t: torch.Tensor) -> torch.Tensor:
@@ -448,14 +576,16 @@ def dpm_solver(
         Batchsize is now BS, MC and we do [BS x MC, ...] predictions, reshape it to [BS, MC, ...]
         then apply per sample a filtering op
         '''
-        seq_length = len(batch.sequence[0])
         x0_t, R0_t = get_pos0_rot0(sdes=sdes, batch=batch, t=t, score=score)
         # x0_t = batch.pos.reshape(batch.batch_size, seq_length, 3).detach().cpu()
         # R0_t = batch.node_orientations.reshape(batch.batch_size, seq_length, 3, 3).detach().cpu()
         x0 += [x0_t.cpu()]
         R0 += [R0_t.cpu()]
-        time_potentials, time_resampling = None, None
+
         if steering_config is not None and fk_potentials is not None and steering_config.do_steering:  # always eval potentials
+            # seq_length = len(batch.sequence[0])
+
+            time_potentials, time_resampling = None, None
             start1 = time.time()
             # atom37, _, _ = batch_frames_to_atom37(10 * x0_t, R0_t, batch.sequence)
             atom37_conversion_time = time.time() - start1
@@ -465,13 +595,15 @@ def dpm_solver(
             for potential_ in fk_potentials:
                 # with profiler.record_function(f"{potential_.__class__.__name__}"):
                 # energies += [potential_(N_pos, Ca_pos, C_pos, O_pos, t=i, N=N)]
-                energies += [potential_(None, x0_t, None, None, t=i, N=N)]
+                energies += [potential_(None, 10 * x0_t, None, None, t=i, N=N)]
 
             time_potentials = time.time() - start1
             # print('Potential Evaluation took', time_potentials, 'seconds')
 
             total_energy = torch.stack(energies, dim=-1).sum(-1)  # [BS]
-            print(f'Total Energy (Step {i}): ', total_energy.mean().item(), '±', total_energy.std().item())
+            wandb.log({'Energy/Total Energy': total_energy.mean().item()}, commit=False)
+            # print(f'Total Energy (Step {i}): ', total_energy.mean().item(), '±', total_energy.std().item())
+
             # for j, energy in enumerate(total_energy):
             # wandb.log({f"Energy SamTple {j // steering_config.num_particles}/Particle {j % steering_config.num_particles}": energy.item()}, commit=False)
             if steering_config.num_particles > 1:  # if resampling implicitely given by num_fk_samples > 1
@@ -489,15 +621,15 @@ def dpm_solver(
                     wandb.log({'Resampling': 0}, commit=False)
                 time_resampling = time.time() - start2
             previous_energy = total_energy if steering_config.previous_energy else None
-        end_time = time.time()
-        total_time = end_time - start_time
-        wandb.log({'Time/time_potential': time_potentials / total_time if time_potentials is not None else 0.}, commit=False)
-        wandb.log({'Time/time_resampling': time_resampling / total_time if time_resampling is not None else 0.}, commit=False)
-        wandb.log({'Integration Step': t[0].item(),
-                   'Time/total_time': end_time - start_time,
-                   }, commit=True)
+            end_time = time.time()
+            total_time = end_time - start_time
+            wandb.log({'Time/time_potential': time_potentials / total_time if time_potentials is not None else 0.}, commit=False)
+            wandb.log({'Time/time_resampling': time_resampling / total_time if time_resampling is not None else 0.}, commit=False)
+            wandb.log({'Integration Step': t[0].item(),
+                    'Time/total_time': end_time - start_time,
+                    }, commit=True)
+                    
     x0 = [x0[-1]] + x0  # add the last clean sample to the front to make Protein Viewer display it nicely
     R0 = [R0[-1]] + R0
-    '''Examine Structural Violation / Physicality of final sample'''
 
     return batch, (x0, R0)

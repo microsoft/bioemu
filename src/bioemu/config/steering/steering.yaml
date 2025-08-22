@@ -2,6 +2,7 @@ do_steering: true
 num_particles: 2
 start: 0.5
 resample_every_n_steps: 5
+previous_energy: false
 potentials:
   cacadist:
     _target_: bioemu.steering.CaCaDistancePotential

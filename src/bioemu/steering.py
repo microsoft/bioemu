@@ -381,10 +381,59 @@ class CaClashPotential(Potential):
         plt.close('all')
         return self.weight * potential_energy.sum(dim=(-1))
 
-# @dataclass
-# class CNDistancePotential(Potential):
-#     def __call__(self, N_Ca_C_O_Cb, t=None):
-#         # [BS, SeqLength, 5, 3] : atom37[...,:5]
+class CaClashPotentialOffset(Potential):
+    """Potential to prevent CA atoms from clashing (getting too close)."""
+    
+    def __init__(self, tolerance=0.0, dist=4.2, slope=1.0, weight=1.0, offset=3):
+        """
+        Args:
+            tolerance: Additional buffer distance (added to dist)
+            dist: Minimum allowed distance between CA atoms
+            slope: Steepness of the penalty
+            weight: Overall weight of this potential
+            offset: Minimum residue separation to consider (default=1 excludes diagonal)
+        """
+        self.tolerance = tolerance
+        self.dist = dist
+        self.slope = slope
+        self.weight = weight
+        self.offset = offset
+    
+    def __call__(self, N_pos, Ca_pos, C_pos, O_pos, t, N):
+        """
+        Calculate clash potential for CA atoms.
+        
+        Args:
+            N_pos, Ca_pos, C_pos, O_pos: Backbone atom positions
+            t: Time step
+            N: Number of residues
+        
+        Returns:
+            Tensor of shape (batch_size,) with clash energies
+        """
+        # Calculate all pairwise distances
+        pairwise_distances = torch.cdist(Ca_pos, Ca_pos)  # (batch_size, n_residues, n_residues)
+        
+        # Use triu mask with offset to select relevant pairs
+        n_residues = Ca_pos.shape[1]
+        mask = torch.ones(n_residues, n_residues, dtype=torch.bool, device=Ca_pos.device)
+        mask = mask.triu(diagonal=self.offset)
+        relevant_distances = pairwise_distances[:, mask]  # (batch_size, n_pairs)
+        
+        loss_fn = lambda x: torch.relu(self.slope * (self.dist - self.tolerance - x))
+        fig = plot_caclashes(relevant_distances, loss_fn, t)
+        potential_energy = loss_fn(relevant_distances)
+        wandb.log({
+            "CaClash/ca_clash_dist": relevant_distances.mean().item(),
+            "CaClash/ca_clash_dist_std": relevant_distances.std().item(),
+            "CaClash/potential_energy": potential_energy.mean().item(),
+            "CaClash/ca_ca_dist < 1.A [#]": (relevant_distances < 1.0).int().sum().item(),
+            "CaClash/ca_ca_dist < 1.A [%]": (relevant_distances < 1.0).float().mean().item(),
+            "CaClash/potential_energy_hist": wandb.Histogram(potential_energy.detach().cpu().flatten().numpy()),
+            "CaClash/ca_ca_dist_hist": wandb.Image(fig)
+        }, commit=False)
+        plt.close('all')
+        return self.weight * potential_energy.sum(dim=(-1))
 
 
 class CNDistancePotential(Potential):
@@ -502,8 +551,14 @@ class TerminiDistancePotential(Potential):
     def __call__(self, N_pos, Ca_pos, C_pos, O_pos, t=None, N=None):
         """
         Compute the potential energy based on C_i - N_{i+1} bond lengths using backbone atom positions.
+        Getting in Angstrom, converting to nm.
         """
-        termini_distance = torch.linalg.norm(Ca_pos[:, 0] - Ca_pos[:, -1], axis=-1)
+        termini_distance = torch.linalg.norm(Ca_pos[:, 0] - Ca_pos[:, -1], axis=-1) / 10
+        wandb.log({
+            "TerminiDistance/termini_distance_mean": termini_distance.mean().item(),
+            "TerminiDistance/termini_distance_std": termini_distance.std().item(),
+            "TerminiDistance/termini_distance": wandb.Histogram(termini_distance.detach().cpu().flatten().numpy()),
+        }, commit=False)
         energy = potential_loss_fn(
             termini_distance,
             target=self.target,

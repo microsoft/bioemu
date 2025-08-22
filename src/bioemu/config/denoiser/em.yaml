@@ -1,0 +1,6 @@
+_target_: bioemu.shortcuts.euler_maruyama_denoiser
+_partial_: true
+eps_t: 0.001
+max_t: 0.99
+N: 200
+noise_weight: 1.0

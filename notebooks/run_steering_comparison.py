@@ -163,7 +163,7 @@ def analyze_termini_distribution(steered_samples, no_steering_samples, cfg):
     plt.plot(x_centers, boltzmann, label="Boltzmann Distribution", color='green', linestyle='--', linewidth=2)
     plt.plot(x_centers, analytical_posterior, label="Analytical Posterior", color='orange', linewidth=2)
 
-    plt.xlabel('Termini Distance (Å)')
+    plt.xlabel('Termini Distance (nm)')
     plt.ylabel('Density')
     plt.title('Comparison of Termini Distance Distributions: Steered vs No Steering')
     plt.legend()
@@ -182,65 +182,67 @@ def analyze_termini_distribution(steered_samples, no_steering_samples, cfg):
 
 @hydra.main(config_path="../src/bioemu/config", config_name="bioemu.yaml", version_base="1.2")
 def main(cfg):
-    """Main function to run both experiments and analyze results."""
-    # Override steering section and sequence
-    cfg = hydra.compose(config_name="bioemu.yaml",
-                        overrides=['steering=chingolin_steering',
-                                   'sequence=GYDPETGTWG',
-                                   'num_samples=512',
-                                   'denoiser.N=50',
-                                   'steering.resample_every_n_steps=1',
-                                   'steering.potentials.termini.target=1.5',
-                                   'steering.num_particles=5'])
-    # sequence = 'GYDPETGTWG'  # Chignolin
+    for num_particles in [3, 5, 10, 20, 30]:
+        """Main function to run both experiments and analyze results."""
+        # Override steering section and sequence
+        cfg = hydra.compose(config_name="bioemu.yaml",
+                            overrides=['steering=chingolin_steering',
+                                    'sequence=GYDPETGTWG',
+                                    'num_samples=512',
+                                    'denoiser.N=50',
+                                    'steering.resample_every_n_steps=1',
+                                    'steering.potentials.termini.slope=2',
+                                    'steering.potentials.termini.target=1.5',
+                                    f'steering.num_particles={num_particles}'])
+        # sequence = 'GYDPETGTWG'  # Chignolin
 
-    print("Starting steering comparison experiment...")
-    print(f"Sequence: {cfg.sequence} (length: {len(cfg.sequence)})")
+        print("Starting steering comparison experiment...")
+        print(f"Sequence: {cfg.sequence} (length: {len(cfg.sequence)})")
 
-    # Initialize wandb once for the entire comparison
-    wandb.init(
-        project="bioemu-chignolin-steering-comparison",
-        name=f"steering_comparison_{len(cfg.sequence)}_{cfg.sequence[:10]}",
-        config={
-            "sequence": cfg.sequence,
-            "sequence_length": len(cfg.sequence),
-            "test_type": "steering_comparison"
-        } | dict(OmegaConf.to_container(cfg, resolve=True)),
-        mode="disabled",  # Set to disabled for testing
-        settings=wandb.Settings(code_dir=".."),
-    )
+        # Initialize wandb once for the entire comparison
+        wandb.init(
+            project="bioemu-chignolin-steering-comparison",
+            name=f"steering_comparison_{len(cfg.sequence)}_{cfg.sequence[:10]}",
+            config={
+                "sequence": cfg.sequence,
+                "sequence_length": len(cfg.sequence),
+                "test_type": "steering_comparison"
+            } | dict(OmegaConf.to_container(cfg, resolve=True)),
+            mode="disabled",  # Set to disabled for testing
+            settings=wandb.Settings(code_dir=".."),
+        )
 
-    # Override steering settings for no-steering experiment
-    cfg_no_steering = OmegaConf.merge(cfg, {
-        "steering": {
-            "do_steering": False,
-            "num_particles": 1
-        }
-    })
+        # Override steering settings for no-steering experiment
+        cfg_no_steering = OmegaConf.merge(cfg, {
+            "steering": {
+                "do_steering": False,
+                "num_particles": 1
+            }
+        })
 
-    # Run experiment without steering
-    no_steering_samples = run_steering_experiment(cfg_no_steering, cfg.sequence, do_steering=False)
+        # Run experiment without steering
+        no_steering_samples = run_steering_experiment(cfg_no_steering, cfg.sequence, do_steering=False)
 
-    # Override steering settings for steered experiment
-    cfg_steered = OmegaConf.merge(cfg, {
-        "steering": {
-            "do_steering": True,
-        },
-    })
+        # Override steering settings for steered experiment
+        cfg_steered = OmegaConf.merge(cfg, {
+            "steering": {
+                "do_steering": True,
+            },
+        })
 
-    # Run experiment with steering
-    steered_samples = run_steering_experiment(cfg_steered, cfg.sequence, do_steering=True)
+        # Run experiment with steering
+        steered_samples = run_steering_experiment(cfg_steered, cfg.sequence, do_steering=True)
 
-    # Analyze and plot results using data in memory
-    analyze_termini_distribution(steered_samples, no_steering_samples, cfg)
+        # Analyze and plot results using data in memory
+        analyze_termini_distribution(steered_samples, no_steering_samples, cfg)
 
-    # Finish wandb run
-    wandb.finish()
+        # Finish wandb run
+        wandb.finish()
 
-    print(f"\n{'=' * 50}")
-    print("Experiment completed successfully!")
-    print(f"All data kept in memory for analysis.")
-    print(f"{'=' * 50}")
+        print(f"\n{'=' * 50}")
+        print("Experiment completed successfully!")
+        print(f"All data kept in memory for analysis.")
+        print(f"{'=' * 50}")
 
 
 if __name__ == "__main__":

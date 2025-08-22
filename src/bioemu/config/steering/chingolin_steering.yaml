@@ -2,7 +2,7 @@ do_steering: true
 num_particles: 5
 start: 0.5
 resample_every_n_steps: 1
-previous_energy: false
+previous_energy: true
 potentials:
   # cacadist:
   #   _target_: bioemu.steering.CaCaDistancePotential
@@ -18,10 +18,10 @@ potentials:
   #   weight: 1.0
   termini:
     _target_: bioemu.steering.TerminiDistancePotential
-    target: 0.5
+    target: 1.5
     tolerance: 0.1
     slope: 3
     max_value: 100
-    linear_from: 1.
+    linear_from: .5
     order: 2
     weight: 1.0
