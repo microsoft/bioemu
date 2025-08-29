@@ -12,7 +12,7 @@ from torch_geometric.data.batch import Batch
 import time
 import torch.autograd.profiler as profiler
 from torch.profiler import profile, ProfilerActivity, record_function
-from tqdm.auto import tqdm
+from tqdm import tqdm
 
 from .chemgraph import ChemGraph
 from .sde_lib import SDE, CosineVPSDE

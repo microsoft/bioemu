@@ -12,7 +12,6 @@ import hydra
 from omegaconf import OmegaConf
 import matplotlib.pyplot as plt
 from bioemu.steering import TerminiDistancePotential, potential_loss_fn
-from tqdm.auto import tqdm
 
 # Set fixed seeds for reproducibility
 SEED = 42
@@ -171,6 +170,7 @@ def analyze_termini_distribution(steered_samples, no_steering_samples, cfg):
     plt.grid(True, alpha=0.3)
     plt.ylim(0, 5)
     plt.tight_layout()
+    plt.show()
 
     # Save plot
     plot_path = "./outputs/test_steering/termini_distribution_comparison.png"
@@ -241,7 +241,7 @@ def main(cfg):
             fig = analyze_termini_distribution(steered_samples, no_steering_samples, cfg)
             fig.suptitle(f"Target: {target}, Num Particles: {num_particles}")
             plt.tight_layout()
-            plt.show()
+            # plt.show()
 
             # Finish wandb run
             wandb.finish()

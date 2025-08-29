@@ -16,7 +16,7 @@ import matplotlib.pyplot as plt
 from typing import Tuple, Optional
 from torch.distributions import Normal, MixtureSameFamily, Categorical
 
-from tqdm.auto import tqdm
+from tqdm import tqdm
 
 # Import potential_loss_fn from bioemu steering
 import sys
