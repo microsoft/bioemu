@@ -145,9 +145,6 @@ print(f"CA-CA distances > 4.5 nm: {num_large_distances} out of {total_distances}
 # %%
 
 import torch
-from tqdm.auto import tqdm
-from bioemu.steering import potential_loss_fn
-
 
 
 # Convert backbone coordinates to torch tensors for batch operations

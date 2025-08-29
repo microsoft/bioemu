@@ -1,76 +1,323 @@
 ---
 alwaysApply: true
 ---
-# BioEMU Development Rules
+# BioEMU Development Guide
 
-This file contains development guidelines and best practices for working with the BioEMU project, which focuses on molecular dynamics (MD) simulations and biomolecular data analysis using the Feynman/EMU framework.
+This comprehensive guide provides architectural principles, design patterns, and best practices for implementing new features in the BioEMU project—a deep learning system for fast protein structure ensemble generation.
 
-## Molecular Dynamics and Simulation
+## Project Overview
 
-When working with MD trajectories and simulations:
-- Use `mdtraj` for trajectory analysis and manipulation
-- Prefer `load_simulation_from_files` for loading trajectory fragments
-- Use `mdtraj.join()` to combine trajectory fragments
-- Access coordinates via `traj.xyz` (shape: n_frames, n_atoms, 3)
-- Use `traj.topology.select()` DSL for atom selection over manual loops
-- For CA atoms specifically, use `traj.topology.select('name CA')`
+**BioEMU** emulates protein structural ensembles using diffusion models, achieving ~1000x speedup over traditional MD simulations while maintaining thermodynamic accuracy (~1 kcal/mol error). The system combines two coupled diffusion processes: position diffusion (R³) and rotation diffusion (SO(3)).
 
-## Blob Storage and Data Access
+WRITE CODE AS CONCISE AS POSSIBLE!!!
+DONT WRITE UNNECESSARY CODE LIKE EXCESSIVE PRINT STATEMENTS!!!
 
-When working with blob storage:
-- Use `blob_storage.uri_to_local()` to get local paths without downloading
-- Use `blob_storage.download_dir()` for directories, `download_file()` for single files
-- Check existence with `blob_storage.uri_file_exists()` before downloading
-- Expect blob URIs in format: `blob-storage://storage-name/path/`
-- Always check if local files exist before downloading to leverage caching
+---
 
-## CuratedMDDir Structure
+## Python Environment
 
-When working with curated MD data:
-- Expect directory structure: `topology.pdb`, `dataset.json`, `trajs/` subdirectory
-- Use `CuratedMDDir(root=Path(local_path))` to access structured data
-- Access topology via `raw_data.topology_file`
-- Iterate simulations via `raw_data.simulations`
+Run using 'mamba activate bioemu'
+Don't install any dependencies on your own.
 
-## File Paths and Imports
+## Core Architecture Principles
 
-- Use `pathlib.Path` for path operations instead of string concatenation
-- Add feynman project to path: `sys.path.append('/home/luwinkler')`
-- Import from: `feynman.projects.emu.core.data.blob_storage`
-- Import from: `feynman.projects.emu.core.data.curated_md_dir`
-- Import from: `feynman.projects.emu.core.dataset.processing`
+### 1. **Separation of Concerns**
+- **Data Representation**: `ChemGraph` encapsulates protein structure + context embeddings
+- **Diffusion Processes**: Separate SDEs for position (`CosineVPSDE`) and rotation (`SO3SDE`)
+- **Model Architecture**: `DiGConditionalScoreModel` wraps `DistributionalGraphormer`
+- **Sampling**: Configurable denoisers (`dpm_solver`, `heun_denoiser`, `euler_maruyama_denoiser`)
 
-## Analysis Patterns
+### 2. **Equivariance and Physical Constraints**
+- **SE(3) Equivariance**: Model outputs respect spatial symmetries
+- **SO(3) Manifold**: Proper handling of rotational degrees of freedom
+- **Physical Realism**: Optional steering system enforces molecular constraints
 
-- For structural analysis, extract CA atoms first for faster computation
-- Use `np.linalg.vector_norm()` for distance calculations
-- Access topology info via `traj.topology.n_atoms`, `traj.topology.n_residues`, etc.
-- Use `traj.topology.to_fasta()` to get sequence information
-- For chain analysis, iterate with `traj.topology.chains`
+### 3. **Configuration-Driven Design**
+- **Hydra Integration**: Hierarchical YAML configs with composition
+- **Modularity**: Swap components via `_target_` parameters
+- **Environment Adaptation**: Different configs for different use cases
 
-## Error Handling
+---
 
-- Always check if trajectory fragments exist before joining
-- Verify local paths exist before creating CuratedMDDir objects
-- Handle empty simulation lists gracefully
+## Key Design Patterns
 
-## Current Focus
+### 1. **Abstract Base Classes**
+```python
+# Pattern: Define interfaces for extensibility
+class SDE:
+    @abc.abstractmethod
+    def sde(self, x, t, batch_idx=None) -> tuple[torch.Tensor, torch.Tensor]:
+        """Returns drift f and diffusion g for dx = f*dt + g*dW"""
+        pass
 
-- The primary development focus is currently on the "steering" functionality. This involves creating, comparing, and analyzing steered molecular dynamics simulations.
+class Potential:
+    def __call__(self, **kwargs):
+        """Evaluate potential energy for steering"""
+        raise NotImplementedError
+```
 
-## Steering Functionality
+### 2. **Immutable Data Structures**
+```python
+# Pattern: Use replace() for functional updates
+class ChemGraph(Data):
+    def replace(self, **kwargs) -> ChemGraph:
+        """Returns shallow copy with updated fields"""
+        # Preserves immutability while allowing updates
+```
 
-- **Overview**: The steering mechanism guides the diffusion model towards physically plausible structures by applying potential energy functions during the denoising process.
-- **Core Logic**: Steering is implemented within the `dpm_solver` function in `denoiser.py`.
-- **Process**:
-    - At each step of the denoising loop, a "clean" structure (`x0`) is predicted.
-    - A series of potential energy functions (defined in `steering.py`) are evaluated on this `x0` structure.
-    - The calculated energies are used to resample the batch of structures via `resample_batch`. Structures with lower energy (i.e., fewer physical violations) are more likely to be kept.
-- **Potentials (`steering.py`)**:
-    - Potentials are classes that inherit from `Potential`.
-    - Key potentials include `CaCaDistancePotential` (ideal bond lengths), `CaClashPotential` (steric clashes), and `TerminiDistancePotential` (end-to-end distance).
-    - The `potential_loss_fn` provides a customizable flat-bottom loss with linear and quadratic penalties.
-- **Configuration (`steering.yaml`)**:
-    - Steering is enabled via `do_steering: true`.
-    - `num_particles` controls how many parallel samples are run and resampled.
-    - The `potentials` section defines which potential classes from `steering.py` to use and their specific parameters (e.g., target distances, tolerances, weights).
+### 3. **Predictor Pattern for Integration**
+```python
+# Pattern: Encapsulate numerical integration schemes
+class EulerMaruyamaPredictor:
+    def reverse_drift_and_diffusion(self, *, x, t, batch_idx, score):
+        """Compute reverse-time drift and diffusion"""
+    
+    def update_given_drift_and_diffusion(self, *, x, dt, drift, diffusion):
+        """Apply single integration step"""
+```
+
+### 4. **Factory Pattern with Hydra**
+```yaml
+# Pattern: Instantiate components via configuration
+_target_: bioemu.steering.CaCaDistancePotential
+tolerance: 1.0
+slope: 1.0
+weight: 1.0
+```
+
+---
+
+## Implementation Guidelines
+
+### 1. **Adding New SDE Components**
+```python
+class YourCustomSDE(SDE):
+    def sde(self, x: torch.Tensor, t: torch.Tensor, batch_idx=None):
+        """Implement forward SDE: dx = f(x,t)dt + g(t)dW"""
+        drift = self._compute_drift(x, t)
+        diffusion = self._compute_diffusion(t)
+        return drift, diffusion
+    
+    def marginal_prob(self, x, t, batch_idx=None):
+        """Return mean and std of p_t(x|x_0)"""
+        # Implement analytical solution if possible
+        pass
+```
+
+**Integration Steps:**
+1. Add to `sde_lib.py` following `CosineVPSDE` pattern
+2. Add unit tests in `tests/test_sde_lib.py`
+3. Create config in `src/bioemu/config/sde/your_sde.yaml`
+4. Update `load_sdes()` in `model_utils.py`
+
+### 2. **Adding New Steering Potentials**
+```python
+class YourPotential(Potential):
+    def __init__(self, target: float, tolerance: float, weight: float = 1.0):
+        self.target = target
+        self.tolerance = tolerance
+        self.weight = weight
+    
+    def __call__(self, pos, rot, seq, t=None):
+        """
+        Args:
+            pos: [batch_size, seq_len, 3] Cα positions in nm
+            rot: [batch_size, seq_len, 3, 3] backbone orientations
+            seq: amino acid sequence string
+            t: diffusion timestep (optional)
+        
+        Returns:
+            energy: [batch_size] potential energy per structure
+        """
+        # Compute your potential energy
+        energy = self._compute_energy(pos, rot, seq)
+        return self.weight * energy
+```
+
+**Integration Steps:**
+1. Add class to `steering.py`
+2. Add to steering config YAML: `config/steering/your_config.yaml`
+3. Test with `tests/test_steering.py` following existing patterns
+4. Document in docstring with units (nm for positions, etc.)
+
+### 3. **Adding New Denoisers**
+```python
+def your_custom_denoiser(
+    *,
+    sdes: dict[str, SDE],
+    batch: Batch,
+    score_model: torch.nn.Module,
+    device: torch.device,
+    N: int = 50,
+    eps_t: float = 1e-3,
+    max_t: float = 0.99,
+    **kwargs
+) -> ChemGraph:
+    """
+    Custom denoising algorithm.
+    
+    Args:
+        sdes: Dictionary with 'pos' and 'node_orientations' SDEs
+        batch: Input batch with context embeddings
+        score_model: Trained DiGConditionalScoreModel
+        device: CUDA/CPU device
+        N: Number of denoising steps
+        eps_t: Final timestep (avoid t=0 for numerical stability)
+        max_t: Initial timestep (avoid t=1 for numerical stability)
+    
+    Returns:
+        Denoised ChemGraph batch
+    """
+    # Implement your algorithm following dpm_solver pattern
+    pass
+```
+
+**Integration Steps:**
+1. Add function to `denoiser.py` or new module
+2. Add to `shortcuts.py` for easy access
+3. Create config: `config/denoiser/your_denoiser.yaml`
+4. Add integration test in `tests/test_denoiser.py`
+
+### 4. **Configuration Best Practices**
+
+**Hierarchical Composition:**
+```yaml
+# config/your_experiment.yaml
+defaults:
+  - denoiser: dpm  # Inherits from config/denoiser/dpm.yaml
+  - steering: steering  # Inherits from config/steering/steering.yaml
+  - _self_
+
+# Override specific parameters
+denoiser:
+  N: 100  # More denoising steps
+steering:
+  num_particles: 5  # More particles for steering
+```
+
+**Environment-Specific Configs:**
+```yaml
+# config/production.yaml - optimized for speed
+batch_size_100: 50
+denoiser:
+  N: 50
+  
+# config/research.yaml - optimized for quality  
+batch_size_100: 20
+denoiser:
+  N: 200
+```
+
+---
+
+## Testing Patterns
+
+### 1. **Unit Tests**
+```python
+@pytest.mark.parametrize("sequence", ['GYDPETGTWG'])
+def test_your_feature(sequence):
+    """Test isolated component functionality"""
+    # Fixed seeds for reproducibility
+    torch.manual_seed(42)
+    
+    # Test with minimal working example
+    result = your_function(sequence)
+    
+    # Assert expected properties
+    assert result.shape == expected_shape
+    assert torch.allclose(result, expected_output, atol=1e-5)
+```
+
+### 2. **Integration Tests**
+```python
+def test_end_to_end_sampling():
+    """Test complete sampling pipeline"""
+    with hydra.initialize_config_dir(config_dir=str(config_path.parent)):
+        cfg = hydra.compose(config_name="test_config.yaml")
+    
+    samples = sample_main(
+        sequence="GYDPETGTWG",
+        num_samples=10,
+        output_dir="./test_output",
+        denoiser_config=cfg.denoiser
+    )
+    
+    # Verify output format and basic physics
+    assert 'pos' in samples
+    assert samples['pos'].shape[0] == 10
+```
+
+### 3. **Error Handling**
+```python
+@print_traceback_on_exception  # Use for main entry points
+def main_function():
+    try:
+        result = risky_operation()
+    except SpecificError as e:
+        logger.error(f"Expected error occurred: {e}")
+        raise
+    except Exception as e:
+        logger.error(f"Unexpected error: {e}")
+        raise RuntimeError(f"Failed due to: {e}") from e
+    
+    # Use assertions for invariants
+    assert result.shape[0] > 0, "Empty result not allowed"
+    return result
+```
+
+---
+
+## Performance Considerations
+
+### 1. **Memory Management**
+- **Batch Scaling**: `batch_size ∝ 1/seq_length²` (quadratic scaling)
+- **GPU Memory**: Monitor peak usage; use gradient accumulation if needed
+- **Caching**: Cache MSA embeddings and SO(3) lookup tables
+
+### 2. **Computational Efficiency**
+- **Mixed Precision**: Use `torch.cuda.amp` for large models
+- **Vectorization**: Batch operations across samples and timesteps
+- **Early Stopping**: Consider adaptive timestep selection
+
+### 3. **Numerical Stability**
+- **Timestep Bounds**: Avoid t=0 and t=1 (use eps_t=1e-3, max_t=0.99)
+- **SO(3) Tolerance**: Set appropriate tolerance for rotation operations
+- **Gradient Clipping**: For training stability
+
+---
+
+## Current Focus: Steering Functionality
+
+### **Overview**
+The steering mechanism guides diffusion toward physically plausible structures by applying potential energy functions during denoising.
+
+### **Core Integration Points**
+- **Denoiser Hooks**: Steering integrates into `dpm_solver` at x0 prediction steps
+- **Energy Evaluation**: Potentials evaluate predicted clean structures
+- **Resampling**: `resample_batch` filters structures based on energy
+
+### **Implementation Details**
+- **Potential Classes**: Inherit from `Potential` base class
+- **Energy Functions**: Use `potential_loss_fn` for consistent flat-bottom losses
+- **Configuration**: Enable via `do_steering: true`, configure via `potentials` section
+
+---
+
+## Contributing Guidelines
+
+1. **Follow Existing Patterns**: Study similar components before implementing
+2. **Comprehensive Testing**: Unit tests + integration tests + physics validation
+3. **Configuration First**: Make features configurable via Hydra
+4. **Documentation**: Include docstrings with units and parameter descriptions
+5. **Error Handling**: Use assertions for invariants, exceptions for user errors
+6. **Physics Awareness**: Respect molecular constraints and units (nm for positions)
+
+---
+
+## Common Pitfalls
+
+- **Unit Mismatches**: BioEMU uses nanometers for positions, ensure consistency
+- **Batch Dimensions**: Track sparse vs dense representations throughout pipeline
+- **SO(3) Operations**: Use proper manifold operations, not matrix arithmetic
+- **Memory Scaling**: Account for quadratic scaling with sequence length
+- **Timestep Boundaries**: Avoid numerical instabilities at t=0 and t=1

@@ -28,7 +28,6 @@ if torch.cuda.is_available():
 
 @hydra.main(config_path="config", config_name="bioemu.yaml", version_base="1.2")
 def main(cfg: DictConfig):
-
     
     print(OmegaConf.to_yaml(cfg))
 

@@ -21,6 +21,7 @@ from bioemu.steering import get_pos0_rot0, CaCaDistancePotential, StructuralViol
 from bioemu.convert_chemgraph import _write_batch_pdb, batch_frames_to_atom37
 
 TwoBatches = tuple[Batch, Batch]
+ThreeBatches = tuple[torch.Tensor, torch.Tensor, torch.Tensor]
 
 
 class EulerMaruyamaPredictor:
@@ -63,7 +64,7 @@ class EulerMaruyamaPredictor:
         dt: torch.Tensor,
         drift: torch.Tensor,
         diffusion: torch.Tensor,
-    ) -> TwoBatches:
+    ) -> ThreeBatches:
         z = torch.randn_like(drift)
 
         # Update to next step using either special update for SDEs on SO(3) or standard update.
@@ -77,7 +78,7 @@ class EulerMaruyamaPredictor:
         else:
             mean = x + drift * dt
             sample = mean + self.noise_weight * diffusion * torch.sqrt(dt.abs()) * z
-        return sample, mean
+        return sample, mean, z
 
     def update_given_score(
         self,
@@ -95,12 +96,13 @@ class EulerMaruyamaPredictor:
         )
 
         # Update to next step using either special update for SDEs on SO(3) or standard update.
-        return self.update_given_drift_and_diffusion(
+        sample, mean, z = self.update_given_drift_and_diffusion(
             x=x,
             dt=dt,
             drift=drift,
             diffusion=diffusion,
         )
+        return sample, mean
 
     def forward_sde_step(
         self,
@@ -114,7 +116,8 @@ class EulerMaruyamaPredictor:
 
         drift, diffusion = self.corruption.sde(x=x, t=t, batch_idx=batch_idx)
         # Update to next step using either special update for SDEs on SO(3) or standard update.
-        return self.update_given_drift_and_diffusion(x=x, dt=dt, drift=drift, diffusion=diffusion)
+        sample, mean, z = self.update_given_drift_and_diffusion(x=x, dt=dt, drift=drift, diffusion=diffusion)
+        return sample, mean
 
 
 def get_score(
@@ -229,12 +232,12 @@ def heun_denoiser(
             )
 
         for field in fields:
-            batch[field] = predictors[field].update_given_drift_and_diffusion(
+            batch[field], _, _ = predictors[field].update_given_drift_and_diffusion(
                 x=batch_hat[field],
                 dt=(t_next - t_hat)[0],
                 drift=drift_hat[field],
                 diffusion=0.0,
-            )[0]
+            )
 
         # Apply 2nd order correction.
         if t_next[0] > 0.0:
@@ -249,15 +252,13 @@ def heun_denoiser(
 
                 avg_drift[field] = (drifts[field] + drift_hat[field]) / 2
             for field in fields:
-                batch[field] = (
-                    0.0
-                    + predictors[field].update_given_drift_and_diffusion(
-                        x=batch_hat[field],
-                        dt=(t_next - t_hat)[0],
-                        drift=avg_drift[field],
-                        diffusion=1.0,
-                    )[0]
+                sample, _, _ = predictors[field].update_given_drift_and_diffusion(
+                    x=batch_hat[field],
+                    dt=(t_next - t_hat)[0],
+                    drift=avg_drift[field],
+                    diffusion=1.0,
                 )
+                batch[field] = sample
 
     return batch, None
 
@@ -305,6 +306,7 @@ def euler_maruyama_denoiser(
     batch_size = batch.num_graphs
 
     x0, R0 = [], []
+    noise_log_probs = []  # Store total noise log probabilities for each step
     previous_energy = None
 
     for i in tqdm(range(N), position=1, desc="Denoising: ", ncols=0, leave=False):
@@ -323,14 +325,27 @@ def euler_maruyama_denoiser(
                 x=batch[field], t=t, batch_idx=batch.batch, score=score[field]
             )
 
-        # Apply single Euler-Maruyama step
+        # Apply single Euler-Maruyama step and compute noise probabilities
+        log_prob = 0.0  # Accumulate log probabilities from all fields
         for field in fields:
-            batch[field] = predictors[field].update_given_drift_and_diffusion(
+            sample, mean, z = predictors[field].update_given_drift_and_diffusion(
                 x=batch[field],
                 dt=dt,
                 drift=drifts[field],
                 diffusion=diffusions[field],
-            )[0]
+            )
+
+            # Compute noise log probability using torch.distributions.Normal
+            field_noise_log_prob = torch.distributions.Normal(0, torch.ones_like(z)).log_prob(z)
+            field_noise_log_prob = - (diffusions[field]* dt.abs().pow(0.5)) + field_noise_log_prob
+            field_noise_log_prob = field_noise_log_prob.sum(dim=-1)
+
+            batch[field] = sample
+            log_prob += field_noise_log_prob  # Add to total log probability
+
+        # Store noise log probability for this step, reshaped to match x0_t format
+        log_prob = log_prob.reshape(batch.batch_size, len(batch.sequence[0])).sum(dim=-1)  # [BS]
+
         x0_t, R0_t = get_pos0_rot0(sdes=sdes, batch=batch, t=t, score=score)
         # x0_t = batch.pos.reshape(batch.batch_size, seq_length, 3).detach().cpu()
         # R0_t = batch.node_orientations.reshape(batch.batch_size, seq_length, 3, 3).detach().cpu()
@@ -339,7 +354,7 @@ def euler_maruyama_denoiser(
         if steering_config is not None and fk_potentials is not None and steering_config.do_steering:  # always eval potentials
             start_time = time.time()
             # seq_length = len(batch.sequence[0])
-            
+
             time_potentials, time_resampling = None, None
             start1 = time.time()
             # atom37, _, _ = batch_frames_to_atom37(10 * x0_t, R0_t, batch.sequence)
@@ -366,12 +381,15 @@ def euler_maruyama_denoiser(
                 if int(N * steering_config.start) <= i < (N - 2) and i % steering_config.resample_every_n_steps == 0:
                     wandb.log({'Resampling': 1}, commit=False)
                     batch, _ = resample_batch(batch=batch, energy=total_energy, previous_energy=previous_energy,
+                                              transition_log_prob=log_prob,
                                               num_fk_samples=steering_config.num_particles,
                                               num_resamples=steering_config.num_particles)
                 elif N - 1 <= i:
                     # print('Final Resampling [BS, FK_particles] back to BS')
                     batch, _ = resample_batch(batch=batch, energy=total_energy, previous_energy=previous_energy,
-                                              num_fk_samples=steering_config.num_particles, num_resamples=1)
+                                              transition_log_prob=log_prob,
+                                              num_fk_samples=steering_config.num_particles,
+                                              num_resamples=1)
                 else:
                     wandb.log({'Resampling': 0}, commit=False)
                 time_resampling = time.time() - start2
@@ -381,9 +399,9 @@ def euler_maruyama_denoiser(
             wandb.log({'Time/time_potential': time_potentials / total_time if time_potentials is not None else 0.}, commit=False)
             wandb.log({'Time/time_resampling': time_resampling / total_time if time_resampling is not None else 0.}, commit=False)
             wandb.log({'Integration Step': t[0].item(),
-                    'Time/total_time': end_time - start_time,
-                    }, commit=True)
-            
+                       'Time/total_time': end_time - start_time,
+                       }, commit=True)
+
     x0 = [x0[-1]] + x0  # add the last clean sample to the front to make Protein Viewer display it nicely
     R0 = [R0[-1]] + R0
 
@@ -524,7 +542,7 @@ def dpm_solver(
             t=t_hat,
             batch_idx=batch_idx,
         )
-        sample, _ = so3_predictor.update_given_drift_and_diffusion(
+        sample, _, _ = so3_predictor.update_given_drift_and_diffusion(
             x=batch_hat.node_orientations,
             drift=drift,
             diffusion=0.0,
@@ -561,7 +579,7 @@ def dpm_solver(
             t=t_lambda,
             batch_idx=batch_idx,
         )
-        sample, _ = so3_predictor.update_given_drift_and_diffusion(
+        sample, _, _ = so3_predictor.update_given_drift_and_diffusion(
             x=batch_hat.node_orientations,
             drift=drift,
             diffusion=0.0,
@@ -610,25 +628,27 @@ def dpm_solver(
                 start2 = time.time()
                 if int(N * steering_config.start) <= i < (N - 2) and i % steering_config.resample_every_n_steps == 0:
                     wandb.log({'Resampling': 1}, commit=False)
-                    batch, _ = resample_batch(batch=batch, energy=total_energy, previous_energy=previous_energy,
+                    batch, total_energy = resample_batch(batch=batch, energy=total_energy, previous_energy=previous_energy,
                                               num_fk_samples=steering_config.num_particles,
                                               num_resamples=steering_config.num_particles)
+                    previous_energy = total_energy
                 elif N - 2 <= i:
                     # print('Final Resampling [BS, FK_particles] back to BS')
-                    batch, _ = resample_batch(batch=batch, energy=total_energy, previous_energy=previous_energy,
+                    batch, total_energy = resample_batch(batch=batch, energy=total_energy, previous_energy=previous_energy,
                                               num_fk_samples=steering_config.num_particles, num_resamples=1)
+                    previous_energy = total_energy
                 else:
                     wandb.log({'Resampling': 0}, commit=False)
                 time_resampling = time.time() - start2
-            previous_energy = total_energy if steering_config.previous_energy else None
+            
             end_time = time.time()
             total_time = end_time - start_time
             wandb.log({'Time/time_potential': time_potentials / total_time if time_potentials is not None else 0.}, commit=False)
             wandb.log({'Time/time_resampling': time_resampling / total_time if time_resampling is not None else 0.}, commit=False)
             wandb.log({'Integration Step': t[0].item(),
-                    'Time/total_time': end_time - start_time,
-                    }, commit=True)
-                    
+                       'Time/total_time': end_time - start_time,
+                       }, commit=True)
+
     x0 = [x0[-1]] + x0  # add the last clean sample to the front to make Protein Viewer display it nicely
     R0 = [R0[-1]] + R0
 

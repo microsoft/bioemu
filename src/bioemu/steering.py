@@ -53,6 +53,68 @@ def _get_R0_given_xt_and_score(
 
     return apply_rotvec_to_rotmat(R, -sigma_t**2 * score, tol=sde.tol)
 
+def stratified_resample_slow(weights):
+    """ Performs the stratified resampling algorithm used by particle filters.
+
+    This algorithms aims to make selections relatively uniformly across the
+    particles. It divides the cumulative sum of the weights into N equal
+    divisions, and then selects one particle randomly from each division. This
+    guarantees that each sample is between 0 and 2/N apart.
+
+    Parameters
+    ----------
+    weights : torch.Tensor
+        tensor of weights as floats with shape [BS, num_particles]
+
+    Returns
+    -------
+
+    indexes : torch.Tensor of ints
+        tensor of indexes into the weights defining the resample with shape [BS, num_particles]
+    """
+    assert weights.ndim == 1, "weights must be a 2D tensor with shape [BS, num_particles]"
+
+    BS, N = weights.shape
+    device = weights.device
+    
+    # make N subdivisions, and chose a random position within each one for each batch
+    positions = (torch.rand(BS, N, device=device) + torch.arange(N, device=device).unsqueeze(0)) / N
+
+    indexes = torch.zeros(BS, N, dtype=torch.long, device=device)
+    cumulative_sum = torch.cumsum(weights, dim=1)
+
+    # Use searchsorted for vectorized resampling across all batches
+    
+    for b in range(BS):
+        i, j = 0, 0
+        while i < N:
+            if positions[b, i] < cumulative_sum[b, j]:
+                indexes[b, i] = j
+                i += 1
+            else:
+                j += 1
+    return indexes
+
+def stratified_resample(weights: torch.Tensor) -> torch.Tensor:
+    """
+    Stratified resampling along the last dimension of a batched tensor.
+    weights: (B, N), normalized along dim=-1
+    returns: (B, N) indices of chosen particles
+    """
+    B, N = weights.shape
+
+    # 1. Compute cumulative sums (CDF) for each batch
+    cdf = torch.cumsum(weights, dim=-1)  # (B, N)
+
+    # 2. Stratified positions: one per interval
+    # shape (B, N): each row gets N stratified uniforms
+    u = (torch.rand(B, N, device=weights.device) + torch.arange(N, device=weights.device)) / N
+
+    # 3. Inverse-CDF search: for each u, find smallest j s.t. cdf[b, j] >= u[b, i]
+    idx = torch.searchsorted(cdf, u, right=True)
+
+    return idx  # shape (B, N)
+
 
 def get_pos0_rot0(sdes, batch, t, score):
     x0_t = _get_x0_given_xt_and_score(
@@ -157,14 +219,14 @@ def plot_caclashes(distances, loss_fn, t):
     """
     distances_np = distances.detach().cpu().numpy().flatten()
     fig = plt.figure(figsize=(7, 4), dpi=200)
-    plt.hist(distances_np, bins=100, range=(0, 6), alpha=0.7, color='skyblue', label='Ca-Ca Distance', density=True)
+    plt.hist(distances_np, bins=100, range=(0, 10), alpha=0.7, color='skyblue', label='Ca-Ca Distance', density=True)
 
     # Draw vertical lines for optimal (3.8) and physicality breach (1.0)
-    plt.axvline(3.8, color='green', linestyle='--', linewidth=2, label='Optimal (3.8 Å)')
-    plt.axvline(1.0, color='red', linestyle='--', linewidth=2, label='Physicality Breach (1.0 Å)')
+    plt.axvline(3.4, color='green', linestyle='--', linewidth=2, label='Optimal (3.4 Å)')
+    plt.axvline(3.3, color='red', linestyle='--', linewidth=2, label='Physicality Breach (3.3 Å)')
 
     # Plot loss_fn curve
-    x_vals = np.linspace(0, 6, 200)
+    x_vals = np.linspace(0, 10, 200)
     loss_curve = loss_fn(torch.from_numpy(x_vals))
     plt.plot(x_vals, loss_curve.detach().cpu().numpy(), color='purple', label='Loss')
 
@@ -172,7 +234,7 @@ def plot_caclashes(distances, loss_fn, t):
     plt.ylabel('Frequency / Loss')
     plt.title(f'CaClash: Ca-Ca Distances (<1.0: {(distances < 1.0).float().mean().item():.3f}), {t=:.2f}')
     plt.legend()
-    plt.ylim(0, 5)
+    plt.ylim(0, 1)
     plt.tight_layout()
     return fig  # Compute potential: relu(lit - τ - di_pred, 0)
 
@@ -214,21 +276,24 @@ def log_physicality(pos, rot, sequence):
     pos in nM
     '''
     pos = 10 * pos  # convert to Angstrom
+    n_residues = pos.shape[1]
     ca_ca_dist = (pos[..., :-1, :] - pos[..., 1:, :]).pow(2).sum(dim=-1).pow(0.5)
     clash_distances = torch.cdist(pos, pos)  # shape: (batch, L, L)
     mask = ~torch.eye(pos.shape[1], dtype=torch.bool, device=clash_distances.device)
+    mask = torch.ones(n_residues, n_residues, dtype=torch.bool, device=pos.device)
+    mask = mask.triu(diagonal=4)
     clash_distances = clash_distances[:, mask]
     atom37, _, _ = batch_frames_to_atom37(pos, rot, [sequence for _ in range(pos.shape[0])])
     C_pos = atom37[..., :-1, 2, :]
     N_pos_next = atom37[..., 1:, 0, :]
     cn_dist = torch.linalg.vector_norm(C_pos - N_pos_next, dim=-1)
     ca_break = (ca_ca_dist > 4.5).float()
-    ca_clash = (clash_distances < 1.0).float()
+    ca_clash = (clash_distances < 3.4).float()
     cn_break = (cn_dist > 2.0).float()
     wandb.log({f'Physicality/ca_break>4.5 [#]': ca_break.sum(dim=-1).mean(),  # number of breaks sample
                f'Physicality/ca_break>4.5 [%]': ca_break.mean(dim=-1).mean(),  # overall percentage of all possible links
-               f'Physicality/ca_clash<1.0 [#]': ca_clash.sum(dim=-1).mean(),
-               f'Physicality/ca_clash<1.0 [%]': ca_clash.mean(dim=-1).mean(),
+               f'Physicality/ca_clash<3.4 [#]': ca_clash.sum(dim=-1).mean(),
+               f'Physicality/ca_clash<3.4 [%]': ca_clash.mean(dim=-1).mean(),
                f'Physicality/cn_break>2.0 [#]': ca_break.sum(dim=-1).mean(),
                f'Physicality/cn_break>2.0 [%]': ca_break.mean(dim=-1).mean()}, commit=False)
     for tolerance in [0, 1, 2, 3, 4, 5]:
@@ -349,39 +414,39 @@ class CaCaDistancePotential(Potential):
         return self.weight * dist_diff.sum(dim=-1)
 
 
+# class CaClashPotential(Potential):
+#     def __init__(self, tolerance: float = 0., dist: float = 1.0, slope: float = 1.0, weight: float = 1.0):
+#         self.dist = dist
+#         self.tolerance: float = tolerance
+#         self.weight = weight
+#         self.slope = slope
+
+#     def __call__(self, N_pos, Ca_pos, C_pos, O_pos, t, N):
+#         """
+#         Compute the potential energy based on clashes using CA atom positions.
+#         """
+#         distances = torch.cdist(Ca_pos, Ca_pos)  # shape: (batch, L, L)
+#         # lit = 2 * van_der_waals_radius['C']
+#         lit = self.dist
+#         mask = ~torch.eye(Ca_pos.shape[1], dtype=torch.bool, device=distances.device)
+#         distances = distances[:, mask]
+
+#         loss_fn = lambda x: torch.relu(self.slope * (lit - self.tolerance - x))
+#         fig = plot_caclashes(distances, loss_fn, t)
+#         potential_energy = loss_fn(distances)
+#         wandb.log({
+#             "CaClash/ca_clash_dist": distances.mean().item(),
+#             "CaClash/ca_clash_dist": distances.std().item(),
+#             "CaClash/potential_energy": potential_energy.mean().item(),
+#             "CaClash/ca_ca_dist < 1.A [#]": (distances < 1.0).int().sum().item(),
+#             "CaClash/ca_ca_dist < 1.A [%]": (distances < 1.0).float().mean().item(),
+#             "CaClash/potential_energy_hist": wandb.Histogram(potential_energy.detach().cpu().flatten().numpy()),
+#             "CaClash/ca_ca_dist_hist": wandb.Image(fig)
+#         }, commit=False)
+#         plt.close('all')
+#         return self.weight * potential_energy.sum(dim=(-1))
+
 class CaClashPotential(Potential):
-    def __init__(self, tolerance: float = 0., dist: float = 1.0, slope: float = 1.0, weight: float = 1.0):
-        self.dist = dist
-        self.tolerance: float = tolerance
-        self.weight = weight
-        self.slope = slope
-
-    def __call__(self, N_pos, Ca_pos, C_pos, O_pos, t, N):
-        """
-        Compute the potential energy based on clashes using CA atom positions.
-        """
-        distances = torch.cdist(Ca_pos, Ca_pos)  # shape: (batch, L, L)
-        # lit = 2 * van_der_waals_radius['C']
-        lit = self.dist
-        mask = ~torch.eye(Ca_pos.shape[1], dtype=torch.bool, device=distances.device)
-        distances = distances[:, mask]
-
-        loss_fn = lambda x: torch.relu(self.slope * (lit - self.tolerance - x))
-        fig = plot_caclashes(distances, loss_fn, t)
-        potential_energy = loss_fn(distances)
-        wandb.log({
-            "CaClash/ca_clash_dist": distances.mean().item(),
-            "CaClash/ca_clash_dist": distances.std().item(),
-            "CaClash/potential_energy": potential_energy.mean().item(),
-            "CaClash/ca_ca_dist < 1.A [#]": (distances < 1.0).int().sum().item(),
-            "CaClash/ca_ca_dist < 1.A [%]": (distances < 1.0).float().mean().item(),
-            "CaClash/potential_energy_hist": wandb.Histogram(potential_energy.detach().cpu().flatten().numpy()),
-            "CaClash/ca_ca_dist_hist": wandb.Image(fig)
-        }, commit=False)
-        plt.close('all')
-        return self.weight * potential_energy.sum(dim=(-1))
-
-class CaClashPotentialOffset(Potential):
     """Potential to prevent CA atoms from clashing (getting too close)."""
     
     def __init__(self, tolerance=0.0, dist=4.2, slope=1.0, weight=1.0, offset=3):
@@ -618,7 +683,7 @@ class StructuralViolation(Potential):
         return loss
 
 
-def resample_batch(batch, num_fk_samples, num_resamples, energy, previous_energy=None):
+def resample_batch(batch, num_fk_samples, num_resamples, energy, previous_energy=None, transition_log_prob=None):
     """
     Resample the batch based on the energy.
     If previous_energy is provided, it is used to compute the resampling probability.
@@ -627,6 +692,7 @@ def resample_batch(batch, num_fk_samples, num_resamples, energy, previous_energy
     # assert energy.shape == (BS, num_fk_samples), f"Expected energy shape {(BS, num_fk_samples)}, got {energy.shape}"
 
     energy = energy.reshape(BS, num_fk_samples)
+    # transition_log_prob = transition_log_prob.reshape(BS, num_fk_samples)
     if previous_energy is not None:
         previous_energy = previous_energy.reshape(BS, num_fk_samples)
         # Compute the resampling probability based on the energy difference
