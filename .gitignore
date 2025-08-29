@@ -140,6 +140,7 @@ wandb/
 .amltconfig
 notebooks/firstsweep.py
 notebooks/download_wandb_tables.py
+notebooks/*fasta*
 */wandb/*
 *.npz
 *.pkl
