@@ -147,3 +147,4 @@ notebooks/*fasta*
 *amlt*
 *outputs*
 *cache*
+notebooks/**out**
