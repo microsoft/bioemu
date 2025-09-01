@@ -398,19 +398,19 @@ class ChainBreakPotential(Potential):
         ca_ca_dist = (Ca_pos[..., :-1, :] - Ca_pos[..., 1:, :]).pow(2).sum(dim=-1).pow(0.5)
         target_distance = self.ca_ca
         loss_fn = lambda x: potential_loss_fn(x, target_distance, self.tolerance, self.slope, self.max_value, self.order, self.linear_from)
-        fig = plot_ca_ca_distances(ca_ca_dist, loss_fn, t)
+        # fig = plot_ca_ca_distances(ca_ca_dist, loss_fn, t)
         # dist_diff = loss_fn_callables[self.loss_fn]((ca_ca_dist - target_distance).abs().clamp(0, 10), self.slope, self.tolerance)
         dist_diff = loss_fn(ca_ca_dist)
-        wandb.log({"CaCaDist/ca_ca_dist_mean": ca_ca_dist.mean().item(),
-                   "CaCaDist/ca_ca_dist_std": ca_ca_dist.std().item(),
-                   "CaCaDist/ca_ca_dist_loss": dist_diff.mean().item(),
-                   "CaCaDist/ca_ca_dist > 4.5A [#]": (ca_ca_dist > 4.5).float().sum().item(),
-                   "CaCaDist/ca_ca_dist > 4.5A [%]": (ca_ca_dist > 4.5).float().mean().item(),
-                   "CaCaDist/ca_ca_dist": wandb.Histogram(ca_ca_dist.detach().cpu().flatten().numpy()),
-                   "CaCaDist/ca_ca_dist_hist": wandb.Image(fig)
-                   },
-                  commit=False)
-        plt.close('all')
+        # wandb.log({"CaCaDist/ca_ca_dist_mean": ca_ca_dist.mean().item(),
+        #            "CaCaDist/ca_ca_dist_std": ca_ca_dist.std().item(),
+        #            "CaCaDist/ca_ca_dist_loss": dist_diff.mean().item(),
+        #            "CaCaDist/ca_ca_dist > 4.5A [#]": (ca_ca_dist > 4.5).float().sum().item(),
+        #            "CaCaDist/ca_ca_dist > 4.5A [%]": (ca_ca_dist > 4.5).float().mean().item(),
+        #            "CaCaDist/ca_ca_dist": wandb.Histogram(ca_ca_dist.detach().cpu().flatten().numpy()),
+        #            "CaCaDist/ca_ca_dist_hist": wandb.Image(fig)
+        #            },
+        #           commit=False)
+        # plt.close('all')
         return self.weight * dist_diff.sum(dim=-1)
 
 
@@ -486,18 +486,18 @@ class ChainClashPotential(Potential):
         relevant_distances = pairwise_distances[:, mask]  # (batch_size, n_pairs)
         
         loss_fn = lambda x: torch.relu(self.slope * (self.dist - self.tolerance - x))
-        fig = plot_caclashes(relevant_distances, loss_fn, t)
+        # fig = plot_caclashes(relevant_distances, loss_fn, t)
         potential_energy = loss_fn(relevant_distances)
-        wandb.log({
-            "CaClash/ca_clash_dist": relevant_distances.mean().item(),
-            "CaClash/ca_clash_dist_std": relevant_distances.std().item(),
-            "CaClash/potential_energy": potential_energy.mean().item(),
-            "CaClash/ca_ca_dist < 1.A [#]": (relevant_distances < 1.0).int().sum().item(),
-            "CaClash/ca_ca_dist < 1.A [%]": (relevant_distances < 1.0).float().mean().item(),
-            "CaClash/potential_energy_hist": wandb.Histogram(potential_energy.detach().cpu().flatten().numpy()),
-            "CaClash/ca_ca_dist_hist": wandb.Image(fig)
-        }, commit=False)
-        plt.close('all')
+        # wandb.log({
+        #     "CaClash/ca_clash_dist": relevant_distances.mean().item(),
+        #     "CaClash/ca_clash_dist_std": relevant_distances.std().item(),
+        #     "CaClash/potential_energy": potential_energy.mean().item(),
+        #     "CaClash/ca_ca_dist < 1.A [#]": (relevant_distances < 1.0).int().sum().item(),
+        #     "CaClash/ca_ca_dist < 1.A [%]": (relevant_distances < 1.0).float().mean().item(),
+        #     "CaClash/potential_energy_hist": wandb.Histogram(potential_energy.detach().cpu().flatten().numpy()),
+        #     "CaClash/ca_ca_dist_hist": wandb.Image(fig)
+        # }, commit=False)
+        # plt.close('all')
         return self.weight * potential_energy.sum(dim=(-1))
 
 
@@ -527,11 +527,11 @@ class CNDistancePotential(Potential):
             self.slope,
             self.tolerance * 12 * bondlength_std_lit,
         )
-        wandb.log({
-            "CNDistance/cn_bondlength_mean": bondlength_CN_pred.mean().item(),
-            "CNDistance/cn_bondlength_std": bondlength_CN_pred.std().item(),
-            "CNDistance/cn_bondlength_loss": bondlength_loss.mean().item(),
-        }, commit=False)
+        # wandb.log({
+        #     "CNDistance/cn_bondlength_mean": bondlength_CN_pred.mean().item(),
+        #     "CNDistance/cn_bondlength_std": bondlength_CN_pred.std().item(),
+        #     "CNDistance/cn_bondlength_loss": bondlength_loss.mean().item(),
+        # }, commit=False)
         return self.weight * bondlength_loss.sum(-1)
 
 
@@ -683,7 +683,7 @@ class StructuralViolation(Potential):
         return loss
 
 
-def resample_batch(batch, num_fk_samples, num_resamples, energy, previous_energy=None, transition_log_prob=None):
+def resample_batch(batch, num_fk_samples, num_resamples, energy, previous_energy=None):
     """
     Resample the batch based on the energy.
     If previous_energy is provided, it is used to compute the resampling probability.
@@ -693,7 +693,7 @@ def resample_batch(batch, num_fk_samples, num_resamples, energy, previous_energy
 
     energy = energy.reshape(BS, num_fk_samples)
     # transition_log_prob = transition_log_prob.reshape(BS, num_fk_samples)
-    if previous_energy is not None:
+    if previous_energy is not None: 
         previous_energy = previous_energy.reshape(BS, num_fk_samples)
         # Compute the resampling probability based on the energy difference
         # If previous_energy > energy, high probability to resample since new energy is lower

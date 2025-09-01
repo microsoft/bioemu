@@ -12,14 +12,14 @@ import torch
 from torch_geometric.data import Batch
 
 from bioemu.chemgraph import ChemGraph
-from bioemu.denoiser import dpm_solver, heun_denoiser, euler_maruyama_denoiser
+from bioemu.denoiser import dpm_solver, heun_denoiser
 from bioemu.sde_lib import CosineVPSDE
 from bioemu.so3_sde import DiGSO3SDE, rotmat_to_rotvec
 
 
 @pytest.mark.parametrize(
     "solver,denoiser_kwargs",
-    [(dpm_solver, {}), (dpm_solver, {"noise": 0.5}), (heun_denoiser, {"noise": 0.5}), (euler_maruyama_denoiser, {})],
+    [(dpm_solver, {}), (dpm_solver, {"noise": 0.5}), (heun_denoiser, {"noise": 0.5})],
 )
 def test_reverse_sampling(solver, denoiser_kwargs):
     torch.manual_seed(1)
@@ -62,7 +62,7 @@ def test_reverse_sampling(solver, denoiser_kwargs):
         ]
     )
 
-    samples, denoising_trajectory = solver(
+    samples = solver(
         sdes=sdes,
         batch=conditioning_data,
         N=N,

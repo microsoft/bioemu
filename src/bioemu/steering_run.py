@@ -7,7 +7,6 @@ import pytest
 import torch
 from torch_geometric.data.batch import Batch
 from bioemu.sample import main as sample
-from bioemu.steering import CNDistancePotential, CaCaDistancePotential, CaClashPotential, batch_frames_to_atom37, StructuralViolation
 from pathlib import Path
 import numpy as np
 import random
@@ -62,17 +61,14 @@ def main(cfg: DictConfig):
     output_dir_FK = f"./outputs/test_steering/FK_{sequence[:10]}_len:{len(sequence)}"
     if os.path.exists(output_dir_FK):
         shutil.rmtree(output_dir_FK)
-    # fk_potentials = [CaCaDistancePotential(), CNDistancePotential(), CaClashPotential()]
-    # fk_potentials = [hydra.utils.instantiate(pot_config) for pot_config in cfg.steering.potentials.values()]
-    fk_potentials = hydra.utils.instantiate(cfg.steering.potentials)
-    fk_potentials = list(fk_potentials.values())
 
     backbone: dict = sample(sequence=sequence, num_samples=cfg.num_samples, batch_size_100=cfg.batch_size_100,
                             output_dir=output_dir_FK,
                             denoiser_config=cfg.denoiser,
-                            fk_potentials=fk_potentials,
                             steering_config=cfg.steering,
-                            filter_samples=True)
+                            filter_samples=True,
+                            physical_steering=True,
+                            fast_steering=True)
     pos, rot = backbone['pos'], backbone['rot']
     # max_memory = torch.cuda.max_memory_allocated(self._device) / (1024**2)
     wandb.finish()

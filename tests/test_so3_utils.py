@@ -296,13 +296,13 @@ def test_igso3_derivative(rotation_angles, lower=2e-1, l_max=1000, tol: float = 
 def test_dlog_igso3_derivative(rotation_angles, lower=2e-1, l_max=1000, tol: float = 1e-7):
     """Test derivative of the logarithm of the IGSO(3) expansion."""
     # Generate sigma values for testing.
-    sigma = torch.clamp(torch.rand(rotation_angles.shape[0]), min=lower, max=0.9)
+    sigma = torch.clamp(torch.rand(rotation_angles.shape[0]), min=lower, max=0.9).double()
 
     # Generate grid for expansions.
-    l_grid = torch.arange(l_max + 1)
+    l_grid = torch.arange(l_max + 1).double()
 
     # Enable grad for derivatives.
-    rotangs = rotation_angles.clone()
+    rotangs = rotation_angles.clone().double()
     rotangs.requires_grad = True
 
     # Compute grad using autograd.

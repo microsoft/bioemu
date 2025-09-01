@@ -572,7 +572,7 @@ def _write_pdb(
         atom_positions=atom_37.cpu().numpy(),
         aatype=aatype.cpu().numpy(),
         atom_mask=atom_37_mask.cpu().numpy(),
-        residue_index=np.arange(num_residues, dtype=np.int64) + 1,
+        residue_index=np.arange(num_residues, dtype=np.int64),
         b_factors=np.zeros((num_residues, 37)),
     )
     with open(filename, "w") as f:
@@ -617,7 +617,7 @@ def _write_batch_pdb(
             atom_positions=atom_37.cpu().numpy(),
             aatype=aatype.cpu().numpy(),
             atom_mask=atom_37_mask.cpu().numpy(),
-            residue_index=np.arange(num_residues, dtype=np.int64) + 1,
+            residue_index=np.arange(num_residues, dtype=np.int64),
             b_factors=np.zeros((num_residues, 37)),
         )
         pdb_str = to_pdb(protein)
