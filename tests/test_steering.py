@@ -6,7 +6,7 @@ import pytest
 import torch
 from torch_geometric.data.batch import Batch
 from bioemu.sample import main as sample
-from bioemu.steering import CNDistancePotential, CaCaDistancePotential, CaClashPotential, batch_frames_to_atom37, StructuralViolation
+from bioemu.steering import CNDistancePotential, ChainBreakPotential, ChainClashPotential, batch_frames_to_atom37, StructuralViolation
 from pathlib import Path
 import numpy as np
 import random

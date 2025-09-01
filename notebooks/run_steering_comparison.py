@@ -4,8 +4,6 @@ import sys
 import wandb
 import torch
 from bioemu.sample import main as sample
-from bioemu.steering import CNDistancePotential, CaCaDistancePotential, CaClashPotential, batch_frames_to_atom37, StructuralViolation
-from pathlib import Path
 import numpy as np
 import random
 import hydra
@@ -183,14 +181,14 @@ def analyze_termini_distribution(steered_samples, no_steering_samples, cfg):
 
 @hydra.main(config_path="../src/bioemu/config", config_name="bioemu.yaml", version_base="1.2")
 def main(cfg):
-    for target in [1.5, 2, 2.5]:
-        for num_particles in [3, 5, 15]:
+    for target in [2.5]:
+        for num_particles in [5]:
             """Main function to run both experiments and analyze results."""
             # Override steering section and sequence
             cfg = hydra.compose(config_name="bioemu.yaml",
                                 overrides=['steering=chingolin_steering',
                                         'sequence=GYDPETGTWG',
-                                        'num_samples=1024',
+                                        'num_samples=128',
                                         'denoiser=dpm',
                                         'denoiser.N=50',
                                         f'steering.start=0.5',

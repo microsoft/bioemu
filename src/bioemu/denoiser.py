@@ -17,7 +17,7 @@ from tqdm import tqdm
 from .chemgraph import ChemGraph
 from .sde_lib import SDE, CosineVPSDE
 from .so3_sde import SO3SDE, apply_rotvec_to_rotmat
-from bioemu.steering import get_pos0_rot0, CaCaDistancePotential, StructuralViolation, resample_batch, print_once
+from bioemu.steering import get_pos0_rot0, ChainBreakPotential, StructuralViolation, resample_batch, print_once
 from bioemu.convert_chemgraph import _write_batch_pdb, batch_frames_to_atom37
 
 TwoBatches = tuple[Batch, Batch]
@@ -308,6 +308,13 @@ def euler_maruyama_denoiser(
     x0, R0 = [], []
     noise_log_probs = []  # Store total noise log probabilities for each step
     previous_energy = None
+    
+    # Track steering execution for assertion
+    steering_executed = False
+    steering_expected = (steering_config is not None and
+                         fk_potentials is not None and
+                         steering_config.get('do_steering', False) and
+                         steering_config.get('num_particles', 1) > 1)
 
     for i in tqdm(range(N), position=1, desc="Denoising: ", ncols=0, leave=False):
         # Set the timestep
@@ -351,7 +358,28 @@ def euler_maruyama_denoiser(
         # R0_t = batch.node_orientations.reshape(batch.batch_size, seq_length, 3, 3).detach().cpu()
         x0 += [x0_t.cpu()]
         R0 += [R0_t.cpu()]
-        if steering_config is not None and fk_potentials is not None and steering_config.do_steering:  # always eval potentials
+        if steering_config is not None and fk_potentials is not None and steering_config.get('do_steering', False):  # always eval potentials
+            # Handle fast steering - expand batch at steering start time
+            fast_steering = getattr(steering_config, 'fast_steering', False)
+            if fast_steering and i == int(N * steering_config.get('start', 0.0)):
+                # Expand batch using repeat_interleave at steering start time
+                original_batch_size = getattr(steering_config, 'original_batch_size', batch.num_graphs)
+                num_particles = steering_config.get('num_particles', 1)
+                
+                # Expand all relevant tensors
+                data_list = batch.to_data_list()
+                expanded_data_list = []
+                for data in data_list:
+                    # Repeat each sample num_particles times
+                    for _ in range(num_particles):
+                        expanded_data_list.append(data.clone())
+                
+                batch = Batch.from_data_list(expanded_data_list)
+                print(f"Fast Steering: Expanded batch from {original_batch_size} to {batch.num_graphs} at step {i}")
+                
+                # Update batch_size for subsequent operations
+                batch_size = batch.num_graphs
+            
             start_time = time.time()
             # seq_length = len(batch.sequence[0])
 
@@ -375,25 +403,27 @@ def euler_maruyama_denoiser(
             # print(f'Total Energy (Step {i}): ', total_energy.mean().item(), '±', total_energy.std().item())
 
             # for j, energy in enumerate(total_energy):
-            # wandb.log({f"Energy SamTple {j // steering_config.num_particles}/Particle {j % steering_config.num_particles}": energy.item()}, commit=False)
-            if steering_config.num_particles > 1:  # if resampling implicitely given by num_fk_samples > 1
+            # wandb.log({f"Energy SamTple {j // steering_config.get('num_particles', 1)}/Particle {j % steering_config.get('num_particles', 1)}": energy.item()}, commit=False)
+            if steering_config.get('num_particles', 1) > 1:  # if resampling implicitely given by num_fk_samples > 1
                 start2 = time.time()
-                if int(N * steering_config.start) <= i < (N - 2) and i % steering_config.resample_every_n_steps == 0:
+                steering_end = getattr(steering_config, 'end', 1.0)  # Default to 1.0 if not specified
+                if int(N * steering_config.get('start', 0.0)) <= i < min(int(N * steering_end), N - 2) and i % steering_config.get('resample_every_n_steps', 1) == 0:
                     wandb.log({'Resampling': 1}, commit=False)
+                    steering_executed = True  # Mark that steering actually happened
                     batch, _ = resample_batch(batch=batch, energy=total_energy, previous_energy=previous_energy,
                                               transition_log_prob=log_prob,
-                                              num_fk_samples=steering_config.num_particles,
-                                              num_resamples=steering_config.num_particles)
+                                              num_fk_samples=steering_config.get('num_particles', 1),
+                                              num_resamples=steering_config.get('num_particles', 1))
                 elif N - 1 <= i:
                     # print('Final Resampling [BS, FK_particles] back to BS')
                     batch, _ = resample_batch(batch=batch, energy=total_energy, previous_energy=previous_energy,
                                               transition_log_prob=log_prob,
-                                              num_fk_samples=steering_config.num_particles,
+                                              num_fk_samples=steering_config.get('num_particles', 1),
                                               num_resamples=1)
                 else:
                     wandb.log({'Resampling': 0}, commit=False)
                 time_resampling = time.time() - start2
-            previous_energy = total_energy if steering_config.previous_energy else None
+            previous_energy = total_energy if steering_config.get('previous_energy', False) else None
             end_time = time.time()
             total_time = end_time - start_time
             wandb.log({'Time/time_potential': time_potentials / total_time if time_potentials is not None else 0.}, commit=False)
@@ -401,6 +431,15 @@ def euler_maruyama_denoiser(
             wandb.log({'Integration Step': t[0].item(),
                        'Time/total_time': end_time - start_time,
                        }, commit=True)
+
+    # Assert steering execution if expected
+    if steering_expected and not steering_executed:
+        raise AssertionError(
+            f"Steering was enabled (do_steering={steering_config.get('do_steering', False)}, "
+            f"num_particles={steering_config.get('num_particles', 1)}) but no steering steps were executed. "
+            f"Check steering start/end times: start={getattr(steering_config, 'start', 0.0)}, "
+            f"end={getattr(steering_config, 'end', 1.0)}, total_steps={N}"
+        )
 
     x0 = [x0[-1]] + x0  # add the last clean sample to the front to make Protein Viewer display it nicely
     R0 = [R0[-1]] + R0
@@ -473,6 +512,13 @@ def dpm_solver(
     }
     x0, R0 = [], []
     previous_energy = None
+    
+    # Track steering execution for assertion
+    steering_executed = False
+    steering_expected = (steering_config is not None and
+                         fk_potentials is not None and
+                         steering_config.get('do_steering', False) and
+                         steering_config.get('num_particles', 1) > 1)
 
     # with profile(with_stack=True, activities=[ProfilerActivity.CPU, ProfilerActivity.CUDA], profile_memory=False) as prof:
 
@@ -600,7 +646,28 @@ def dpm_solver(
         x0 += [x0_t.cpu()]
         R0 += [R0_t.cpu()]
 
-        if steering_config is not None and fk_potentials is not None and steering_config.do_steering:  # always eval potentials
+        if steering_config is not None and fk_potentials is not None and steering_config.get('do_steering', False):  # always eval potentials
+            # Handle fast steering - expand batch at steering start time
+            fast_steering = getattr(steering_config, 'fast_steering', False)
+            if fast_steering and i == int(N * steering_config.get('start', 0.0)):
+                # Expand batch using repeat_interleave at steering start time
+                original_batch_size = getattr(steering_config, 'original_batch_size', batch.num_graphs)
+                num_particles = steering_config.get('num_particles', 1)
+                
+                # Expand all relevant tensors
+                data_list = batch.to_data_list()
+                expanded_data_list = []
+                for data in data_list:
+                    # Repeat each sample num_particles times
+                    for _ in range(num_particles):
+                        expanded_data_list.append(data.clone())
+                
+                batch = Batch.from_data_list(expanded_data_list)
+                print(f"Fast Steering: Expanded batch from {original_batch_size} to {batch.num_graphs} at step {i}")
+                
+                # Update batch_size for subsequent operations
+                batch_size = batch.num_graphs
+            
             # seq_length = len(batch.sequence[0])
 
             time_potentials, time_resampling = None, None
@@ -623,19 +690,21 @@ def dpm_solver(
             # print(f'Total Energy (Step {i}): ', total_energy.mean().item(), '±', total_energy.std().item())
 
             # for j, energy in enumerate(total_energy):
-            # wandb.log({f"Energy SamTple {j // steering_config.num_particles}/Particle {j % steering_config.num_particles}": energy.item()}, commit=False)
-            if steering_config.num_particles > 1:  # if resampling implicitely given by num_fk_samples > 1
+            # wandb.log({f"Energy SamTple {j // steering_config.get('num_particles', 1)}/Particle {j % steering_config.get('num_particles', 1)}": energy.item()}, commit=False)
+            if steering_config.get('num_particles', 1) > 1:  # if resampling implicitely given by num_fk_samples > 1
                 start2 = time.time()
-                if int(N * steering_config.start) <= i < (N - 2) and i % steering_config.resample_every_n_steps == 0:
+                steering_end = getattr(steering_config, 'end', 1.0)  # Default to 1.0 if not specified
+                if int(N * steering_config.get('start', 0.0)) <= i < min(int(N * steering_end), N - 2) and i % steering_config.get('resample_every_n_steps', 1) == 0:
                     wandb.log({'Resampling': 1}, commit=False)
+                    steering_executed = True  # Mark that steering actually happened
                     batch, total_energy = resample_batch(batch=batch, energy=total_energy, previous_energy=previous_energy,
-                                              num_fk_samples=steering_config.num_particles,
-                                              num_resamples=steering_config.num_particles)
+                                              num_fk_samples=steering_config.get('num_particles', 1),
+                                              num_resamples=steering_config.get('num_particles', 1))
                     previous_energy = total_energy
                 elif N - 2 <= i:
                     # print('Final Resampling [BS, FK_particles] back to BS')
                     batch, total_energy = resample_batch(batch=batch, energy=total_energy, previous_energy=previous_energy,
-                                              num_fk_samples=steering_config.num_particles, num_resamples=1)
+                                              num_fk_samples=steering_config.get('num_particles', 1), num_resamples=1)
                     previous_energy = total_energy
                 else:
                     wandb.log({'Resampling': 0}, commit=False)
@@ -648,6 +717,15 @@ def dpm_solver(
             wandb.log({'Integration Step': t[0].item(),
                        'Time/total_time': end_time - start_time,
                        }, commit=True)
+
+    # Assert steering execution if expected
+    if steering_expected and not steering_executed:
+        raise AssertionError(
+            f"Steering was enabled (do_steering={steering_config.get('do_steering', False)}, "
+            f"num_particles={steering_config.get('num_particles', 1)}) but no steering steps were executed. "
+            f"Check steering start/end times: start={getattr(steering_config, 'start', 0.0)}, "
+            f"end={getattr(steering_config, 'end', 1.0)}, total_steps={N}"
+        )
 
     x0 = [x0[-1]] + x0  # add the last clean sample to the front to make Protein Viewer display it nicely
     R0 = [R0[-1]] + R0

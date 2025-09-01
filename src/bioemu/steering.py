@@ -380,7 +380,7 @@ class Potential:
         return f"{self.__class__.__name__}{sig}"
 
 
-class CaCaDistancePotential(Potential):
+class ChainBreakPotential(Potential):
 
     def __init__(self, tolerance: float = 0., slope: float = 1.0, max_value: float = 5.0, order: float = 1, linear_from: float = 1., weight: float = 1.0):
         self.ca_ca = ca_ca
@@ -446,7 +446,7 @@ class CaCaDistancePotential(Potential):
 #         plt.close('all')
 #         return self.weight * potential_energy.sum(dim=(-1))
 
-class CaClashPotential(Potential):
+class ChainClashPotential(Potential):
     """Potential to prevent CA atoms from clashing (getting too close)."""
     
     def __init__(self, tolerance=0.0, dist=4.2, slope=1.0, weight=1.0, offset=3):
@@ -638,8 +638,8 @@ class TerminiDistancePotential(Potential):
 
 class StructuralViolation(Potential):
     def __init__(self, tolerance: float = 0., loss_fn: str = 'mse'):
-        self.ca_ca_distance = CaCaDistancePotential(tolerance=tolerance, loss_fn=loss_fn)
-        self.caclash_potential = CaClashPotential(tolerance=tolerance, loss_fn=loss_fn)
+        self.ca_ca_distance = ChainBreakPotential(tolerance=tolerance, loss_fn=loss_fn)
+        self.caclash_potential = ChainClashPotential(tolerance=tolerance, loss_fn=loss_fn)
         self.c_n_distance = CNDistancePotential(tolerance=tolerance, loss_fn=loss_fn)
         self.ca_c_n_angle = CaCNAnglePotential(tolerance=tolerance, loss_fn=loss_fn)
         self.c_n_ca_angle = CNCaAnglePotential(tolerance=tolerance, loss_fn=loss_fn)

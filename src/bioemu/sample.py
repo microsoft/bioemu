@@ -4,7 +4,6 @@
 
 import logging
 import typing
-import sys
 import wandb
 from collections.abc import Callable
 from pathlib import Path
@@ -19,7 +18,7 @@ from torch_geometric.data.batch import Batch
 from tqdm import tqdm
 
 from .chemgraph import ChemGraph
-from .convert_chemgraph import save_pdb_and_xtc, batch_frames_to_atom37
+from .convert_chemgraph import save_pdb_and_xtc
 from .get_embeds import get_colabfold_embeds
 from .model_utils import load_model, load_sdes, maybe_download_checkpoint
 from .sde_lib import SDE
@@ -29,7 +28,7 @@ from .utils import (
     format_npz_samples_filename,
     print_traceback_on_exception,
 )
-from .steering import log_physicality
+from .steering import log_physicality, ChainBreakPotential, ChainClashPotential
 
 logger = logging.getLogger(__name__)
 
@@ -56,40 +55,109 @@ def main(
     filter_samples: bool = True,
     fk_potentials: list[Callable] | None = None,
     steering_config: dict = None,
+    physical_steering: bool = False,
+    fast_steering: bool = False,
 ) -> dict:
     """
     Generate samples for a specified sequence, using a trained model.
 
     Args:
-        sequence: Amino acid sequence for which to generate samples, or a path to a .fasta file, or a path to an .a3m file with MSAs.
-            If it is not an a3m file, then colabfold will be used to generate an MSA and embedding.
-        num_samples: Number of samples to generate. If `output_dir` already contains samples, this function will only generate additional samples necessary to reach the specified `num_samples`.
-        output_dir: Directory to save the samples. Each batch of samples will initially be dumped as .npz files. Once all batches are sampled, they will be converted to .xtc and .pdb.
-        batch_size_100: Batch size you'd use for a sequence of length 100. The batch size will be calculated from this, assuming
-           that the memory requirement to compute each sample scales quadratically with the sequence length.
-           A100-80GB would give you ~900 right at the memory limit, so 500 is reasonable
-        model_name: Name of pretrained model to use. If this is set, you do not need to provide `ckpt_path` or `model_config_path`.
-            The model will be retrieved from huggingface; the following models are currently available:
-            - bioemu-v1.0: checkpoint used in the original preprint (https://www.biorxiv.org/content/10.1101/2024.12.05.626885v2)
+        sequence: Amino acid sequence for which to generate samples, or a path to a .fasta file,
+            or a path to an .a3m file with MSAs. If it is not an a3m file, then colabfold will be
+            used to generate an MSA and embedding.
+        num_samples: Number of samples to generate. If `output_dir` already contains samples, this
+            function will only generate additional samples necessary to reach the specified `num_samples`.
+        output_dir: Directory to save the samples. Each batch of samples will initially be dumped
+            as .npz files. Once all batches are sampled, they will be converted to .xtc and .pdb.
+        batch_size_100: Batch size you'd use for a sequence of length 100. The batch size will be
+            calculated from this, assuming that the memory requirement to compute each sample scales
+            quadratically with the sequence length. A100-80GB would give you ~900 right at the memory
+            limit, so 500 is reasonable
+        model_name: Name of pretrained model to use. If this is set, you do not need to provide
+            `ckpt_path` or `model_config_path`. The model will be retrieved from huggingface; the
+            following models are currently available:
+            - bioemu-v1.0: checkpoint used in the original preprint
             - bioemu-v1.1: checkpoint with improved protein stability performance
         ckpt_path: Path to the model checkpoint. If this is set, `model_name` will be ignored.
-        model_config_path: Path to the model config, defining score model architecture and the corruption process the model was trained with.
-           Only required if `ckpt_path` is set.
-        denoiser_type: Denoiser to use for sampling, if `denoiser_config_path` not specified. Comes in with default parameter configuration. Must be one of ['dpm', 'heun']
+        model_config_path: Path to the model config, defining score model architecture and the
+            corruption process the model was trained with. Only required if `ckpt_path` is set.
+        denoiser_type: Denoiser to use for sampling, if `denoiser_config_path` not specified.
+            Comes in with default parameter configuration. Must be one of ['dpm', 'heun']
         denoiser_config: Path to the denoiser config, defining the denoising process.
-        cache_embeds_dir: Directory to store MSA embeddings. If not set, this defaults to `COLABFOLD_DIR/embeds_cache`.
-        cache_so3_dir: Directory to store SO3 precomputations. If not set, this defaults to `~/sampling_so3_cache`.
-        msa_host_url: MSA server URL. If not set, this defaults to colabfold's remote server. If sequence is an a3m file, this is ignored.
+        cache_embeds_dir: Directory to store MSA embeddings. If not set, this defaults to
+            `COLABFOLD_DIR/embeds_cache`.
+        cache_so3_dir: Directory to store SO3 precomputations. If not set, this defaults to
+            `~/sampling_so3_cache`.
+        msa_host_url: MSA server URL. If not set, this defaults to colabfold's remote server.
+            If sequence is an a3m file, this is ignored.
         filter_samples: Filter out unphysical samples with e.g. long bond distances or steric clashes.
-        fk_potentials: List of callable potentials to steer the sampling process. If None, no steering is applied.
-        num_fk_samples: Number of samples to generate for from we do resampling a la Sequential Monte Carlo
+        fk_potentials: List of callable potentials to steer the sampling process. If None, no
+            steering is applied.
+        steering_config: Configuration for steering process including num_particles, start time, etc.
+        physical_steering: If True, automatically adds ChainBreakPotential and ChainClashPotential
+            to steering.
+        fast_steering: If True, delays particle creation until steering start time for performance.
     """
 
     output_dir = Path(output_dir).expanduser().resolve()
     output_dir.mkdir(parents=True, exist_ok=True)  # Fail fast if output_dir is non-writeable
 
-    if steering_config.num_particles is None or steering_config.num_particles <= 1:
-        print(f'No Steering since {steering_config.num_particles=}')
+    # Handle physical steering flag - automatically add ChainBreak and ChainClash potentials
+    if physical_steering and steering_config is not None:
+        logger.info("Physical steering enabled - adding ChainBreakPotential and ChainClashPotential")
+
+        # Create physical potentials with reasonable defaults
+        chain_break_potential = ChainBreakPotential(
+            tolerance=1.0,
+            slope=1.0,
+            max_value=100,
+            order=1,
+            linear_from=1.0,
+            weight=1.0
+        )
+
+        chain_clash_potential = ChainClashPotential(
+            tolerance=0.0,
+            dist=4.1,
+            slope=3.0,
+            weight=1.0
+        )
+
+        # Add to existing fk_potentials or create new list
+        if fk_potentials is None:
+            fk_potentials = []
+
+        # Add physical potentials (avoid duplicates by checking existing types)
+        existing_types = [type(pot).__name__ for pot in fk_potentials]
+        if 'ChainBreakPotential' not in existing_types:
+            fk_potentials.append(chain_break_potential)
+            logger.info("Added ChainBreakPotential")
+        else:
+            logger.warning("ChainBreakPotential already exists - skipping automatic addition")
+
+        if 'ChainClashPotential' not in existing_types:
+            fk_potentials.append(chain_clash_potential)
+            logger.info("Added ChainClashPotential")
+        else:
+            logger.warning("ChainClashPotential already exists - skipping automatic addition")
+
+    # Validate steering configuration
+    if steering_config is not None:
+        start_time = getattr(steering_config, 'start', 0.0)
+        end_time = getattr(steering_config, 'end', 1.0)
+        
+        if end_time <= start_time:
+            raise ValueError(f"Steering end_time ({end_time}) must be greater than start_time ({start_time})")
+        
+        if start_time < 0.0 or start_time > 1.0:
+            raise ValueError(f"Steering start_time ({start_time}) must be between 0.0 and 1.0")
+            
+        if end_time < 0.0 or end_time > 1.0:
+            raise ValueError(f"Steering end_time ({end_time}) must be between 0.0 and 1.0")
+
+    if steering_config is None or steering_config.get('num_particles', 1) <= 1:
+        num_particles = steering_config.get('num_particles', 1) if steering_config else 1
+        print(f'No Steering since num_particles={num_particles}')
         num_particles = 1
 
     ckpt_path, model_config_path = maybe_download_checkpoint(
@@ -146,12 +214,12 @@ def main(
     # Adjust batch size by sequence length since longer sequence require quadratically more memory
     batch_size = int(batch_size_100 * (100 / len(sequence)) ** 2)
     # Ensure batch_size is a multiple of num_particles and does not exceed the memory limit
-    assert steering_config.num_particles >= 1, f"num_particles ({num_particles}) must be >= 1"
+    assert steering_config.get('num_particles', 1) >= 1, f"num_particles ({num_particles}) must be >= 1"
     # Find the largest batch_size_multiple <= batch_size that is divisible by num_particles
-    assert batch_size >= steering_config.num_particles, (
-        f"batch_size ({batch_size}) must be at least num_particles ({num_particles})"
+    assert batch_size >= steering_config.get('num_particles', 1), (
+        f"batch_size ({batch_size}) must be at least num_particles ({steering_config.get('num_particles', 1)})"
     )
-    batch_size = (batch_size // steering_config.num_particles)
+    batch_size = (batch_size // steering_config.get('num_particles', 1))
 
     logger.info(f"Using batch size {min(batch_size, num_samples)}")
 
@@ -163,13 +231,13 @@ def main(
     for seed in batch_iterator:
         n = min(batch_size, num_samples - seed)  # if remaining samples are smaller than batch size
         npz_path = output_dir / format_npz_samples_filename(seed, n)
-        wandb.log({'Progress': seed})
+
         if npz_path.exists():
             raise ValueError(
                 f"Not sure why {npz_path} already exists when so far only {existing_num_samples} samples have been generated."
             )
         # logger.info(f"Sampling {seed=}")
-        batch_iterator.set_description(f"Sampling batch {seed}/{num_samples} ({n} samples x {steering_config.num_particles} particles)")
+        batch_iterator.set_description(f"Sampling batch {seed}/{num_samples} ({n} samples x {steering_config.get('num_particles', 1)} particles)")
 
         batch = generate_batch(
             score_model=score_model,
@@ -183,6 +251,7 @@ def main(
             msa_host_url=msa_host_url,
             fk_potentials=fk_potentials,
             steering_config=steering_config,
+            fast_steering=fast_steering,
         )
 
         batch = {k: v.cpu().numpy() for k, v in batch.items()}
@@ -279,7 +348,8 @@ def generate_batch(
     msa_file: str | Path | None = None,
     msa_host_url: str | None = None,
     fk_potentials: list[Callable] | None = None,
-    steering_config: dict | None = None
+    steering_config: dict | None = None,
+    fast_steering: bool = False
 ) -> dict[str, torch.Tensor]:
     """Generate one batch of samples, using GPU if available.
 
@@ -295,10 +365,25 @@ def generate_batch(
     """
 
     torch.manual_seed(seed)
-    # adjust original batch_size by particles per sample
-    batch_size = batch_size * steering_config.num_particles
-    assert batch_size % steering_config.num_particles == 0, f"batch_size {batch_size} must be divisible by num_fk_samples {num_fk_samples}."
-    print(f"BatchSize={batch_size} ({batch_size // steering_config.num_particles} Samples x {steering_config.num_particles} Particles)")
+    
+    # Handle fast steering - delay particle creation
+    if fast_steering and steering_config is not None and steering_config.get('num_particles', 1) > 1:
+        # Start with single particles, will be expanded later at steering start time
+        original_batch_size = batch_size
+        effective_batch_size = batch_size  # Single particles initially
+        print(f"Fast Steering: Starting with {effective_batch_size} samples, "
+              f"will expand to {steering_config.get('num_particles', 1)} particles at steering start")
+    else:
+        # Normal steering - multiply batch_size by particles from the start
+        original_batch_size = batch_size
+        effective_batch_size = batch_size * steering_config.get('num_particles', 1)
+        assert effective_batch_size % steering_config.get('num_particles', 1) == 0, (
+            f"batch_size {effective_batch_size} must be divisible by num_particles {steering_config.get('num_particles', 1)}."
+        )
+        print(f"BatchSize={effective_batch_size} ({effective_batch_size // steering_config.get('num_particles', 1)} "
+              f"Samples x {steering_config.get('num_particles', 1)} Particles)")
+    
+    batch_size = effective_batch_size
     context_chemgraph = get_context_chemgraph(
         sequence=sequence,
         cache_embeds_dir=cache_embeds_dir,
@@ -308,6 +393,12 @@ def generate_batch(
     context_batch = Batch.from_data_list([context_chemgraph] * batch_size)
 
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+    # Add fast steering info to steering_config for denoiser
+    if fast_steering and steering_config is not None:
+        steering_config = dict(steering_config)  # Make a copy to avoid modifying original
+        steering_config['fast_steering'] = True
+        steering_config['original_batch_size'] = original_batch_size
+    
     sampled_chemgraph_batch, denoising_trajectory = denoiser(
         sdes=sdes,
         device=device,
