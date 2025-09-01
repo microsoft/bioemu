@@ -148,6 +148,5 @@ notebooks/*fasta*
 *outputs*
 *cache*
 notebooks/**out**
-
-# Cursor IDE
 .cursor/
+.cursor/** */
