@@ -84,6 +84,21 @@ python -m bioemu.sample \
     --resampling_freq 2
 ```
 
+Or using the Python API:
+
+```python
+from bioemu.sample import main as sample
+
+sample(
+    sequence='GYDPETGTWG',
+    num_samples=100,
+    output_dir='~/steered-samples',
+    num_steering_particles=3,
+    steering_start_time=0.5,
+    resampling_freq=2
+)
+```
+
 ### Key Steering Parameters
 
 - `num_steering_particles`: Number of particles per sample (1 = no steering, >1=steering)
@@ -99,22 +114,6 @@ When steering is enabled (num_steering_particles > 1) and no additional `steerin
 - **ChainClash**: Avoids steric clashes between non-neighboring residues
 
 You can override this by providing a custom `steering_potentials_config` path.
-
-### Alternative: Hydra Configuration Interface
-
-For more complex steering configurations, you can use the Hydra interface:
-
-```bash
-cd notebooks
-python hydra_run.py \
-    sequence=GYDPETGTWG \
-    num_samples=100 \
-    steering.num_particles=3 \
-    steering.start=0.5 \
-    steering.resampling_freq=2
-```
-
-This allows you to override any configuration parameter and provides better integration with the configuration system.
 
 ## Azure AI Foundry
 BioEmu is also available on [Azure AI Foundry](https://ai.azure.com/). See [How to run BioEmu on Azure AI Foundry](AZURE_AI_FOUNDRY.md) for more details.
