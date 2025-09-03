@@ -32,6 +32,7 @@ from .steering import log_physicality
 logger = logging.getLogger(__name__)
 
 DEFAULT_DENOISER_CONFIG_DIR = Path(__file__).parent / "config/denoiser/"
+DEFAULT_STEERING_CONFIG_DIR = Path(__file__).parent / "config/steering/"
 SupportedDenoisersLiteral = Literal["dpm", "heun"]
 SUPPORTED_DENOISERS = list(typing.get_args(SupportedDenoisersLiteral))
 
@@ -96,7 +97,8 @@ def main(
             If sequence is an a3m file, this is ignored.
         filter_samples: Filter out unphysical samples with e.g. long bond distances or steric clashes.
         steering_potentials_config: Configuration for steering potentials only. Can be a path to a YAML file,
-            a dict, or None for no steering. This replaces the old steering_config parameter.
+            a dict, or None to use default physical_potentials.yaml when steering is enabled.
+            This replaces the old steering_config parameter.
         num_steering_particles: Number of particles per sample for steering (default: 1, no steering).
         steering_start_time: Start time for steering (0.0-1.0, default: 0.0).
         steering_end_time: End time for steering (0.0-1.0, default: 1.0).
@@ -118,8 +120,17 @@ def main(
             potentials_config = OmegaConf.create(steering_potentials_config)
         else:
             raise ValueError(
-                f"steering_potentials_config must be a path, dict, or DictConfig, got {type(steering_potentials_config)}"
+                f"steering_potentials_config must be a path, dict, or DictConfig, "
+                f"got {type(steering_potentials_config)}"
             )
+    else:
+        # Load default physical_potentials.yaml when steering is enabled
+        if num_steering_particles > 1:
+            default_potentials_path = DEFAULT_STEERING_CONFIG_DIR / "physical_potentials.yaml"
+            if default_potentials_path.exists():
+                potentials_config = OmegaConf.load(default_potentials_path)
+            else:
+                logger.warning(f"Default steering config not found at {default_potentials_path}")
 
     # Create complete steering configuration combining CLI parameters and potentials
     # Steering is enabled if num_particles > 1 OR potentials config is provided
@@ -298,7 +309,6 @@ def main(
     node_orientations = torch.tensor(
         np.concatenate([np.load(f)["node_orientations"] for f in samples_files])
     )
-    
     log_physicality(positions, node_orientations, sequence)
     save_pdb_and_xtc(
         pos_nm=positions,

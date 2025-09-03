@@ -68,7 +68,7 @@ This code only supports sampling structures of monomers. You can try to sample m
 
 ## Steering for Enhanced Physical Realism
 
-BioEmu includes a steering system that uses Sequential Monte Carlo (SMC) to guide the diffusion process toward more physically plausible protein structures. Steering applies potential energy functions during denoising to favor conformations that satisfy physical constraints.
+BioEmu includes a steering system that uses Sequential Monte Carlo (SMC) to guide the diffusion process toward more physically plausible protein structures. Steering applies potential energy functions during denoising to favor conformations that satisfy physical constraints. Algorithmically, steering simulates *multiple particles* per desired sample and resamples between these particles according to the favorability of the provided potentials. 
 
 ### Quick Start with Steering
 
@@ -79,7 +79,6 @@ python -m bioemu.sample \
     --sequence GYDPETGTWG \
     --num_samples 100 \
     --output_dir ~/steered-samples \
-    --steering_potentials_config src/bioemu/config/steering/physical_potentials.yaml \
     --num_steering_particles 3 \
     --steering_start_time 0.5 \
     --resampling_freq 2
@@ -94,7 +93,6 @@ sample(
     sequence='GYDPETGTWG',
     num_samples=100,
     output_dir='~/steered-samples',
-    steering_potentials_config='src/bioemu/config/steering/physical_potentials.yaml',
     num_steering_particles=3,
     steering_start_time=0.5,
     resampling_freq=2
@@ -103,17 +101,19 @@ sample(
 
 ### Key Steering Parameters
 
-- `num_steering_particles`: Number of particles per sample (1 = no steering)
+- `num_steering_particles`: Number of particles per sample (1 = no steering, >1=steering)
 - `steering_start_time`: When to start steering (0.0-1.0, default: 0.0)
 - `steering_end_time`: When to stop steering (0.0-1.0, default: 1.0)
 - `resampling_freq`: How often to resample particles (default: 1)
-- `steering_potentials_config`: Path to potentials configuration file
+- `steering_potentials_config`: Path to potentials configuration file (optional, defaults to physical_potentials.yaml)
 
 ### Available Potentials
 
-The `physical_potentials.yaml` config includes:
+When steering is enabled (num_steering_particles > 1) and no additional `steering_potentials_config.yaml` is provided, BioEMU automatically loads `physical_potentials.yaml` by default, which includes:
 - **ChainBreak**: Prevents backbone discontinuities
 - **ChainClash**: Avoids steric clashes between non-neighboring residues
+
+You can override this by providing a custom `steering_potentials_config` path.
 
 ### Alternative: Hydra Configuration Interface
 
@@ -130,8 +130,6 @@ python hydra_run.py \
 ```
 
 This allows you to override any configuration parameter and provides better integration with the configuration system.
-
-For more advanced steering options, see the [steering documentation](src/bioemu/config/steering/README.md).
 
 ## Azure AI Foundry
 BioEmu is also available on [Azure AI Foundry](https://ai.azure.com/). See [How to run BioEmu on Azure AI Foundry](AZURE_AI_FOUNDRY.md) for more details.
