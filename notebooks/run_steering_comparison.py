@@ -9,7 +9,7 @@ import random
 import hydra
 from omegaconf import OmegaConf
 import matplotlib.pyplot as plt
-from bioemu.steering import TerminiDistancePotential, potential_loss_fn
+from bioemu.steering import potential_loss_fn
 
 # Set fixed seeds for reproducibility
 SEED = 42
@@ -27,7 +27,7 @@ def run_steering_experiment(cfg, sequence='GYDPETGTWG', do_steering=True):
     Run steering experiment with or without steering enabled.
 
     Args:
-        cfg: Hydra configuration object
+        cfg: Hydra configuration object (None for no steering)
         sequence: Protein sequence to test
         do_steering: Whether to enable steering (True) or disable it (False)
 
@@ -37,11 +37,21 @@ def run_steering_experiment(cfg, sequence='GYDPETGTWG', do_steering=True):
     print(f"\n{'=' * 50}")
     print(f"Running experiment with steering={'ENABLED' if do_steering else 'DISABLED'}")
     print(f"{'=' * 50}")
-    print(OmegaConf.to_yaml(cfg))
-
-    # Setup potentials
-    fk_potentials = hydra.utils.instantiate(cfg.steering.potentials)
-    fk_potentials = list(fk_potentials.values())
+    
+    if cfg is not None:
+        print(OmegaConf.to_yaml(cfg))
+        # Use config values
+        num_samples = cfg.num_samples
+        batch_size_100 = cfg.batch_size_100
+        denoiser_config = cfg.denoiser
+        steering_config = cfg.steering
+    else:
+        print("Using default parameters (no steering)")
+        # Use default values for no steering
+        num_samples = 128
+        batch_size_100 = 100
+        denoiser_config = None  # Will use default denoiser
+        steering_config = None  # This will disable steering
 
     # Run sampling and keep data in memory
     print(f"Starting sampling... Data will be kept in memory")
@@ -51,12 +61,11 @@ def run_steering_experiment(cfg, sequence='GYDPETGTWG', do_steering=True):
     os.makedirs(temp_output_dir, exist_ok=True)
 
     samples = sample(sequence=sequence,
-                     num_samples=cfg.num_samples,
-                     batch_size_100=cfg.batch_size_100,
+                     num_samples=num_samples,
+                     batch_size_100=batch_size_100,
                      output_dir=temp_output_dir,
-                     denoiser_config=cfg.denoiser,
-                     fk_potentials=fk_potentials,
-                     steering_config=cfg.steering,
+                     denoiser_config=denoiser_config,
+                     steering_config=steering_config,
                      filter_samples=False)
 
     print(f"Sampling completed. Data kept in memory.")
@@ -116,16 +125,16 @@ def analyze_termini_distribution(steered_samples, no_steering_samples, cfg):
 
     # Add theoretical potential and analytical posterior
     # Extract potential parameters directly from config
-    potentials = hydra.utils.instantiate(cfg.steering.potentials)
-    first_potential = next(iter(potentials.values())) if hasattr(potentials, "values") else potentials[0]
+    potentials_config = cfg.steering.potentials
+    first_potential_config = next(iter(potentials_config.values())) if hasattr(potentials_config, "values") else potentials_config[0]
 
-    # Get parameters from the potential object
-    target = first_potential.target
-    tolerance = first_potential.tolerance
-    slope = first_potential.slope
-    max_value = first_potential.max_value
-    order = first_potential.order
-    linear_from = first_potential.linear_from
+    # Get parameters from the config
+    target = first_potential_config.target
+    tolerance = first_potential_config.tolerance
+    slope = first_potential_config.slope
+    max_value = first_potential_config.max_value
+    order = first_potential_config.order
+    linear_from = first_potential_config.linear_from
 
     print(f"Using potential parameters from config: target={target}, tolerance={tolerance}, slope={slope}")
 
@@ -176,23 +185,54 @@ def analyze_termini_distribution(steered_samples, no_steering_samples, cfg):
     # plt.savefig(plot_path, dpi=300, bbox_inches='tight')
     # print(f"\nPlot saved to: {plot_path}")
 
-    return fig
+    return fig, analytical_posterior, x_centers
+
+
+def compute_kl_divergence(empirical_data, analytical_distribution, x_centers, bins=50):
+    """
+    Compute Kullback-Leibler divergence between empirical and analytical distributions.
+    
+    Args:
+        empirical_data: Array of empirical data points
+        analytical_distribution: Array of analytical distribution values
+        x_centers: Array of bin centers for the analytical distribution
+        bins: Number of bins for histogram
+    
+    Returns:
+        kl_divergence: KL divergence value
+    """
+    # Create histogram of empirical data using the same bins as analytical distribution
+    x_edges = np.linspace(0, 5.0, bins + 1)  # Same range as in analyze_termini_distribution
+    empirical_hist, _ = np.histogram(empirical_data, bins=x_edges, density=True)
+    
+    # Ensure both distributions are normalized and have no zeros
+    empirical_hist = empirical_hist + 1e-10  # Add small epsilon to avoid log(0)
+    analytical_distribution = analytical_distribution + 1e-10
+    
+    # Normalize both distributions
+    empirical_hist = empirical_hist / np.sum(empirical_hist)
+    analytical_distribution = analytical_distribution / np.sum(analytical_distribution)
+    
+    # Compute KL divergence: KL(P||Q) = sum(P * log(P/Q))
+    kl_divergence = np.sum(empirical_hist * np.log(empirical_hist / analytical_distribution))
+    
+    return kl_divergence
 
 
 @hydra.main(config_path="../src/bioemu/config", config_name="bioemu.yaml", version_base="1.2")
 def main(cfg):
-    for target in [2.5]:
-        for num_particles in [5]:
+    for target in [2]:
+        for num_particles in [10]:
             """Main function to run both experiments and analyze results."""
             # Override steering section and sequence
             cfg = hydra.compose(config_name="bioemu.yaml",
                                 overrides=['steering=chingolin_steering',
                                         'sequence=GYDPETGTWG',
-                                        'num_samples=128',
+                                        'num_samples=1024',
                                         'denoiser=dpm',
                                         'denoiser.N=50',
                                         f'steering.start=0.5',
-                                        'steering.resample_every_n_steps=1',
+                                        'steering.resampling_freq=1',
                                         'steering.potentials.termini.slope=2',
                                         f'steering.potentials.termini.target={target}',
                                         f'steering.num_particles={num_particles}'])
@@ -214,32 +254,43 @@ def main(cfg):
                 settings=wandb.Settings(code_dir=".."),
             )
 
-            # Override steering settings for no-steering experiment
-            cfg_no_steering = OmegaConf.merge(cfg, {
-                "steering": {
-                    "do_steering": False,
-                    "num_particles": 1
-                }
-            })
+            # Run experiment without steering (steering_config=None)
+            no_steering_samples = run_steering_experiment(None, cfg.sequence, do_steering=False)
 
-            # Run experiment without steering
-            no_steering_samples = run_steering_experiment(cfg_no_steering, cfg.sequence, do_steering=False)
-
-            # Override steering settings for steered experiment
-            cfg_steered = OmegaConf.merge(cfg, {
-                "steering": {
-                    "do_steering": True,
-                },
-            })
+            # Use the original config for steered experiment (steering is enabled by default)
+            cfg_steered = cfg
 
             # Run experiment with steering
             steered_samples = run_steering_experiment(cfg_steered, cfg.sequence, do_steering=True)
 
             # Analyze and plot results using data in memory
-            fig = analyze_termini_distribution(steered_samples, no_steering_samples, cfg)
+            fig, analytical_posterior, x_centers = analyze_termini_distribution(steered_samples, no_steering_samples, cfg_steered)
             fig.suptitle(f"Target: {target}, Num Particles: {num_particles}")
             plt.tight_layout()
             # plt.show()
+
+            # Compute KL divergence between steered distribution and analytical posterior
+            steered_termini_distance = np.linalg.norm(steered_samples['pos'][:, 0] - steered_samples['pos'][:, -1], axis=-1)
+            # Filter out extreme distances for consistency with analysis function
+            max_distance = 5.0
+            steered_termini_distance = steered_termini_distance[steered_termini_distance < max_distance]
+            
+            kl_divergence = compute_kl_divergence(steered_termini_distance, analytical_posterior, x_centers)
+            
+            print(f"\n{'=' * 50}")
+            print("KULLBACK-LEIBLER DIVERGENCE ANALYSIS")
+            print(f"{'=' * 50}")
+            print(f"KL Divergence (Steered || Analytical Posterior): {kl_divergence:.4f}")
+            print(f"Interpretation:")
+            if kl_divergence < 0.1:
+                print(f"  - Very good agreement (KL < 0.1)")
+            elif kl_divergence < 0.5:
+                print(f"  - Good agreement (KL < 0.5)")
+            elif kl_divergence < 1.0:
+                print(f"  - Moderate agreement (KL < 1.0)")
+            else:
+                print(f"  - Poor agreement (KL >= 1.0)")
+            print(f"  - Lower values indicate better steering effectiveness")
 
             # Finish wandb run
             wandb.finish()

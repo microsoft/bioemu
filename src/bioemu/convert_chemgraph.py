@@ -8,7 +8,7 @@ from matplotlib.pylab import f
 import mdtraj
 import numpy as np
 import torch
-import wandb
+# No wandb logging needed
 
 from .openfold.np import residue_constants
 from .openfold.np.protein import Protein, to_pdb
@@ -371,13 +371,9 @@ def _filter_unphysical_traj_masks(
     violations = {'ca_ca': ca_seq_distances,
                   'cn_seq': cn_seq_distances,
                   'rest_distances': 10 * rest_distances}
-    path = str(Path('.').absolute()) + f'/outputs/{wandb.run.id}'
+    path = str(Path('.').absolute()) + '/outputs/analysis'
     np.savez(path, **violations)
-    wandb.log({'MDTraj/ca_ca >4.5': (ca_seq_distances > 4.5).astype(float).sum(axis=-1).mean(),
-               'MDTraj/cn_seq >2.0': (cn_seq_distances > 2.0).astype(float).sum(axis=-1).mean(),
-               'MDTraj/all_clash <1.0': (10 * rest_distances < 1.0).astype(float).sum(axis=(-1)).mean()})
-    wandb.run.save(path + '.npz')
-    # data = np.load(os.getcwd()+f'/outputs/{wandb.run.id}.npz'); {key: data[key] for key in data.keys()}
+    # data = np.load(os.getcwd()+'/outputs/analysis.npz'); {key: data[key] for key in data.keys()}
     return frames_match_ca_seq_distance, frames_match_cn_seq_distance, frames_non_clash
 
 
@@ -544,7 +540,7 @@ def save_pdb_and_xtc(
         )
         print(f"Filtered {num_samples_unfiltered} samples down to {len(traj)} ",
               "based on structure criteria. Filtering can be disabled with `--filter_samples=False`.")
-        wandb.log({'Filtered': len(traj) / num_samples_unfiltered})
+        # Filtering ratio computed but not logged
     traj.superpose(reference=traj, frame=0)
     traj.save_xtc(xtc_path)
 

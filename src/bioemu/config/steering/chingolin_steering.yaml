@@ -1,27 +1,15 @@
-do_steering: true
+# Steering is enabled when this config is provided
 num_particles: 5
 start: 0.5
-resample_every_n_steps: 1
-previous_energy: true
+resampling_freq: 1
+fast_steering: false
 potentials:
-  # cacadist:
-  #   _target_: bioemu.steering.CaCaDistancePotential
-  #   tolerance: 1.
-  #   slope: 1.
-  #   max_value: 5
-  #   order: 1
-  #   weight: 1.0
-  # caclash:
-  #   _target_: bioemu.steering.CaClashPotential
-  #   tolerance: 0.
-  #   slope: 1.
-  #   weight: 1.0
   termini:
     _target_: bioemu.steering.TerminiDistancePotential
     target: 1.5
-    tolerance: 0.1
+    flatbottom: 0.1
     slope: 3
-    max_value: 100
+
     linear_from: .5
     order: 2
     weight: 1.0

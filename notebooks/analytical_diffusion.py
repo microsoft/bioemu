@@ -430,7 +430,7 @@ def reverse_diffusion(gmm: TimeDependentGMM, x: torch.Tensor = None, t: float = 
         num_samples: Number of samples to generate from N(0,1) at t=1 (optional if x,t provided)
         n_steps: Number of integration steps
         potentials: List of potential functions for steering
-        steering_config: Dict with keys: do_steering, num_particles, start, resample_every_n_steps
+        steering_config: Dict with keys: num_particles, start, resampling_freq
         
     Returns:
         trajectory: [n_steps+1, n_samples, 1] - trajectory to terminal distribution
@@ -442,7 +442,7 @@ def reverse_diffusion(gmm: TimeDependentGMM, x: torch.Tensor = None, t: float = 
         x = torch.randn(num_samples, 1).to(device)
         # If steering is enabled, tile each sample to create num_particles copies
 		
-        if steering_config and steering_config['do_steering']:
+        if steering_config:
             num_particles = steering_config['num_particles']
             x = x.repeat_interleave(num_particles, dim=0)  # [num_samples * num_particles, 1]
         t = 1.0
@@ -487,7 +487,7 @@ def reverse_diffusion(gmm: TimeDependentGMM, x: torch.Tensor = None, t: float = 
         trajectory.append(x.clone())
         
         # Steering functionality (same logic as denoiser)
-        if steering_config and potentials and steering_config.get('do_steering', False):
+        if steering_config and potentials:
             # Extract clean data x0 from score using Tweedie's formula
             # For VP-SDE: x0 = (x + beta_t * score) / sqrt(alpha_t)
             alpha_t = gmm.schedule.get_alpha_t(t_tensor).to(device).unsqueeze(-1)  # [n_samples, 1]
@@ -503,7 +503,7 @@ def reverse_diffusion(gmm: TimeDependentGMM, x: torch.Tensor = None, t: float = 
             
             if steering_config['num_particles'] > 1:
                 start_step = int(n_steps * steering_config['start'])
-                resample_freq = steering_config['resample_every_n_steps']
+                resample_freq = steering_config['resampling_freq']
                 
                 if start_step <= step < (n_steps - 2) and step % resample_freq == 0:
                     x, total_energy = resample_particles(x, total_energy, previous_energy, steering_config)
@@ -1042,10 +1042,10 @@ for target in torch.linspace(-6, 6, 5):
     )
     # Define steering configuration (same keywords as denoiser)
     steering_config = {
-        'do_steering': True,
+
         'num_particles': 20,  # Multiple particles for resampling
         'start': 0.2,         # Start steering after 30% of steps
-        'resample_every_n_steps': 5,  # Resample every 5 steps
+        'resampling_freq': 5,  # Resample every 5 steps
         'previous_energy': True
     }
 

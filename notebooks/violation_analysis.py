@@ -150,7 +150,7 @@ for idx, row in tqdm(sweep_df.iterrows(), total=len(sweep_df)):
 
 
 # Filter sweep_df for sequence_length = 449
-filtered_df = sweep_df[(sweep_df['sequence_length'] == 449) & (sweep_df['steering.potentials.caclash.dist'] == 1) & (sweep_df['steering.resample_every_n_steps'] == 3)].copy()
+filtered_df = sweep_df[(sweep_df['sequence_length'] == 449) & (sweep_df['steering.potentials.caclash.dist'] == 1) & (sweep_df['steering.resampling_freq'] == 3)].copy()
 # print(f"Filtered dataframe shape (sequence_length=449): {filtered_df.shape}")
 
 # Calculate violations for each run

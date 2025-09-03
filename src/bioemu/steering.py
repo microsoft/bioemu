@@ -3,7 +3,7 @@
 import sys
 import torch
 import einops
-import wandb
+# No wandb logging needed
 
 import numpy as np
 import matplotlib.pyplot as plt
@@ -290,25 +290,22 @@ def log_physicality(pos, rot, sequence):
     ca_break = (ca_ca_dist > 4.5).float()
     ca_clash = (clash_distances < 3.4).float()
     cn_break = (cn_dist > 2.0).float()
-    wandb.log({f'Physicality/ca_break>4.5 [#]': ca_break.sum(dim=-1).mean(),  # number of breaks sample
-               f'Physicality/ca_break>4.5 [%]': ca_break.mean(dim=-1).mean(),  # overall percentage of all possible links
-               f'Physicality/ca_clash<3.4 [#]': ca_clash.sum(dim=-1).mean(),
-               f'Physicality/ca_clash<3.4 [%]': ca_clash.mean(dim=-1).mean(),
-               f'Physicality/cn_break>2.0 [#]': ca_break.sum(dim=-1).mean(),
-               f'Physicality/cn_break>2.0 [%]': ca_break.mean(dim=-1).mean()}, commit=False)
+    # Physicality metrics computed but not logged
     for tolerance in [0, 1, 2, 3, 4, 5]:
         ca_break_tol = torch.relu(ca_break.sum(dim=-1) - tolerance)
         ca_clash_tol = torch.relu(ca_clash.sum(dim=-1) - tolerance)
         cn_break_tol = torch.relu(cn_break.sum(dim=-1) - tolerance)
         # Count zero elements in x and normalize by number of entries
         filter_fn = lambda x: (x == 0).float().sum() / x.numel()
-        wandb.log({
-            f'Physicality/ca_break_tol{tolerance}': filter_fn(ca_break_tol),
-            f'Physicality/ca_clash_tol{tolerance}': filter_fn(ca_clash_tol),
-            f'Physicality/cn_break_tol{tolerance}': filter_fn(cn_break_tol),
-            f"Physicality/ca_break_clash_tol{tolerance}": filter_fn(ca_break_tol + ca_clash_tol),
-            f"Physicality/ca_break_clash_cn_break_tol{tolerance}": filter_fn(ca_break_tol + ca_clash_tol + cn_break_tol),
-        }, commit=True)
+        # Physicality tolerance metrics computed but not logged
+    
+    # Print physicality metrics
+    print(f"physicality/ca_break_mean: {ca_break.sum().item()}")
+    print(f"physicality/ca_clash_mean: {ca_clash.sum().item()}")
+    print(f"physicality/cn_break_mean: {cn_break.sum().item()}")
+    print(f"physicality/ca_ca_dist_mean: {ca_ca_dist.mean().item()}")
+    print(f"physicality/clash_distances_mean: {clash_distances.mean().item()}")
+    print(f"physicality/cn_dist_mean: {cn_dist.mean().item()}")
 
 
 _printed_strings = set()
@@ -331,38 +328,32 @@ loss_fn_callables = {
 }
 
 
-def potential_loss_fn(x, target, tolerance, slope, max_value, order, linear_from):
+def potential_loss_fn(x, target, flatbottom, slope, order, linear_from):
     """
     Flat-bottom loss for continuous variables using torch.abs and torch.relu.
 
     Args:
             x (Tensor): Input tensor.
             target (float or Tensor): Target value.
-            tolerance (float): Flat region width around target.
-            slope (float): Slope outside tolerance.
-            max_value (float): Maximum loss value outside tolerance.
+            flatbottom (float): Flat region width around target.
+            slope (float): Slope outside flatbottom region.
+            order (float): Power law exponent for penalty function.
+            linear_from (float): Distance threshold where penalty switches from power law to linear.
 
     Returns:
             Tensor: Loss values.
     """
     diff = torch.abs(x - target)
-    diff_tol = torch.relu(diff - tolerance)
+    diff_tol = torch.relu(diff - flatbottom)
 
-    # Quadratic region
-    quad_loss = (slope * diff_tol) ** order
+    # Power law region
+    power_loss = (slope * diff_tol) ** order
 
-    # Matching point
-    u0 = linear_from
-    match_value = (slope * u0) ** order
-    match_slope = slope**order * u0
+    # Linear region (simple linear continuation from linear_from)
+    linear_loss = (slope * linear_from) ** order + slope * (diff_tol - linear_from)
 
-    # Linear region
-    lin_loss = match_value + match_slope * (diff_tol - u0)
-
-    # Piecewise (continuous and C^1 smooth at u0)
-    loss = torch.where(diff_tol <= u0, quad_loss, lin_loss)
-
-    loss = torch.clamp(loss, max=max_value)
+    # Piecewise function
+    loss = torch.where(diff_tol <= linear_from, power_loss, linear_loss)
     return loss
 
 
@@ -382,11 +373,13 @@ class Potential:
 
 class ChainBreakPotential(Potential):
 
-    def __init__(self, tolerance: float = 0., slope: float = 1.0, max_value: float = 5.0, order: float = 1, linear_from: float = 1., weight: float = 1.0):
+    def __init__(
+        self, flatbottom: float = 0., slope: float = 1.0, order: float = 1, 
+        linear_from: float = 1., weight: float = 1.0
+    ):
         self.ca_ca = ca_ca
-        self.tolerance: float = tolerance
+        self.flatbottom: float = flatbottom
         self.slope = slope
-        self.max_value = max_value
         self.order = order
         self.linear_from = linear_from
         self.weight = weight
@@ -397,19 +390,14 @@ class ChainBreakPotential(Potential):
         """
         ca_ca_dist = (Ca_pos[..., :-1, :] - Ca_pos[..., 1:, :]).pow(2).sum(dim=-1).pow(0.5)
         target_distance = self.ca_ca
-        loss_fn = lambda x: potential_loss_fn(x, target_distance, self.tolerance, self.slope, self.max_value, self.order, self.linear_from)
+        loss_fn = lambda x: potential_loss_fn(
+            x, target_distance, self.flatbottom, self.slope, self.order, self.linear_from
+        )
         # fig = plot_ca_ca_distances(ca_ca_dist, loss_fn, t)
         # dist_diff = loss_fn_callables[self.loss_fn]((ca_ca_dist - target_distance).abs().clamp(0, 10), self.slope, self.tolerance)
         dist_diff = loss_fn(ca_ca_dist)
-        # wandb.log({"CaCaDist/ca_ca_dist_mean": ca_ca_dist.mean().item(),
-        #            "CaCaDist/ca_ca_dist_std": ca_ca_dist.std().item(),
-        #            "CaCaDist/ca_ca_dist_loss": dist_diff.mean().item(),
-        #            "CaCaDist/ca_ca_dist > 4.5A [#]": (ca_ca_dist > 4.5).float().sum().item(),
-        #            "CaCaDist/ca_ca_dist > 4.5A [%]": (ca_ca_dist > 4.5).float().mean().item(),
-        #            "CaCaDist/ca_ca_dist": wandb.Histogram(ca_ca_dist.detach().cpu().flatten().numpy()),
-        #            "CaCaDist/ca_ca_dist_hist": wandb.Image(fig)
-        #            },
-        #           commit=False)
+        # CaCa distance metrics computed but not logged
+
         # plt.close('all')
         return self.weight * dist_diff.sum(dim=-1)
 
@@ -434,31 +422,23 @@ class ChainBreakPotential(Potential):
 #         loss_fn = lambda x: torch.relu(self.slope * (lit - self.tolerance - x))
 #         fig = plot_caclashes(distances, loss_fn, t)
 #         potential_energy = loss_fn(distances)
-#         wandb.log({
-#             "CaClash/ca_clash_dist": distances.mean().item(),
-#             "CaClash/ca_clash_dist": distances.std().item(),
-#             "CaClash/potential_energy": potential_energy.mean().item(),
-#             "CaClash/ca_ca_dist < 1.A [#]": (distances < 1.0).int().sum().item(),
-#             "CaClash/ca_ca_dist < 1.A [%]": (distances < 1.0).float().mean().item(),
-#             "CaClash/potential_energy_hist": wandb.Histogram(potential_energy.detach().cpu().flatten().numpy()),
-#             "CaClash/ca_ca_dist_hist": wandb.Image(fig)
-#         }, commit=False)
+        # CaClash potential metrics computed but not logged
 #         plt.close('all')
 #         return self.weight * potential_energy.sum(dim=(-1))
 
 class ChainClashPotential(Potential):
     """Potential to prevent CA atoms from clashing (getting too close)."""
     
-    def __init__(self, tolerance=0.0, dist=4.2, slope=1.0, weight=1.0, offset=3):
+    def __init__(self, flatbottom=0.0, dist=4.2, slope=1.0, weight=1.0, offset=3):
         """
         Args:
-            tolerance: Additional buffer distance (added to dist)
+            flatbottom: Additional buffer distance (added to dist)
             dist: Minimum allowed distance between CA atoms
             slope: Steepness of the penalty
             weight: Overall weight of this potential
             offset: Minimum residue separation to consider (default=1 excludes diagonal)
         """
-        self.tolerance = tolerance
+        self.flatbottom = flatbottom
         self.dist = dist
         self.slope = slope
         self.weight = weight
@@ -485,27 +465,19 @@ class ChainClashPotential(Potential):
         mask = mask.triu(diagonal=self.offset)
         relevant_distances = pairwise_distances[:, mask]  # (batch_size, n_pairs)
         
-        loss_fn = lambda x: torch.relu(self.slope * (self.dist - self.tolerance - x))
+        loss_fn = lambda x: torch.relu(self.slope * (self.dist - self.flatbottom - x))
         # fig = plot_caclashes(relevant_distances, loss_fn, t)
         potential_energy = loss_fn(relevant_distances)
-        # wandb.log({
-        #     "CaClash/ca_clash_dist": relevant_distances.mean().item(),
-        #     "CaClash/ca_clash_dist_std": relevant_distances.std().item(),
-        #     "CaClash/potential_energy": potential_energy.mean().item(),
-        #     "CaClash/ca_ca_dist < 1.A [#]": (relevant_distances < 1.0).int().sum().item(),
-        #     "CaClash/ca_ca_dist < 1.A [%]": (relevant_distances < 1.0).float().mean().item(),
-        #     "CaClash/potential_energy_hist": wandb.Histogram(potential_energy.detach().cpu().flatten().numpy()),
-        #     "CaClash/ca_ca_dist_hist": wandb.Image(fig)
-        # }, commit=False)
+        # CaClash potential metrics computed but not logged
         # plt.close('all')
         return self.weight * potential_energy.sum(dim=(-1))
 
 
 class CNDistancePotential(Potential):
 
-    def __init__(self, tolerance: float = 0., slope: float = 1.0, start: float = 0.5, loss_fn: str = 'mse', weight: float = 1.0):
+    def __init__(self, flatbottom: float = 0., slope: float = 1.0, start: float = 0.5, loss_fn: str = 'mse', weight: float = 1.0):
         self.loss_fn = loss_fn
-        self.tolerance: float = tolerance
+        self.flatbottom: float = flatbottom
         self.weight = weight
         self.start = start
         self.slope = slope
@@ -525,20 +497,16 @@ class CNDistancePotential(Potential):
         bondlength_loss = loss_fn_callables[self.loss_fn](
             (bondlength_CN_pred - bondlength_lit).abs(),
             self.slope,
-            self.tolerance * 12 * bondlength_std_lit,
+            self.flatbottom * 12 * bondlength_std_lit,
         )
-        # wandb.log({
-        #     "CNDistance/cn_bondlength_mean": bondlength_CN_pred.mean().item(),
-        #     "CNDistance/cn_bondlength_std": bondlength_CN_pred.std().item(),
-        #     "CNDistance/cn_bondlength_loss": bondlength_loss.mean().item(),
-        # }, commit=False)
+        # CNDistance potential metrics computed but not logged
         return self.weight * bondlength_loss.sum(-1)
 
 
 class CaCNAnglePotential(Potential):
-    def __init__(self, tolerance: float = 0., loss_fn: str = 'mse'):
+    def __init__(self, flatbottom: float = 0., loss_fn: str = 'mse'):
         self.loss_fn = loss_fn
-        self.tolerance: float = tolerance
+        self.flatbottom: float = flatbottom
 
     def __call__(self, pos, rot, seq, t):
 
@@ -552,15 +520,15 @@ class CaCNAnglePotential(Potential):
         bondangle_CaCN_std_lit = between_res_cos_angles_ca_c_n[1]
         bondangle_CaCN_loss = loss_fn_callables[loss_fn](
             (bondangle_CaCN_pred - bondangle_CaCN_lit).abs(),
-            self.tolerance * 12 * bondangle_CaCN_std_lit,
+            self.flatbottom * 12 * bondangle_CaCN_std_lit,
         )
         return bondangle_CaCN_loss
 
 
 class CNCaAnglePotential(Potential):
-    def __init__(self, tolerance: float = 0., loss_fn: str = 'mse'):
+    def __init__(self, flatbottom: float = 0., loss_fn: str = 'mse'):
         self.loss_fn = loss_fn
-        self.tolerance: float = tolerance
+        self.flatbottom: float = flatbottom
 
     def __call__(self, pos, rot, seq, t):
         atom37, atom37_mask, atom37_aa = batch_frames_to_atom37(10 * pos, rot, seq)
@@ -573,15 +541,15 @@ class CNCaAnglePotential(Potential):
         bondangle_CNCa_std_lit = between_res_cos_angles_c_n_ca[1]
         bondangle_CNCa_loss = loss_fn_callables[self.loss_fn](
             (bondangle_CNCa_pred - bondangle_CNCa_lit).abs(),
-            self.tolerance * 12 * bondangle_CNCa_std_lit,
+            self.flatbottom * 12 * bondangle_CNCa_std_lit,
         )
         return bondangle_CNCa_loss
 
 
 class ClashPotential(Potential):
-    def __init__(self, tolerance: float = 0., loss_fn: str = 'mse'):
+    def __init__(self, flatbottom: float = 0., loss_fn: str = 'mse'):
         self.loss_fn = loss_fn
-        self.tolerance: float = tolerance
+        self.flatbottom: float = flatbottom
 
     def __call__(self, pos, rot, seq, t):
         atom37, atom37_mask, atom37_aa = batch_frames_to_atom37(10 * pos, rot, seq)
@@ -594,7 +562,7 @@ class ClashPotential(Potential):
             device=atom37.device,
         )
         pairwise_distances, vdw_sum = compute_clash_loss(NCaCO, vdw_radii)
-        clash = loss_fn_callables[loss_fn](vdw_sum - pairwise_distances, self.tolerance * 1.5)
+        clash = loss_fn_callables[loss_fn](vdw_sum - pairwise_distances, self.flatbottom * 1.5)
         mask = bond_mask(num_frames=NCaCO.shape[1])
         masked_loss = clash[einops.repeat(mask, '... -> b ...', b=atom37.shape[0]).bool()]
         denominator = masked_loss.numel()
@@ -604,11 +572,13 @@ class ClashPotential(Potential):
 
 
 class TerminiDistancePotential(Potential):
-    def __init__(self, target: float = 1.5, tolerance: float = 0., slope: float = 1.0, max_value: float = 5.0, order: float = 1, linear_from: float = 1., weight: float = 1.0):
+    def __init__(
+        self, target: float = 1.5, flatbottom: float = 0., slope: float = 1.0, 
+        order: float = 1, linear_from: float = 1., weight: float = 1.0
+    ):
         self.target = target
-        self.tolerance: float = tolerance
+        self.flatbottom: float = flatbottom
         self.slope = slope
-        self.max_value = max_value
         self.order = order
         self.linear_from = linear_from
         self.weight = weight
@@ -619,17 +589,12 @@ class TerminiDistancePotential(Potential):
         Getting in Angstrom, converting to nm.
         """
         termini_distance = torch.linalg.norm(Ca_pos[:, 0] - Ca_pos[:, -1], axis=-1) / 10
-        wandb.log({
-            "TerminiDistance/termini_distance_mean": termini_distance.mean().item(),
-            "TerminiDistance/termini_distance_std": termini_distance.std().item(),
-            "TerminiDistance/termini_distance": wandb.Histogram(termini_distance.detach().cpu().flatten().numpy()),
-        }, commit=False)
+        # Termini distance metrics computed but not logged
         energy = potential_loss_fn(
             termini_distance,
             target=self.target,
-            tolerance=self.tolerance,
+            flatbottom=self.flatbottom,
             slope=self.slope,
-            max_value=self.max_value,
             order=self.order,
             linear_from=self.linear_from
         )
@@ -637,13 +602,13 @@ class TerminiDistancePotential(Potential):
 
 
 class StructuralViolation(Potential):
-    def __init__(self, tolerance: float = 0., loss_fn: str = 'mse'):
-        self.ca_ca_distance = ChainBreakPotential(tolerance=tolerance, loss_fn=loss_fn)
-        self.caclash_potential = ChainClashPotential(tolerance=tolerance, loss_fn=loss_fn)
-        self.c_n_distance = CNDistancePotential(tolerance=tolerance, loss_fn=loss_fn)
-        self.ca_c_n_angle = CaCNAnglePotential(tolerance=tolerance, loss_fn=loss_fn)
-        self.c_n_ca_angle = CNCaAnglePotential(tolerance=tolerance, loss_fn=loss_fn)
-        self.clash_potential = ClashPotential(tolerance=tolerance, loss_fn=loss_fn)
+    def __init__(self, flatbottom: float = 0., loss_fn: str = 'mse'):
+        self.ca_ca_distance = ChainBreakPotential(flatbottom=flatbottom, loss_fn=loss_fn)
+        self.caclash_potential = ChainClashPotential(flatbottom=flatbottom, loss_fn=loss_fn)
+        self.c_n_distance = CNDistancePotential(flatbottom=flatbottom, loss_fn=loss_fn)
+        self.ca_c_n_angle = CaCNAnglePotential(flatbottom=flatbottom, loss_fn=loss_fn)
+        self.c_n_ca_angle = CNCaAnglePotential(flatbottom=flatbottom, loss_fn=loss_fn)
+        self.clash_potential = ClashPotential(flatbottom=flatbottom, loss_fn=loss_fn)
 
     def __call__(self, pos, rot, seq, t):
         '''

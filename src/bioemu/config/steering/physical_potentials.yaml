@@ -1,0 +1,19 @@
+# Physical steering potentials configuration
+# This file contains only the potential definitions
+# Steering parameters (num_particles, start, end, etc.) are now CLI parameters
+
+chainbreak:
+  _target_: bioemu.steering.ChainBreakPotential
+  flatbottom: 0.5
+  slope: 5.
+
+  order: 2
+  linear_from: 10
+  weight: 1.0
+
+chainclash:
+  _target_: bioemu.steering.ChainClashPotential
+  flatbottom: 0.
+  dist: 4.1
+  slope: 5.
+  weight: 1.0

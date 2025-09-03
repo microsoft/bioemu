@@ -291,7 +291,7 @@ def dpm_solver(
     DPM solver is used only for positions, not node orientations.
     """
     grad_is_enabled = torch.is_grad_enabled()
-    assert isinstance(batch, ChemGraph)
+    assert isinstance(batch, Batch)
     assert max_t < 1.0
 
     batch = batch.to(device)
@@ -449,15 +449,16 @@ def dpm_solver(
         then apply per sample a filtering op
         '''
 
-        if steering_config is not None and fk_potentials is not None and steering_config.get('do_steering', False):  # always eval potentials
+        if steering_config is not None and fk_potentials is not None:  # steering enabled when steering_config is provided
             x0_t, R0_t = get_pos0_rot0(sdes=sdes, batch=batch, t=t, score=score)
             x0 += [x0_t.cpu()]
             R0 += [R0_t.cpu()]
             
             # Handle fast steering - expand batch at steering start time
             expected_expansion_step = int(N * steering_config.get('start', 0.0))
-            if steering_config['fast_steering'] and i >= expected_expansion_step and batch.num_graphs < steering_config['max_batch_size']:
-                assert batch.num_graphs * steering_config['num_particles'] == steering_config['max_batch_size'], f"Batch size {batch.num_graphs} * num_particles {steering_config['num_particles']} != max_batch_size {steering_config['max_batch_size']}"
+            max_batch_size = steering_config.get('max_batch_size', None)
+            if steering_config.get('fast_steering', False) and i >= expected_expansion_step and max_batch_size is not None and batch.num_graphs < max_batch_size:
+                assert batch.num_graphs * steering_config['num_particles'] == max_batch_size, f"Batch size {batch.num_graphs} * num_particles {steering_config['num_particles']} != max_batch_size {max_batch_size}"
                 # Expand batch using repeat_interleave at steering start time
                 
                 # Expand all relevant tensors
@@ -490,7 +491,7 @@ def dpm_solver(
 
             if steering_config['num_particles'] > 1:  # if resampling implicitely given by num_fk_samples > 1
                 steering_end = steering_config.get('end', 1.0)  # Default to 1.0 if not specified
-                if int(N * steering_config.get('start', 0.0)) <= i < min(int(N * steering_end), N - 2) and i % steering_config.get('resample_every_n_steps', 1) == 0:
+                if int(N * steering_config.get('start', 0.0)) <= i < min(int(N * steering_end), N - 2) and i % steering_config['resampling_freq'] == 0:
 
                     steering_executed = True  # Mark that steering actually happened
                     batch, total_energy = resample_batch(
