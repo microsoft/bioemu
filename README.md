@@ -66,13 +66,13 @@ By default, unphysical structures (steric clashes or chain discontinuities) will
 
 This code only supports sampling structures of monomers. You can try to sample multimers using the [linker trick](https://x.com/ag_smith/status/1417063635000598528), but in our limited experiments, this has not worked well.
 
-## Steering for Enhanced Physical Realism
+## Steering structures
 
 BioEmu includes a steering system that uses Sequential Monte Carlo (SMC) to guide the diffusion process toward more physically plausible protein structures. Steering applies potential energy functions during denoising to favor conformations that satisfy physical constraints. Algorithmically, steering simulates *multiple particles* per desired sample and resamples between these particles according to the favorability of the provided potentials. 
 
 ### Quick Start with Steering
 
-Enable steering with physical constraints using the CLI:
+Enable steering with physical constraints using the CLI by setting `--num_steering_particles` > 1:
 
 ```bash
 python -m bioemu.sample \
@@ -82,21 +82,6 @@ python -m bioemu.sample \
     --num_steering_particles 3 \
     --steering_start_time 0.5 \
     --resampling_freq 2
-```
-
-Or using the Python API:
-
-```python
-from bioemu.sample import main as sample
-
-sample(
-    sequence='GYDPETGTWG',
-    num_samples=100,
-    output_dir='~/steered-samples',
-    num_steering_particles=3,
-    steering_start_time=0.5,
-    resampling_freq=2
-)
 ```
 
 ### Key Steering Parameters
