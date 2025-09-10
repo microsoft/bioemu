@@ -4,16 +4,19 @@
 
 import logging
 import typing
+import wandb
 from collections.abc import Callable
 from pathlib import Path
 from typing import Literal
 
 import hydra
+from omegaconf import DictConfig, OmegaConf
 import numpy as np
 import torch
 import yaml
 from torch_geometric.data.batch import Batch
 from tqdm import tqdm
+from omegaconf import OmegaConf
 
 from .chemgraph import ChemGraph
 from .convert_chemgraph import save_pdb_and_xtc
@@ -26,12 +29,15 @@ from .utils import (
     format_npz_samples_filename,
     print_traceback_on_exception,
 )
+from .steering import log_physicality, ChainBreakPotential, ChainClashPotential
 
 logger = logging.getLogger(__name__)
 
 DEFAULT_DENOISER_CONFIG_DIR = Path(__file__).parent / "config/denoiser/"
 SupportedDenoisersLiteral = Literal["dpm", "heun"]
 SUPPORTED_DENOISERS = list(typing.get_args(SupportedDenoisersLiteral))
+
+# TODO: make denoiser_config and steering_config either a path to a yaml file or a dict
 
 
 @print_traceback_on_exception
@@ -40,44 +46,100 @@ def main(
     sequence: str | Path,
     num_samples: int,
     output_dir: str | Path,
-    batch_size_100: int = 10,
+    batch_size_100: int = 50,
     model_name: Literal["bioemu-v1.0", "bioemu-v1.1"] | None = "bioemu-v1.1",
     ckpt_path: str | Path | None = None,
     model_config_path: str | Path | None = None,
     denoiser_type: SupportedDenoisersLiteral | None = "dpm",
-    denoiser_config_path: str | Path | None = None,
+    denoiser_config: str | Path | dict | None = None,
     cache_embeds_dir: str | Path | None = None,
     cache_so3_dir: str | Path | None = None,
     msa_host_url: str | None = None,
     filter_samples: bool = True,
-) -> None:
+    steering_config: str | Path | dict | None = None,
+    physical_steering: bool = False,
+    fast_steering: bool = False,
+) -> dict:
     """
     Generate samples for a specified sequence, using a trained model.
 
     Args:
-        sequence: Amino acid sequence for which to generate samples, or a path to a .fasta file, or a path to an .a3m file with MSAs.
-            If it is not an a3m file, then colabfold will be used to generate an MSA and embedding.
-        num_samples: Number of samples to generate. If `output_dir` already contains samples, this function will only generate additional samples necessary to reach the specified `num_samples`.
-        output_dir: Directory to save the samples. Each batch of samples will initially be dumped as .npz files. Once all batches are sampled, they will be converted to .xtc and .pdb.
-        batch_size_100: Batch size you'd use for a sequence of length 100. The batch size will be calculated from this, assuming
-           that the memory requirement to compute each sample scales quadratically with the sequence length.
-        model_name: Name of pretrained model to use. If this is set, you do not need to provide `ckpt_path` or `model_config_path`.
-            The model will be retrieved from huggingface; the following models are currently available:
-            - bioemu-v1.0: checkpoint used in the original preprint (https://www.biorxiv.org/content/10.1101/2024.12.05.626885v2)
+        sequence: Amino acid sequence for which to generate samples, or a path to a .fasta file,
+            or a path to an .a3m file with MSAs. If it is not an a3m file, then colabfold will be
+            used to generate an MSA and embedding.
+        num_samples: Number of samples to generate. If `output_dir` already contains samples, this
+            function will only generate additional samples necessary to reach the specified `num_samples`.
+        output_dir: Directory to save the samples. Each batch of samples will initially be dumped
+            as .npz files. Once all batches are sampled, they will be converted to .xtc and .pdb.
+        batch_size_100: Batch size you'd use for a sequence of length 100. The batch size will be
+            calculated from this, assuming that the memory requirement to compute each sample scales
+            quadratically with the sequence length. A100-80GB would give you ~900 right at the memory
+            limit, so 500 is reasonable
+        model_name: Name of pretrained model to use. If this is set, you do not need to provide
+            `ckpt_path` or `model_config_path`. The model will be retrieved from huggingface; the
+            following models are currently available:
+            - bioemu-v1.0: checkpoint used in the original preprint
             - bioemu-v1.1: checkpoint with improved protein stability performance
         ckpt_path: Path to the model checkpoint. If this is set, `model_name` will be ignored.
-        model_config_path: Path to the model config, defining score model architecture and the corruption process the model was trained with.
-           Only required if `ckpt_path` is set.
-        denoiser_type: Denoiser to use for sampling, if `denoiser_config_path` not specified. Comes in with default parameter configuration. Must be one of ['dpm', 'heun']
-        denoiser_config_path: Path to the denoiser config, defining the denoising process.
-        cache_embeds_dir: Directory to store MSA embeddings. If not set, this defaults to `COLABFOLD_DIR/embeds_cache`.
-        cache_so3_dir: Directory to store SO3 precomputations. If not set, this defaults to `~/sampling_so3_cache`.
-        msa_host_url: MSA server URL. If not set, this defaults to colabfold's remote server. If sequence is an a3m file, this is ignored.
+        model_config_path: Path to the model config, defining score model architecture and the
+            corruption process the model was trained with. Only required if `ckpt_path` is set.
+        denoiser_type: Denoiser to use for sampling, if `denoiser_config_path` not specified.
+            Comes in with default parameter configuration. Must be one of ['dpm', 'heun']
+        denoiser_config: Path to the denoiser config, defining the denoising process.
+        cache_embeds_dir: Directory to store MSA embeddings. If not set, this defaults to
+            `COLABFOLD_DIR/embeds_cache`.
+        cache_so3_dir: Directory to store SO3 precomputations. If not set, this defaults to
+            `~/sampling_so3_cache`.
+        msa_host_url: MSA server URL. If not set, this defaults to colabfold's remote server.
+            If sequence is an a3m file, this is ignored.
         filter_samples: Filter out unphysical samples with e.g. long bond distances or steric clashes.
+        fk_potentials: List of callable potentials to steer the sampling process. If None, no
+            steering is applied.
+        steering_config: Configuration for steering process including num_particles, start time, etc.
+        physical_steering: If True, automatically adds ChainBreakPotential and ChainClashPotential
+            to steering.
+        fast_steering: If True, delays particle creation until steering start time for performance.
     """
 
     output_dir = Path(output_dir).expanduser().resolve()
     output_dir.mkdir(parents=True, exist_ok=True)  # Fail fast if output_dir is non-writeable
+
+    # Load physical steering configuration if physical_steering is True
+    if physical_steering:
+        physical_steering_config_path = Path(__file__).parent / "config" / "steering" / "physical_steering.yaml"
+        physical_steering_config = OmegaConf.load(physical_steering_config_path)
+        physical_steering_config['fast_steering'] = fast_steering
+        physical_steering_potentials = hydra.utils.instantiate(physical_steering_config.potentials)
+        physical_steering_potentials: list[Callable] = list(physical_steering_potentials.values())
+        
+    if steering_config is not None:
+        potentials = hydra.utils.instantiate(steering_config.potentials)
+        potentials: list[Callable] = list(potentials.values())
+
+    # Merge configurations safely handling None values
+    # steering_config takes precedence over physical_steering_config by virtue of position in OmegaConf.merge
+    configs_to_merge = [config for config in [physical_steering_config, steering_config] if config is not None]
+    if configs_to_merge:
+        steering_config = OmegaConf.merge(*configs_to_merge)
+    else:
+        steering_config = None
+
+    # Validate steering configuration
+    if steering_config is not None:
+        start_time = getattr(steering_config, 'start', 0.0)
+        end_time = getattr(steering_config, 'end', 1.0)
+        
+        if end_time <= start_time:
+            raise ValueError(f"Steering end_time ({end_time}) must be greater than start_time ({start_time})")
+        
+        if start_time < 0.0 or start_time > 1.0:
+            raise ValueError(f"Steering start_time ({start_time}) must be between 0.0 and 1.0")
+            
+        if end_time < 0.0 or end_time > 1.0:
+            raise ValueError(f"Steering end_time ({end_time}) must be between 0.0 and 1.0")
+
+    if steering_config is None or steering_config['num_particles'] <= 1:
+        num_particles = 1
 
     ckpt_path, model_config_path = maybe_download_checkpoint(
         model_name=model_name, ckpt_path=ckpt_path, model_config_path=model_config_path
@@ -108,37 +170,62 @@ def main(
         # Save FASTA file in output_dir
         write_fasta([sequence], fasta_path)
 
-    if denoiser_config_path is None:
+    if denoiser_config is None:
+        # load default config
         assert (
             denoiser_type in SUPPORTED_DENOISERS
         ), f"denoiser_type must be one of {SUPPORTED_DENOISERS}"
-        denoiser_config_path = DEFAULT_DENOISER_CONFIG_DIR / f"{denoiser_type}.yaml"
+        denoiser_config = DEFAULT_DENOISER_CONFIG_DIR / f"{denoiser_type}.yaml"
+        with open(denoiser_config) as f:
+            denoiser_config = yaml.safe_load(f)
+    elif type(denoiser_config) is str:
+        # path to denoiser config
+        denoiser_config_path = Path(denoiser_config).expanduser().resolve()
+        assert denoiser_config_path.is_file(), f"denoiser_config path '{denoiser_config_path}' does not exist or is not a file."
+        with open(denoiser_config_path) as f:
+            denoiser_config = yaml.safe_load(f)
+    else:
+        assert type(denoiser_config) in [dict, DictConfig], f"denoiser_config must be a path to a YAML file or a dict, but got {type(denoiser_config)}"
 
-    with open(denoiser_config_path) as f:
-        denoiser_config = yaml.safe_load(f)
     denoiser = hydra.utils.instantiate(denoiser_config)
 
     logger.info(
         f"Sampling {num_samples} structures for sequence of length {len(sequence)} residues..."
     )
+    # Adjust batch size by sequence length since longer sequence require quadratically more memory
     batch_size = int(batch_size_100 * (100 / len(sequence)) ** 2)
-    if batch_size == 0:
-        logger.warning(f"Sequence {sequence} may be too long. Attempting with batch_size = 1.")
-        batch_size = 1
+    print(f"Batch size before steering: {batch_size}")
+    num_particles = steering_config['num_particles'] if steering_config is not None else 1
+    if steering_config is not None:
+        # Correct the batch size for the number of particles
+        # Effective batch size: BS <- BS / num_particles is decreased
+        batch_size = (batch_size // num_particles) * num_particles # round to largest multiple of num_particles
+        batch_size = batch_size // num_particles # effective batch size: BS <- BS / num_particles
+        # batch size is now the maximum of what we can use while taking particle multiplicity into account
+    print(f"Batch size after steering: {batch_size} particles: {num_particles}")
+    # Ensure batch_size is a multiple of num_particles and does not exceed the memory limit
+    assert steering_config.get('num_particles', 1) >= 1, f"num_particles ({num_particles}) must be >= 1"
+    # Find the largest batch_size_multiple <= batch_size that is divisible by num_particles
+    assert batch_size >= steering_config.get('num_particles', 1), (
+        f"batch_size ({batch_size}) must be at least num_particles ({steering_config.get('num_particles', 1)})"
+    )
+
     logger.info(f"Using batch size {min(batch_size, num_samples)}")
 
     existing_num_samples = count_samples_in_output_dir(output_dir)
     logger.info(f"Found {existing_num_samples} previous samples in {output_dir}.")
-    for seed in tqdm(
-        range(existing_num_samples, num_samples, batch_size), desc="Sampling batches..."
-    ):
-        n = min(batch_size, num_samples - seed)
+    batch_iterator = tqdm(range(existing_num_samples, num_samples, batch_size), position=0, ncols=0)
+    for seed in batch_iterator:
+        n = min(batch_size, num_samples - seed)  # if remaining samples are smaller than batch size
         npz_path = output_dir / format_npz_samples_filename(seed, n)
+
         if npz_path.exists():
             raise ValueError(
                 f"Not sure why {npz_path} already exists when so far only {existing_num_samples} samples have been generated."
             )
-        logger.info(f"Sampling {seed=}")
+        # logger.info(f"Sampling {seed=}")
+        batch_iterator.set_description(f"Sampling batch {seed}/{num_samples} ({n} samples x {steering_config.get('num_particles', 1)} particles)")
+
         batch = generate_batch(
             score_model=score_model,
             sequence=sequence,
@@ -149,7 +236,10 @@ def main(
             cache_embeds_dir=cache_embeds_dir,
             msa_file=msa_file,
             msa_host_url=msa_host_url,
+            fk_potentials=potentials,
+            steering_config=steering_config,
         )
+
         batch = {k: v.cpu().numpy() for k, v in batch.items()}
         np.savez(npz_path, **batch, sequence=sequence)
 
@@ -159,9 +249,16 @@ def main(
     if set(sequences) != {sequence}:
         raise ValueError(f"Expected all sequences to be {sequence}, but got {set(sequences)}")
     positions = torch.tensor(np.concatenate([np.load(f)["pos"] for f in samples_files]))
+    # denoised_positions = torch.tensor(np.concatenate([np.load(f)["denoised_pos"] for f in samples_files], axis=0))
     node_orientations = torch.tensor(
         np.concatenate([np.load(f)["node_orientations"] for f in samples_files])
     )
+    # denoised_node_orientations = torch.tensor(
+    #     np.concatenate([np.load(f)["denoised_node_orientations"] for f in samples_files])
+    # )
+    # torch.testing.assert_allclose(positions, denoised_positions[:, -1])
+    # torch.testing.assert_allclose(node_orientations, denoised_node_orientations[:, -1])
+    log_physicality(positions, node_orientations, sequence)
     save_pdb_and_xtc(
         pos_nm=positions,
         node_orientations=node_orientations,
@@ -170,7 +267,17 @@ def main(
         sequence=sequence,
         filter_samples=filter_samples,
     )
+    # save_pdb_and_xtc(
+    #     pos_nm=denoised_positions[0],
+    #     node_orientations=denoised_node_orientations[0],
+    #     topology_path=output_dir / "denoising_trajectory.pdb",
+    #     xtc_path=output_dir / "denoising_samples.xtc",
+    #     sequence=sequence,
+    #     filter_samples=False,
+    # )
     logger.info(f"Completed. Your samples are in {output_dir}.")
+
+    return {'pos': positions, 'rot': node_orientations}
 
 
 def get_context_chemgraph(
@@ -226,6 +333,8 @@ def generate_batch(
     cache_embeds_dir: str | Path | None,
     msa_file: str | Path | None = None,
     msa_host_url: str | None = None,
+    fk_potentials: list[Callable] | None = None,
+    steering_config: dict | None = None,
 ) -> dict[str, torch.Tensor]:
     """Generate one batch of samples, using GPU if available.
 
@@ -248,19 +357,27 @@ def generate_batch(
         msa_file=msa_file,
         msa_host_url=msa_host_url,
     )
+    
     context_batch = Batch.from_data_list([context_chemgraph] * batch_size)
-
+    if steering_config is not None and steering_config['fast_steering']:
+        steering_config['max_batch_size'] = batch_size * steering_config['num_particles']
+    
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+
     sampled_chemgraph_batch = denoiser(
         sdes=sdes,
         device=device,
         batch=context_batch,
         score_model=score_model,
+        fk_potentials=fk_potentials,
+        steering_config=steering_config,
     )
     assert isinstance(sampled_chemgraph_batch, Batch)
     sampled_chemgraphs = sampled_chemgraph_batch.to_data_list()
-    pos = torch.stack([x.pos for x in sampled_chemgraphs]).to("cpu")
-    node_orientations = torch.stack([x.node_orientations for x in sampled_chemgraphs]).to("cpu")
+    pos = torch.stack([x.pos for x in sampled_chemgraphs]).to("cpu")  # [BS, L, 3]
+    node_orientations = torch.stack([x.node_orientations for x in sampled_chemgraphs]).to("cpu")  # [BS, L, 3, 3]
+    # denoised_pos = torch.stack(denoising_trajectory[0], axis=1)
+    # denoised_node_orientations = torch.stack(denoising_trajectory[1], axis=1)
 
     return {"pos": pos, "node_orientations": node_orientations}
 

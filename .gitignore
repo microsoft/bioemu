@@ -4,6 +4,8 @@
 #vs code
 .vscode
 .vscode/
+.github/copilot-instructions.md
+outputs/
 
 # Jetbrains
 .idea
@@ -132,3 +134,21 @@ cython_debug/
 *.pth
 *.pt
 
+# wandb & various
+wandb
+wandb/
+.amltconfig
+notebooks/firstsweep.py
+notebooks/download_wandb_tables.py
+notebooks/*fasta*
+*/wandb/*
+*.npz
+*.pkl
+*amlt*
+*outputs*
+*cache*
+notebooks/**out**
+.cursor/
+.cursor/**
+*.mdc
+docs/*

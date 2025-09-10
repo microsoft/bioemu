@@ -22,6 +22,7 @@ dependencies = [
     "stackprinter",
     "typer",
     "uv",
+    "einops"
 ]
 readme = "README.md"
 
