@@ -149,4 +149,4 @@ notebooks/*fasta*
 *cache*
 notebooks/**out**
 .cursor/
-.cursor/** */
+.cursor/**
