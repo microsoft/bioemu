@@ -150,3 +150,4 @@ notebooks/*fasta*
 notebooks/**out**
 .cursor/
 .cursor/** */
+docs/*
