@@ -58,4 +58,4 @@ def parse_sequence(sequence: StrPath) -> str:
 def check_protein_valid(seq: str) -> None:
     """Checks that input protein sequence is consistent with the standard IUPAC 20 amino acid types"""
     for aa in seq:
-        assert aa in IUPACPROTEIN, f"Sequence conteins non-valid protein character: {aa}"
+        assert aa in IUPACPROTEIN, f"Sequence contains non-valid protein character: {aa}"
