@@ -16,7 +16,12 @@ def _hpacker(protein_pdb_in: str, protein_pdb_out: str) -> None:
 
     """
     if not _HAS_HPACKER:
-        raise ImportError("hpacker not found, please install hpacker first")
+        import sys
+
+        raise ImportError(
+            f"hpacker not found by python executable at {sys.executable}. Please install hpacker first.  "
+            "If you have already installed hpacker, try setting HPACKER_PYTHONBIN environment variable to the path of the python executable where hpacker is installed."
+        )
     hpacker = HPacker(protein_pdb_in)
     hpacker.reconstruct_sidechains(num_refinement_iterations=5)
     hpacker.write_pdb(protein_pdb_out)
