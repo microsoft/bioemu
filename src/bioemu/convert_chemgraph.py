@@ -339,26 +339,34 @@ def _filter_unphysical_traj_masks(
 
     # Clashes between any two atoms from different residues
     if traj.n_residues <= 100:
-        rest_distances, _ = mdtraj.compute_contacts(traj, periodic=False)
-        frames_non_clash = np.all(
-            mdtraj.utils.in_units_of(rest_distances, "nanometers", "angstrom") > clash_distance,
-            axis=1,
-        )
+        frames_non_clash = _get_frames_non_clash_mdtraj(traj, clash_distance)
     else:
-        frames_non_clash = np.full(len(traj), True, dtype=bool)
-        atom2res = np.asarray([a.residue.index for a in traj[0].topology._atoms])
-        for i, frame in enumerate(traj):
-            frame_kdtree = KDTree(frame.xyz[0, :, :])
-            frame_atom_pairs = frame_kdtree.query_pairs(
-                r=mdtraj.utils.in_units_of(clash_distance, "angstrom", "nanometers")
-            )
-
-            for atom_pair in frame_atom_pairs:
-                # mdtraj.compute_contacts ignores the residue pairs (i,i+1) and (i,i+2)
-                if atom2res[atom_pair[1]] - atom2res[atom_pair[0]] > 2:
-                    frames_non_clash[i] = False
-                    break
+        frames_non_clash = _get_frames_non_clash_kdtree(traj, clash_distance)
     return frames_match_ca_seq_distance, frames_match_cn_seq_distance, frames_non_clash
+
+def _get_frames_non_clash_kdtree(traj: mdtraj.Trajectory, clash_distance_angstrom: float) -> np.ndarray:
+    frames_non_clash = np.full(len(traj), True, dtype=bool)
+    atom2res = np.asarray([a.residue.index for a in traj[0].topology._atoms])
+    for i, frame in enumerate(traj):
+        frame_kdtree = KDTree(frame.xyz[0, :, :])
+        frame_atom_pairs = frame_kdtree.query_pairs(
+            r=mdtraj.utils.in_units_of(clash_distance_angstrom, "angstrom", "nanometers")
+        )
+
+        for atom_pair in frame_atom_pairs:
+            # mdtraj.compute_contacts ignores the residue pairs (i,i+1) and (i,i+2)
+            if atom2res[atom_pair[1]] - atom2res[atom_pair[0]] > 2:
+                frames_non_clash[i] = False
+                break
+    return frames_non_clash
+
+def _get_frames_non_clash_mdtraj(traj: mdtraj.Trajectory, clash_distance_angstrom: float) -> np.ndarray:
+    res_distances, _ = mdtraj.compute_contacts(traj, periodic=False)
+    frames_non_clash = np.all(
+        mdtraj.utils.in_units_of(res_distances, "nanometers", "angstrom") > clash_distance_angstrom,
+        axis=1,
+    )
+    return frames_non_clash
 
 
 def _get_physical_traj_indices(

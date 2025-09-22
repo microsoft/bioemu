@@ -66,3 +66,13 @@ def test_adjust_oxygen_pos(bb_pos_1ake):
     assert torch.mean(errors[:-1]) < 0.1
     assert errors[-1] < 3.0
     assert torch.allclose(original_oxygen_pos[:-1], new_oxygen_pos[:-1], rtol=5e-2)
+
+def test_get_frames_non_clash():
+    from bioemu.convert_chemgraph import _get_frames_non_clash_kdtree, _get_frames_non_clash_mdtraj
+    from pathlib import Path
+    import mdtraj
+    chignolin_pdb = Path(__file__).parent / "test_data" / "cln_bad_sample.pdb"
+    traj = mdtraj.load(chignolin_pdb)
+    assert traj.n_frames == 1 
+    # Now add a lot more frames with dummy data
+    # TODO
