@@ -3,7 +3,6 @@
 """Script for sampling from a trained model."""
 
 import logging
-import os
 import typing
 from collections.abc import Callable
 from pathlib import Path
@@ -13,14 +12,13 @@ import hydra
 import numpy as np
 import torch
 import yaml
-from huggingface_hub import hf_hub_download
 from torch_geometric.data.batch import Batch
 from tqdm import tqdm
 
 from .chemgraph import ChemGraph
 from .convert_chemgraph import save_pdb_and_xtc
 from .get_embeds import get_colabfold_embeds
-from .models import DiGConditionalScoreModel
+from .model_utils import load_model, load_sdes, maybe_download_checkpoint
 from .sde_lib import SDE
 from .seq_io import check_protein_valid, parse_sequence, write_fasta
 from .utils import (
@@ -35,38 +33,6 @@ DEFAULT_DENOISER_CONFIG_DIR = Path(__file__).parent / "config/denoiser/"
 SupportedDenoisersLiteral = Literal["dpm", "heun"]
 SUPPORTED_DENOISERS = list(typing.get_args(SupportedDenoisersLiteral))
 
-SupportedModelNamesLiteral = Literal["bioemu-v1.0", "bioemu-rev"]
-SUPPORTED_MODEL_NAMES = list(typing.get_args(SupportedModelNamesLiteral))
-
-
-def maybe_download_checkpoint(
-    *,
-    model_name: SupportedModelNamesLiteral | None,
-    ckpt_path: str | Path | None = None,
-    model_config_path: str | Path | None = None,
-) -> tuple[str, str]:
-    """If ckpt_path and model config_path are specified, return them, else download named model from huggingface.
-    Returns:
-        tuple[str, str]: path to checkpoint, path to model config
-    """
-    if ckpt_path is not None:
-        assert model_config_path is not None, "Must provide model_config_path if ckpt_path is set."
-        return str(ckpt_path), str(model_config_path)
-    assert model_name is not None
-    assert (
-        model_config_path is None
-    ), f"Named model {model_name} comes with its own config. Do not provide model_config_path."
-
-    if model_name not in SUPPORTED_MODEL_NAMES:
-        raise ValueError(f"model_name must be one of: {SUPPORTED_MODEL_NAMES}")
-    ckpt_path = hf_hub_download(
-        repo_id="microsoft/bioemu", filename=f"checkpoints/{model_name}/checkpoint.ckpt"
-    )
-    model_config_path = hf_hub_download(
-        repo_id="microsoft/bioemu", filename=f"checkpoints/{model_name}/config.yaml"
-    )
-    return str(ckpt_path), str(model_config_path)
-
 
 @print_traceback_on_exception
 @torch.no_grad()
@@ -75,7 +41,7 @@ def main(
     num_samples: int,
     output_dir: str | Path,
     batch_size_100: int = 10,
-    model_name: SupportedModelNamesLiteral | None = "bioemu-v1.0",
+    model_name: Literal["bioemu-v1.0", "bioemu-v1.1"] | None = "bioemu-v1.1",
     ckpt_path: str | Path | None = None,
     model_config_path: str | Path | None = None,
     denoiser_type: SupportedDenoisersLiteral | None = "dpm",
@@ -95,8 +61,10 @@ def main(
         output_dir: Directory to save the samples. Each batch of samples will initially be dumped as .npz files. Once all batches are sampled, they will be converted to .xtc and .pdb.
         batch_size_100: Batch size you'd use for a sequence of length 100. The batch size will be calculated from this, assuming
            that the memory requirement to compute each sample scales quadratically with the sequence length.
-        model_name: Name of pretrained model to use. The model will be retrieved from huggingface. If not set,
-           this defaults to `bioemu-v1.0`. If this is set, you do not need to provide `ckpt_path` or `model_config_path`.
+        model_name: Name of pretrained model to use. If this is set, you do not need to provide `ckpt_path` or `model_config_path`.
+            The model will be retrieved from huggingface; the following models are currently available:
+            - bioemu-v1.0: checkpoint used in the original preprint (https://www.biorxiv.org/content/10.1101/2024.12.05.626885v2)
+            - bioemu-v1.1: checkpoint with improved protein stability performance
         ckpt_path: Path to the model checkpoint. If this is set, `model_name` will be ignored.
         model_config_path: Path to the model config, defining score model architecture and the corruption process the model was trained with.
            Only required if `ckpt_path` is set.
@@ -114,15 +82,9 @@ def main(
     ckpt_path, model_config_path = maybe_download_checkpoint(
         model_name=model_name, ckpt_path=ckpt_path, model_config_path=model_config_path
     )
+    score_model = load_model(ckpt_path, model_config_path)
 
-    assert os.path.isfile(ckpt_path), f"Checkpoint {ckpt_path} not found"
-    assert os.path.isfile(model_config_path), f"Model config {model_config_path} not found"
-
-    with open(model_config_path) as f:
-        model_config = yaml.safe_load(f)
-
-    if cache_so3_dir is not None:
-        model_config["sdes"]["node_orientations"]["cache_dir"] = cache_so3_dir
+    sdes = load_sdes(model_config_path=model_config_path, cache_so3_dir=cache_so3_dir)
 
     # User may have provided an MSA file instead of a sequence. This will be used for embeddings.
     msa_file = sequence if str(sequence).endswith(".a3m") else None
@@ -145,11 +107,6 @@ def main(
     else:
         # Save FASTA file in output_dir
         write_fasta([sequence], fasta_path)
-
-    model_state = torch.load(ckpt_path, map_location="cpu", weights_only=True)
-    score_model: DiGConditionalScoreModel = hydra.utils.instantiate(model_config["score_model"])
-    score_model.load_state_dict(model_state)
-    sdes: dict[str, SDE] = hydra.utils.instantiate(model_config["sdes"])
 
     if denoiser_config_path is None:
         assert (
@@ -216,6 +173,49 @@ def main(
     logger.info(f"Completed. Your samples are in {output_dir}.")
 
 
+def get_context_chemgraph(
+    sequence: str,
+    cache_embeds_dir: str | Path | None = None,
+    msa_file: str | Path | None = None,
+    msa_host_url: str | None = None,
+) -> ChemGraph:
+    n = len(sequence)
+
+    single_embeds_file, pair_embeds_file = get_colabfold_embeds(
+        seq=sequence,
+        cache_embeds_dir=cache_embeds_dir,
+        msa_file=msa_file,
+        msa_host_url=msa_host_url,
+    )
+    single_embeds = torch.from_numpy(np.load(single_embeds_file))
+    pair_embeds = torch.from_numpy(np.load(pair_embeds_file))
+    assert pair_embeds.shape[0] == pair_embeds.shape[1] == n
+    assert single_embeds.shape[0] == n
+    assert len(single_embeds.shape) == 2
+    _, _, n_pair_feats = pair_embeds.shape  # [seq_len, seq_len, n_pair_feats]
+
+    pair_embeds = pair_embeds.view(n**2, n_pair_feats)
+
+    edge_index = torch.cat(
+        [
+            torch.arange(n).repeat_interleave(n).view(1, n**2),
+            torch.arange(n).repeat(n).view(1, n**2),
+        ],
+        dim=0,
+    )
+    pos = torch.full((n, 3), float("nan"))
+    node_orientations = torch.full((n, 3, 3), float("nan"))
+
+    return ChemGraph(
+        edge_index=edge_index,
+        pos=pos,
+        node_orientations=node_orientations,
+        single_embeds=single_embeds,
+        pair_embeds=pair_embeds,
+        sequence=sequence,
+    )
+
+
 def generate_batch(
     score_model: torch.nn.Module,
     sequence: str,
@@ -241,42 +241,14 @@ def generate_batch(
     """
 
     torch.manual_seed(seed)
-    n = len(sequence)
 
-    single_embeds_file, pair_embeds_file = get_colabfold_embeds(
-        seq=sequence,
+    context_chemgraph = get_context_chemgraph(
+        sequence=sequence,
         cache_embeds_dir=cache_embeds_dir,
         msa_file=msa_file,
         msa_host_url=msa_host_url,
     )
-    single_embeds = np.load(single_embeds_file)
-    pair_embeds = np.load(pair_embeds_file)
-    assert pair_embeds.shape[0] == pair_embeds.shape[1] == n
-    assert single_embeds.shape[0] == n
-    assert len(single_embeds.shape) == 2
-    _, _, n_pair_feats = pair_embeds.shape  # [seq_len, seq_len, n_pair_feats]
-
-    single_embeds, pair_embeds = torch.from_numpy(single_embeds), torch.from_numpy(pair_embeds)
-    pair_embeds = pair_embeds.view(n**2, n_pair_feats)
-
-    edge_index = torch.cat(
-        [
-            torch.arange(n).repeat_interleave(n).view(1, n**2),
-            torch.arange(n).repeat(n).view(1, n**2),
-        ],
-        dim=0,
-    )
-    pos = torch.full((n, 3), float("nan"))
-    node_orientations = torch.full((n, 3, 3), float("nan"))
-
-    chemgraph = ChemGraph(
-        edge_index=edge_index,
-        pos=pos,
-        node_orientations=node_orientations,
-        single_embeds=single_embeds,
-        pair_embeds=pair_embeds,
-    )
-    context_batch = Batch.from_data_list([chemgraph for _ in range(batch_size)])
+    context_batch = Batch.from_data_list([context_chemgraph] * batch_size)
 
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
     sampled_chemgraph_batch = denoiser(

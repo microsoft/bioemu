@@ -1,25 +1,71 @@
 # Copyright (c) Microsoft Corporation.
 # Licensed under the MIT License.
 import copy
+from pathlib import Path
 
+import hydra
 import numpy as np
 import pytest
 import torch
+import yaml
 from torch_geometric.data import Batch
 
 from bioemu.chemgraph import ChemGraph
+from bioemu.sde_lib import SDE
+from bioemu.shortcuts import CosineVPSDE, DiGConditionalScoreModel, DiGSO3SDE
 
 
 @pytest.fixture
 def default_batch() -> Batch:
-    dicts = get_dicts()
+    dicts = _get_dicts()
     chemgraphs = [ChemGraph(**d) for d in dicts]
     assert all(x.single_embeds is not None for x in chemgraphs)
     return Batch.from_data_list(chemgraphs)
 
 
-def get_dicts():
-    # Chignolin's residue (Ca-node) labels
+@pytest.fixture
+def chignolin_sequence() -> str:
+    return "GYDPETGTWG"
+
+
+@pytest.fixture()
+def sdes() -> dict[str, SDE]:
+    return dict(
+        node_orientations=DiGSO3SDE(
+            cache_dir="~/sampling_so3_cache",
+            eps_t=0.001,
+            l_max=2000,
+            num_omega=2000,
+            num_sigma=1000,
+            omega_exponent=3,
+            overwrite_cache=False,
+            sigma_max=2.33,
+            sigma_min=0.02,
+            tol=1.0e-07,
+        ),
+        pos=CosineVPSDE(s=0.008),
+    )
+
+
+@pytest.fixture
+def tiny_model() -> DiGConditionalScoreModel:
+    config_path = Path(__file__).parent / "tiny_config.yaml"
+    with open(config_path) as f:
+        config = yaml.safe_load(f)
+    model: torch.nn.Module = hydra.utils.instantiate(config["score_model"])
+    assert isinstance(model, DiGConditionalScoreModel)
+    state_dict_path = Path(__file__).parent / "state_dict.ptkeep"
+    # Uncomment below to update saved state dict.
+    # with open(state_dict_path, "wb") as f:
+    #     torch.save(model.state_dict(), f)
+    with open(state_dict_path, "rb") as f:
+        state_dict = torch.load(f)
+    model.load_state_dict(state_dict)
+    return model
+
+
+def _get_dicts():
+    # Some dummy chignolin structures for testing.
     DTYPE = torch.float32
     num_nodes = 10
     edge_index = torch.cat(

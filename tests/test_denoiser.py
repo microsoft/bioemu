@@ -18,7 +18,8 @@ from bioemu.so3_sde import DiGSO3SDE, rotmat_to_rotvec
 
 
 @pytest.mark.parametrize(
-    "solver,denoiser_kwargs", [(dpm_solver, {}), (heun_denoiser, {"noise": 0.5})]
+    "solver,denoiser_kwargs",
+    [(dpm_solver, {}), (dpm_solver, {"noise": 0.5}), (heun_denoiser, {"noise": 0.5})],
 )
 def test_reverse_sampling(solver, denoiser_kwargs):
     torch.manual_seed(1)
@@ -72,7 +73,35 @@ def test_reverse_sampling(solver, denoiser_kwargs):
         **denoiser_kwargs,
     )
 
+    print(samples.pos.mean(), x0_mean)
+    print(samples.pos.std().mean(), x0_std)
     assert torch.isclose(samples.pos.mean(), x0_mean, rtol=1e-1, atol=1e-1)
     assert torch.isclose(samples.pos.std().mean(), x0_std, rtol=1e-1, atol=1e-1)
+
+    print("node orientations")
+    print(samples.node_orientations.mean(dim=0))
+    print(samples.node_orientations.std(dim=0))
     assert torch.allclose(samples.node_orientations.mean(dim=0), torch.eye(3), atol=1e-1)
     assert torch.allclose(samples.node_orientations.std(dim=0), torch.zeros(3, 3), atol=1e-1)
+
+
+def test_dpm_solver_has_gradients(tiny_model, default_batch, sdes):
+    """Check that DPM solver sampled coordinates have gradients w.r.t. model parameters."""
+    device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+    samples = dpm_solver(
+        sdes=sdes,
+        batch=default_batch,
+        N=10,
+        score_model=tiny_model,
+        max_t=0.99,
+        eps_t=0.001,
+        device=device,
+        record_grad_steps={1, 2, 3},
+    )
+    sum_pos = samples.pos.sum()
+
+    params = [p for p in tiny_model.parameters() if p.requires_grad]
+    assert len(params) > 0
+    assert all([x.grad is None for x in params])
+    sum_pos.backward()
+    assert not all([torch.all(x.grad == 0) for x in params])
