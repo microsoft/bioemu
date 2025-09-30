@@ -35,9 +35,7 @@ def potential_gradient_minimization(x, potentials, learning_rate=0.1, num_steps=
     for step in range(num_steps):
         x_ = x_.requires_grad_(True)
         # Convert nm to Angstroms (multiply by 10) for potentials
-        loss = sum(
-            potential(None, 10 * x_, None, None, t=0, N=1) for potential in guidance_potentials
-        )
+        loss = sum(potential(None, x_, None, None, t=0, N=1) for potential in guidance_potentials)
         grad = torch.autograd.grad(loss.sum(), x_, create_graph=False)[0]
         x_ = (x_ - learning_rate * grad).detach()
 

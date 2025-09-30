@@ -51,7 +51,7 @@ def run_experiment(cfg, sequence="GYDPETGTWG", experiment_type="no_steering"):
     if experiment_type == "no_steering":
         steering_config = None
         print("No steering enabled")
-    elif experiment_type == "resampling_only":
+    elif experiment_type in ["resampling_only", "guidance_steering"]:
         # Resampling steering WITHOUT guidance
         # Load base config and ensure guidance_steering=False
         repo_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -69,46 +69,31 @@ def run_experiment(cfg, sequence="GYDPETGTWG", experiment_type="no_steering"):
         steering_config = {
             "num_particles": cfg.steering.num_particles,
             "start": cfg.steering.start,
-            "end": cfg.steering.get("end", 1.0),
+            "end": cfg.steering.end,
             "resampling_freq": cfg.steering.resampling_freq,
-            "fast_steering": cfg.steering.get("fast_steering", False),
+            "fast_steering": cfg.steering.fast_steering,
             "potentials": potentials_config,
         }
         print(
             f"Resampling steering: {cfg.steering.num_particles} particles, guidance_steering=False"
         )
-    elif experiment_type == "guidance_steering":
-        # Resampling steering WITH gradient guidance
-        # Load base config and set guidance_steering=True
-        repo_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-        potentials_file = os.path.join(
-            repo_root, "src/bioemu/config/steering", "chingolin_steering.yaml"
-        )
+        if experiment_type == "guidance_steering":
 
-        with open(potentials_file) as f:
-            potentials_config = yaml.safe_load(f)
+            # Explicitly set guidance_steering=True on all potentials
+            for potential_name, potential_cfg in potentials_config.items():
+                potential_cfg["guidance_steering"] = True
+            steering_config["potentials"] = potentials_config
 
-        # Explicitly set guidance_steering=True on all potentials
-        for potential_name, potential_cfg in potentials_config.items():
-            potential_cfg["guidance_steering"] = True
-
-        # Use gentler hyperparameters that complement resampling
-        lr = 0.05
-        steps = 10
-        steering_config = {
-            "num_particles": cfg.steering.num_particles,
-            "start": cfg.steering.start,
-            "end": cfg.steering.end,
-            "resampling_freq": cfg.steering.resampling_freq,
-            "fast_steering": False,
-            "potentials": potentials_config,
-            "guidance_learning_rate": lr,  # Required when any potential has guidance_steering=True
-            "guidance_num_steps": steps,  # Required when any potential has guidance_steering=True
-        }
-        print(
-            f"Guidance steering: {cfg.steering.num_particles} particles, "
-            f"guidance_steering=True, lr={lr}, steps={steps}"
-        )
+            # Use gentler hyperparameters that complement resampling
+            steering_config = steering_config | {
+                "guidance_learning_rate": 0.1,  # Required when any potential has guidance_steering=True
+                "guidance_num_steps": 50,  # Required when any potential has guidance_steering=True
+            }
+            print(
+                f"Guidance steering: {cfg.steering.num_particles} particles, "
+                f"guidance_steering=True, lr={steering_config['guidance_learning_rate']}, steps={steering_config['guidance_num_steps']}"
+            )
+        # pass
     else:
         raise ValueError(f"Unknown experiment type: {experiment_type}")
 
@@ -130,6 +115,10 @@ def run_experiment(cfg, sequence="GYDPETGTWG", experiment_type="no_steering"):
         denoiser_config=denoiser_config,
         steering_config=steering_config,
         filter_samples=False,
+    )
+
+    print(
+        f"Sample Statistics: {samples['pos'].shape} {samples['pos'].mean()} {samples['pos'].std()}"
     )
 
     print(f"Sampling completed. Data kept in memory.")
@@ -314,13 +303,13 @@ def main(cfg):
         config_name="bioemu.yaml",
         overrides=[
             "sequence=GYDPETGTWG",
-            "num_samples=250",  # More samples for better statistics
+            "num_samples=400",  # More samples for better statistics
             "denoiser=dpm",
             "denoiser.N=50",
-            "steering.start=1.",
+            "steering.start=0.9",
             "steering.end=0.1",
             "steering.resampling_freq=1",
-            "steering.num_particles=5",
+            "steering.num_particles=2",
             "steering.potentials=chingolin_steering",
         ],
     )
@@ -349,7 +338,6 @@ def main(cfg):
 
     # Run all 3 experiments
     experiments = ["no_steering", "resampling_only", "guidance_steering"]
-    # experiments = ["guidance_steering"]
     samples_dict = {}
 
     for exp_type in experiments:

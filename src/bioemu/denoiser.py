@@ -417,7 +417,7 @@ def dpm_solver(
             score_u = get_score(batch=batch_u, t=t_lambda, sdes=sdes, score_model=score_model)
 
         # Apply gradient guidance if enabled (BEFORE position update)
-        modified_score_u_pos = score_u["pos"]  # Default to original score
+        # modified_score_u_pos = score_u["pos"]  # Default to original score
 
         """
         Guidance Steering
@@ -444,26 +444,30 @@ def dpm_solver(
                         "guidance_learning_rate and guidance_num_steps in steering_config"
                     )
 
-                x0_pred, _ = get_pos0_rot0(sdes, batch_u, t_lambda, score)  # [BS, L, 3]
+                x0_pred_guidance, _ = get_pos0_rot0(sdes, batch_u, t_lambda, score)  # [BS, L, 3]
 
                 # Apply gradient descent to minimize potential energy
                 delta_x = potential_gradient_minimization(
-                    x0_pred, fk_potentials, learning_rate=learning_rate, num_steps=num_steps
+                    10 * x0_pred_guidance,
+                    fk_potentials,
+                    learning_rate=learning_rate,
+                    num_steps=num_steps,
                 )
-                x0_pred = x0_pred.flatten(0, 1)
+                x0_pred_guidance = x0_pred_guidance.flatten(0, 1)
                 delta_x = delta_x.flatten(0, 1)
 
                 # Compute universal backward score using the guided x0_pred
                 # universal_backward_score = -(x - alpha_t * (x0_pred + delta_x)) / sigma_t^2
                 # Expand alpha_t_lambda and sigma_t_lambda to match batch_u.pos shape
-                universal_backward_score = -(batch_u.pos - alpha_t_lambda * (x0_pred + delta_x)) / (
-                    sigma_t_lambda**2
-                )
+                universal_backward_score = -(
+                    batch_u.pos - alpha_t_lambda * (x0_pred_guidance + delta_x)
+                ) / (sigma_t_lambda**2)
 
                 # Compute weighted combination of original and universal scores
                 # Weight scheduling (from enhancedsampling)
                 current_t = t_lambda[0].item()
-                w_t_mod = torch.relu(3 * (torch.tensor(current_t, device=device) - 0.2)) * 0.0
+                # w_t_mod = torch.relu(3 * (torch.tensor(current_t, device=device) - 0.1))
+                w_t_mod = torch.tensor(3.0, device=device)
                 w_t_orig = torch.tensor(1.0, device=device)
                 w_t_mod = w_t_mod / (w_t_orig + w_t_mod)
                 w_t_orig = w_t_orig / (w_t_orig + w_t_mod)
@@ -491,6 +495,7 @@ def dpm_solver(
 
                 # Accumulate log weights
                 log_weights = log_weights + step_log_weight * 0.0
+                score_u["pos"] = modified_score_u_pos
 
         pos_next = (
             alpha_t_next / alpha_t * batch_hat.pos
@@ -539,7 +544,7 @@ def dpm_solver(
             R0 += [R0_t.cpu()]
 
             # Handle fast steering - expand batch at steering start time
-            expected_expansion_step = int(N * steering_config.get("start", 0.0))
+            expected_expansion_step = int(N * steering_config["start"])
             max_batch_size = steering_config.get("max_batch_size", None)
             if (
                 steering_config.get("fast_steering", False)
@@ -578,9 +583,8 @@ def dpm_solver(
             if (
                 steering_config["num_particles"] > 1
             ):  # if resampling implicitely given by num_fk_samples > 1
-                steering_end = steering_config["end"]  # Default to 1.0 if not specified
                 if (
-                    int(N * steering_config["start"]) <= i < min(int(N * steering_end), N - 2)
+                    steering_config["start"] >= t_lambda[i] >= steering_config["end"]
                     and i % steering_config["resampling_freq"] == 0
                 ):
                     batch, total_energy, log_weights = resample_batch(
@@ -592,7 +596,7 @@ def dpm_solver(
                         log_weights=log_weights,
                     )
                     previous_energy = total_energy
-                elif N - 2 <= i:
+                elif N - 1 == i:
                     # print('Final Resampling [BS, FK_particles] back to BS')
                     batch, total_energy, log_weights = resample_batch(
                         batch=batch,
