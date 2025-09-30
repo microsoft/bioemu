@@ -1018,7 +1018,7 @@ def create_harmonic_potential(
         energy = potential_loss_fn(
             x=x,
             target=target,
-            tolerance=tolerance,
+            flat_bottom=tolerance,
             slope=slope,
             max_value=max_value,
             order=order,

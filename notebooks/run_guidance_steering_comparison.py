@@ -298,7 +298,7 @@ def compute_kl_divergence(empirical_data, analytical_distribution, x_centers, bi
 @hydra.main(config_path="../src/bioemu/config", config_name="bioemu.yaml", version_base="1.2")
 def main(cfg):
     for target in [2]:
-        for num_particles in [2, 5, 10]:
+        for num_particles in [2, 5]:
             """Main function to run both experiments and analyze results."""
             # Override sequence and parameters
             cfg = hydra.compose(

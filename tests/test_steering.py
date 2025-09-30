@@ -243,7 +243,7 @@ def test_combined_potentials_steering(chignolin_sequence, base_test_config, comb
     assert samples['pos'].shape[2] == 3
 
 
-def test_physical_steering_config(chignolin_sequence, base_test_config, physical_steering_config):
+def test_physical_steering_config(chignolin_sequence, base_test_config):
     """Test steering with physical steering configuration (ChainBreak and ChainClash potentials)."""
 
     # Create output directory
@@ -251,18 +251,18 @@ def test_physical_steering_config(chignolin_sequence, base_test_config, physical
     if os.path.exists(output_dir):
         shutil.rmtree(output_dir)
 
-    # Load physical steering config from file
-    physical_steering_config_path = (
-        Path(__file__).parent.parent / "src" / "bioemu" / "config" / "steering" / "physical_steering.yaml"
+    # Load physical potentials config from file
+    physical_potentials_config_path = (
+        Path(__file__).parent.parent / "src" / "bioemu" / "config" / "steering" / "physical_potentials.yaml"
     )
-    physical_steering_config = OmegaConf.load(physical_steering_config_path)
+    physical_steering_config = OmegaConf.load(physical_potentials_config_path)
     samples = sample(
         sequence=chignolin_sequence,
         num_samples=base_test_config['num_samples'],
         batch_size_100=base_test_config['batch_size_100'],
         output_dir=output_dir,
         denoiser_type="dpm",
-        steering_potentials_config=physical_steering_config['potentials'],
+        steering_potentials_config=physical_steering_config,  # Now potentials are at the top level
         num_steering_particles=5,  # Use default steering parameters
         steering_start_time=0.5,
         steering_end_time=1.0,
@@ -278,7 +278,7 @@ def test_physical_steering_config(chignolin_sequence, base_test_config, physical
     assert samples['pos'].shape[2] == 3
 
 
-def test_fast_steering_performance(chignolin_sequence, base_test_config, physical_steering_config):
+def test_fast_steering_performance(chignolin_sequence, base_test_config):
     """Test fast_steering batch expansion with different particle counts and compare performance vs regular steering."""
 
     # Test parameters
@@ -289,6 +289,11 @@ def test_fast_steering_performance(chignolin_sequence, base_test_config, physica
     # Test different particle counts with fast_steering and late start time
     particle_counts = [2, 3, 5]
     results = {}
+
+    physical_potentials_config_path = (
+        Path(__file__).parent.parent / "src" / "bioemu" / "config" / "steering" / "physical_potentials.yaml"
+    )
+    physical_steering_config = OmegaConf.load(physical_potentials_config_path)
 
     for num_particles in particle_counts:
 

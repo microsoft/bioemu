@@ -36,7 +36,7 @@ DEFAULT_STEERING_CONFIG_DIR = Path(__file__).parent / "config/steering/"
 SupportedDenoisersLiteral = Literal["dpm", "heun"]
 SUPPORTED_DENOISERS = list(typing.get_args(SupportedDenoisersLiteral))
 
-# TODO: make denoiser_config and steering_config either a path to a yaml file or a dict
+DEFAULT_STEERING_CONFIG_DIR = Path(__file__).parent / "config/steering/"
 
 
 @print_traceback_on_exception
@@ -55,13 +55,8 @@ def main(
     cache_so3_dir: str | Path | None = None,
     msa_host_url: str | None = None,
     filter_samples: bool = True,
-    steering_potentials_config: str | Path | dict | None = None,
-    # Steering parameters (extracted from config for CLI convenience)
-    num_steering_particles: int = 1,
-    steering_start_time: float = 0.0,
-    steering_end_time: float = 1.0,
-    resampling_freq: int = 1,
-    fast_steering: bool = False,
+    steering_config: str | Path | dict | None = None,
+    disulfidebridges: list[tuple[int, int]] | None = None,
 ) -> dict:
     """
     Generate samples for a specified sequence, using a trained model.
@@ -86,9 +81,10 @@ def main(
         ckpt_path: Path to the model checkpoint. If this is set, `model_name` will be ignored.
         model_config_path: Path to the model config, defining score model architecture and the
             corruption process the model was trained with. Only required if `ckpt_path` is set.
-        denoiser_type: Denoiser to use for sampling, if `denoiser_config_path` not specified.
+        denoiser_type: Denoiser to use for sampling, if `denoiser_config` not specified.
             Comes in with default parameter configuration. Must be one of ['dpm', 'heun']
-        denoiser_config: Path to the denoiser config, defining the denoising process.
+        denoiser_config: Path to the denoiser config, or a dict defining the denoising process.
+            If None, uses default config based on denoiser_type.
         cache_embeds_dir: Directory to store MSA embeddings. If not set, this defaults to
             `COLABFOLD_DIR/embeds_cache`.
         cache_so3_dir: Directory to store SO3 precomputations. If not set, this defaults to
@@ -96,88 +92,121 @@ def main(
         msa_host_url: MSA server URL. If not set, this defaults to colabfold's remote server.
             If sequence is an a3m file, this is ignored.
         filter_samples: Filter out unphysical samples with e.g. long bond distances or steric clashes.
-        steering_potentials_config: Configuration for steering potentials only. Can be a path to a YAML file,
-            a dict, or None to use default physical_potentials.yaml when steering is enabled.
-            This replaces the old steering_config parameter.
-        num_steering_particles: Number of particles per sample for steering (default: 1, no steering).
-        steering_start_time: Start time for steering (0.0-1.0, default: 0.0).
-        steering_end_time: End time for steering (0.0-1.0, default: 1.0).
-        resampling_freq: Resampling frequency during steering (default: 1).
-        fast_steering: Enable fast steering mode (default: False).
+        steering_config: Path to steering config YAML, or a dict containing steering parameters.
+            Can be None to disable steering (num_particles=1). The config should contain:
+            - num_particles: Number of particles per sample (>1 enables steering)
+            - start: Start time for steering (0.0-1.0)
+            - end: End time for steering (0.0-1.0)
+            - resampling_freq: Resampling frequency
+            - fast_steering: Enable fast mode (bool)
+            - potentials: Dict of potential configurations
+        disulfidebridges: List of integer tuple pairs specifying cysteine residue indices for disulfide
+            bridge steering, e.g., [(3,40), (4,32), (16,26)].
     """
 
     output_dir = Path(output_dir).expanduser().resolve()
     output_dir.mkdir(parents=True, exist_ok=True)  # Fail fast if output_dir is non-writeable
 
-    # Load and process steering potentials configuration
-    potentials_config = None
-    if steering_potentials_config is not None:
-        if isinstance(steering_potentials_config, (str, Path)):
-            # Load from file
-            potentials_config = OmegaConf.load(steering_potentials_config)
-        elif isinstance(steering_potentials_config, (dict, DictConfig)):
-            # Use as dict or DictConfig
-            potentials_config = OmegaConf.create(steering_potentials_config)
-        else:
-            raise ValueError(
-                f"steering_potentials_config must be a path, dict, or DictConfig, "
-                f"got {type(steering_potentials_config)}"
-            )
-    else:
-        # Load default physical_potentials.yaml when steering is enabled
-        if num_steering_particles > 1:
-            default_potentials_path = DEFAULT_STEERING_CONFIG_DIR / "physical_potentials.yaml"
-            if default_potentials_path.exists():
-                potentials_config = OmegaConf.load(default_potentials_path)
-            else:
-                logger.warning(f"Default steering config not found at {default_potentials_path}")
+    # Load steering configuration (similar to denoiser_config)
+    potentials = None
+    steering_config_dict = None
 
-    # Create complete steering configuration combining CLI parameters and potentials
-    # Steering is enabled if num_particles > 1 OR potentials config is provided
-    steering_enabled = num_steering_particles > 1 or potentials_config is not None
-
-    if steering_enabled:
-        steering_config = OmegaConf.create({
-            'num_particles': num_steering_particles,
-            'start': steering_start_time,
-            'end': steering_end_time,
-            'resampling_freq': resampling_freq,
-            'fast_steering': fast_steering,
-        })
-
-        # Add potentials to steering config if provided
-        if potentials_config is not None:
-            # Handle both direct potentials config and config with potentials key
-            if 'potentials' in potentials_config:
-                steering_config.potentials = potentials_config.potentials
-            else:
-                steering_config.potentials = potentials_config
-
-        # Instantiate potentials for use in denoising
-        if hasattr(steering_config, 'potentials') and steering_config.potentials:
-            potentials = hydra.utils.instantiate(steering_config.potentials)
-            potentials: list[Callable] = list(potentials.values())
-        else:
-            potentials = None
-    else:
-        steering_config = None
+    if steering_config is None:
+        # No steering - will pass None to denoiser
+        steering_config_dict = None
         potentials = None
+    elif isinstance(steering_config, (str, Path)):
+        # Path to steering config YAML
+        steering_config_path = Path(steering_config).expanduser().resolve()
+        if not steering_config_path.is_absolute():
+            # Try relative to DEFAULT_STEERING_CONFIG_DIR
+            steering_config_path = DEFAULT_STEERING_CONFIG_DIR / steering_config
+
+        assert (
+            steering_config_path.is_file()
+        ), f"steering_config path '{steering_config_path}' does not exist or is not a file."
+
+        with open(steering_config_path) as f:
+            steering_config_dict = yaml.safe_load(f)
+    elif isinstance(steering_config, (dict, DictConfig)):
+        # Already a dict/DictConfig
+        steering_config_dict = (
+            OmegaConf.to_container(steering_config, resolve=True)
+            if isinstance(steering_config, DictConfig)
+            else steering_config
+        )
+    else:
+        raise ValueError(
+            f"steering_config must be None, a path to a YAML file, or a dict, but got {type(steering_config)}"
+        )
+
+    # If steering is enabled, extract potentials and create config
+    if steering_config_dict is not None:
+        num_particles = steering_config_dict.get("num_particles", 1)
+
+        if num_particles > 1:
+            # Extract potentials configuration
+            potentials_config = steering_config_dict.get("potentials", {})
+
+            # Handle disulfide bridges special case
+            if disulfidebridges is not None:
+                # Load disulfide steering config and merge
+                disulfide_config_path = DEFAULT_STEERING_CONFIG_DIR / "disulfide_steering.yaml"
+                with open(disulfide_config_path) as f:
+                    disulfide_config = yaml.safe_load(f)
+                potentials_config.update(disulfide_config)
+
+            # Instantiate potentials
+            potentials_config_omega = OmegaConf.create(potentials_config)
+            potentials = hydra.utils.instantiate(potentials_config_omega)
+            potentials: list[Callable] = list(potentials.values())
+
+            # Set specified_pairs on DisulfideBridgePotential if disulfidebridges was specified
+            if disulfidebridges is not None:
+                from bioemu.steering import DisulfideBridgePotential
+
+                disulfide_potentials = [
+                    p for p in potentials if isinstance(p, DisulfideBridgePotential)
+                ]
+                assert (
+                    len(disulfide_potentials) > 0
+                ), "DisulfideBridgePotential not found in instantiated potentials"
+                # Set the specified_pairs on the DisulfideBridgePotential
+                disulfide_potentials[0].specified_pairs = disulfidebridges
+                assert (
+                    disulfide_potentials[0].specified_pairs == disulfidebridges
+                ), "Disulfide pairs not correctly set"
+
+            # Create final steering config (without potentials, those are passed separately)
+            steering_config_dict = {
+                "num_particles": num_particles,
+                "start": steering_config_dict.get("start", 0.0),
+                "end": steering_config_dict.get("end", 1.0),
+                "resampling_freq": steering_config_dict.get("resampling_freq", 1),
+                "fast_steering": steering_config_dict.get("fast_steering", False),
+            }
+        else:
+            # num_particles <= 1, no steering
+            steering_config_dict = None
+            potentials = None
 
     # Validate steering configuration
-    if steering_config is not None:
-        if steering_end_time <= steering_start_time:
-            raise ValueError(
-                f"Steering end_time ({steering_end_time}) must be greater than start_time ({steering_start_time})"
-            )
+    if steering_config_dict is not None:
+        num_particles = steering_config_dict["num_particles"]
+        start_time = steering_config_dict["start"]
+        end_time = steering_config_dict["end"]
 
-        if steering_start_time < 0.0 or steering_start_time > 1.0:
-            raise ValueError(f"Steering start_time ({steering_start_time}) must be between 0.0 and 1.0")
+        if end_time <= start_time:
+            raise ValueError(f"Steering end ({end_time}) must be greater than start ({start_time})")
 
-        if steering_end_time < 0.0 or steering_end_time > 1.0:
-            raise ValueError(f"Steering end_time ({steering_end_time}) must be between 0.0 and 1.0")
+        if start_time < 0.0 or start_time > 1.0:
+            raise ValueError(f"Steering start ({start_time}) must be between 0.0 and 1.0")
 
-        if num_steering_particles < 1:
-            raise ValueError(f"num_particles ({num_steering_particles}) must be >= 1")
+        if end_time < 0.0 or end_time > 1.0:
+            raise ValueError(f"Steering end ({end_time}) must be between 0.0 and 1.0")
+
+        if num_particles < 1:
+            raise ValueError(f"num_particles ({num_particles}) must be >= 1")
 
     ckpt_path, model_config_path = maybe_download_checkpoint(
         model_name=model_name, ckpt_path=ckpt_path, model_config_path=model_config_path
@@ -219,15 +248,16 @@ def main(
     elif type(denoiser_config) is str:
         # path to denoiser config
         denoiser_config_path = Path(denoiser_config).expanduser().resolve()
-        assert denoiser_config_path.is_file(), (
-            f"denoiser_config path '{denoiser_config_path}' does not exist or is not a file."
-        )
+        assert (
+            denoiser_config_path.is_file()
+        ), f"denoiser_config path '{denoiser_config_path}' does not exist or is not a file."
         with open(denoiser_config_path) as f:
             denoiser_config = yaml.safe_load(f)
     else:
-        assert type(denoiser_config) in [dict, DictConfig], (
-            f"denoiser_config must be a path to a YAML file or a dict, but got {type(denoiser_config)}"
-        )
+        assert type(denoiser_config) in [
+            dict,
+            DictConfig,
+        ], f"denoiser_config must be a path to a YAML file or a dict, but got {type(denoiser_config)}"
 
     denoiser = hydra.utils.instantiate(denoiser_config)
 
@@ -238,20 +268,22 @@ def main(
     batch_size = int(batch_size_100 * (100 / len(sequence)) ** 2)
     print(f"Batch size before steering: {batch_size}")
 
-    if steering_config is not None:
+    num_particles = 1
+    if steering_config_dict is not None:
+        num_particles = steering_config_dict["num_particles"]
         # Correct the batch size for the number of particles
         # Effective batch size: BS <- BS / num_particles is decreased
-        # Round to largest multiple of num_steering_particles
-        batch_size = (batch_size // num_steering_particles) * num_steering_particles
-        batch_size = batch_size // num_steering_particles  # effective batch size: BS <- BS / num_steering_particles
+        # Round to largest multiple of num_particles
+        batch_size = (batch_size // num_particles) * num_particles
+        batch_size = batch_size // num_particles  # effective batch size: BS <- BS / num_particles
         # batch size is now the maximum of what we can use while taking particle multiplicity into account
 
         # Ensure batch_size is a multiple of num_particles and does not exceed the memory limit
-        assert batch_size >= num_steering_particles, (
-            f"batch_size ({batch_size}) must be at least num_particles ({num_steering_particles})"
-        )
+        assert (
+            batch_size >= num_particles
+        ), f"batch_size ({batch_size}) must be at least num_particles ({num_particles})"
 
-    print(f"Batch size after steering: {batch_size} particles: {num_steering_particles}")
+    print(f"Batch size after steering: {batch_size} particles: {num_particles}")
 
     logger.info(f"Using batch size {min(batch_size, num_samples)}")
 
@@ -269,18 +301,18 @@ def main(
             )
         # logger.info(f"Sampling {seed=}")
         batch_iterator.set_description(
-            f"Sampling batch {seed}/{num_samples} ({n} samples x {num_steering_particles} particles)"
+            f"Sampling batch {seed}/{num_samples} ({n} samples x {num_particles} particles)"
         )
 
         # Calculate actual batch size for this iteration
         actual_batch_size = min(batch_size, n)
-        if steering_config is not None and fast_steering:
+        if steering_config_dict is not None and steering_config_dict.get("fast_steering", False):
             # For fast_steering, we start with smaller batch and expand later
             actual_batch_size = actual_batch_size
         else:
             # For regular steering, multiply by num_particles upfront
-            if steering_config is not None:
-                actual_batch_size = actual_batch_size * num_steering_particles
+            if steering_config_dict is not None:
+                actual_batch_size = actual_batch_size * num_particles
 
         batch = generate_batch(
             score_model=score_model,
@@ -293,7 +325,7 @@ def main(
             msa_file=msa_file,
             msa_host_url=msa_host_url,
             fk_potentials=potentials,
-            steering_config=steering_config,
+            steering_config=steering_config_dict,
         )
 
         batch = {k: v.cpu().numpy() for k, v in batch.items()}
@@ -321,7 +353,7 @@ def main(
 
     logger.info(f"Completed. Your samples are in {output_dir}.")
 
-    return {'pos': positions, 'rot': node_orientations}
+    return {"pos": positions, "rot": node_orientations}
 
 
 def get_context_chemgraph(
@@ -405,11 +437,11 @@ def generate_batch(
     context_batch = Batch.from_data_list([context_chemgraph] * batch_size)
 
     # Add max_batch_size to steering_config for fast_steering if needed
-    if steering_config is not None and steering_config.get('fast_steering', False):
+    if steering_config is not None and steering_config.get("fast_steering", False):
         # Create a mutable copy of the steering_config to add max_batch_size
-        steering_config_dict = OmegaConf.to_container(steering_config, resolve=True)
-        steering_config_dict['max_batch_size'] = batch_size * steering_config['num_particles']
-        steering_config = OmegaConf.create(steering_config_dict)
+        steering_config_copy = OmegaConf.to_container(steering_config, resolve=True)
+        steering_config_copy["max_batch_size"] = batch_size * steering_config["num_particles"]
+        steering_config = OmegaConf.create(steering_config_copy)
 
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
@@ -424,7 +456,9 @@ def generate_batch(
     assert isinstance(sampled_chemgraph_batch, Batch)
     sampled_chemgraphs = sampled_chemgraph_batch.to_data_list()
     pos = torch.stack([x.pos for x in sampled_chemgraphs]).to("cpu")  # [BS, L, 3]
-    node_orientations = torch.stack([x.node_orientations for x in sampled_chemgraphs]).to("cpu")  # [BS, L, 3, 3]
+    node_orientations = torch.stack([x.node_orientations for x in sampled_chemgraphs]).to(
+        "cpu"
+    )  # [BS, L, 3, 3]
     # denoised_pos = torch.stack(denoising_trajectory[0], axis=1)
     # denoised_node_orientations = torch.stack(denoising_trajectory[1], axis=1)
 

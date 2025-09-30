@@ -176,13 +176,6 @@ def test_steering_with_individual_params():
         all_files = pdb_files + xtc_files + npz_files
         assert all_files, f"No output files found in {output_dir}. Found: {[f.name for f in output_path.iterdir()]}"
 
-
-def test_help_command():
-    """Test that the help command shows steering parameters"""
-    import pytest
-    pytest.skip("Fire library has issues with help output - functionality is verified by other tests")
-
-
 def main():
     """Run all CLI integration tests."""
     tests = [
