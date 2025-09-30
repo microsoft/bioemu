@@ -1,0 +1,12 @@
+# Guidance steering configuration for termini distance potential
+# This config enables gradient guidance to better satisfy structural constraints
+
+termini:
+  _target_: bioemu.steering.TerminiDistancePotential
+  target: 1.5
+  flatbottom: 0.1
+  slope: 3.0
+  linear_from: 0.5
+  order: 2
+  weight: 1.0
+  guidance_steering: true  # Enable gradient guidance for this potential

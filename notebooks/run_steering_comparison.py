@@ -305,10 +305,11 @@ def main(cfg):
                 config_name="bioemu.yaml",
                 overrides=[
                     "sequence=GYDPETGTWG",
-                    "num_samples=1_000",
+                    "num_samples=500",
                     "denoiser=dpm",
                     "denoiser.N=50",
-                    f"steering.start=0.5",
+                    "steering.start=0.9",
+                    "steering.end=0.1",
                     "steering.resampling_freq=1",
                     f"steering.num_particles={num_particles}",
                     "steering.potentials=chingolin_steering",

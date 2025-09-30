@@ -4,6 +4,7 @@ start: 0.5
 end: 1.0 # End time for steering (default: continue until end)
 resampling_freq: 5
 fast_steering: true
+guidance_steering: true
 potentials:
   chainbreak:
     _target_: bioemu.steering.ChainBreakPotential

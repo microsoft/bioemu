@@ -184,6 +184,8 @@ def main(
                 "end": steering_config_dict.get("end", 1.0),
                 "resampling_freq": steering_config_dict.get("resampling_freq", 1),
                 "fast_steering": steering_config_dict.get("fast_steering", False),
+                "guidance_learning_rate": steering_config_dict.get("guidance_learning_rate"),
+                "guidance_num_steps": steering_config_dict.get("guidance_num_steps"),
             }
         else:
             # num_particles <= 1, no steering
@@ -196,14 +198,9 @@ def main(
         start_time = steering_config_dict["start"]
         end_time = steering_config_dict["end"]
 
-        if end_time <= start_time:
-            raise ValueError(f"Steering end ({end_time}) must be greater than start ({start_time})")
-
-        if start_time < 0.0 or start_time > 1.0:
-            raise ValueError(f"Steering start ({start_time}) must be between 0.0 and 1.0")
-
-        if end_time < 0.0 or end_time > 1.0:
-            raise ValueError(f"Steering end ({end_time}) must be between 0.0 and 1.0")
+        assert (
+            0.0 <= end_time <= start_time <= 1.0
+        ), f"Steering end ({end_time}) must be between 0.0 and 1.0"
 
         if num_particles < 1:
             raise ValueError(f"num_particles ({num_particles}) must be >= 1")

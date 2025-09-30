@@ -22,46 +22,50 @@ if torch.cuda.is_available():
 plt.style.use("default")
 
 
-def run_steering_experiment(cfg, sequence="GYDPETGTWG", do_steering=True):
+def run_experiment(cfg, sequence="GYDPETGTWG", experiment_type="no_steering"):
     """
-    Run steering experiment with or without steering enabled.
+    Run experiment with specified steering configuration.
 
     Args:
-        cfg: Hydra configuration object (None for no steering)
+        cfg: Hydra configuration object
         sequence: Protein sequence to test
-        do_steering: Whether to enable steering (True) or disable it (False)
+        experiment_type: One of "no_steering", "resampling_only", "guidance_steering"
 
     Returns:
         samples: Dictionary containing the sample data directly in memory
     """
     import os
+    import yaml
 
-    print(f"\n{'=' * 50}")
-    print(f"Running experiment with steering={'ENABLED' if do_steering else 'DISABLED'}")
-    print(f"{'=' * 50}")
+    print(f"\n{'=' * 60}")
+    print(f"Running experiment: {experiment_type.upper().replace('_', ' ')}")
+    print(f"{'=' * 60}")
 
-    print(OmegaConf.to_yaml(cfg))
     # Use config values
     num_samples = cfg.num_samples
     batch_size_100 = cfg.batch_size_100
     denoiser_type = "dpm"
     denoiser_config = OmegaConf.to_container(cfg.denoiser, resolve=True)
 
-    # New refactored API: steering_config is now a dict like denoiser_config
-    if do_steering and "steering" in cfg:
-        # Build steering config dict from cfg
+    # Build steering config based on experiment type
+    if experiment_type == "no_steering":
+        steering_config = None
+        print("No steering enabled")
+    elif experiment_type == "resampling_only":
+        # Resampling steering WITHOUT guidance
+        # Load base config and ensure guidance_steering=False
         repo_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
         potentials_file = os.path.join(
-            repo_root, "src/bioemu/config/steering", f"{cfg.steering.potentials}.yaml"
+            repo_root, "src/bioemu/config/steering", "chingolin_steering.yaml"
         )
 
-        # Load potentials from file
         with open(potentials_file) as f:
-            import yaml
-
             potentials_config = yaml.safe_load(f)
 
-        # Create steering config dict
+        # Explicitly set guidance_steering=False on all potentials
+        for potential_name, potential_cfg in potentials_config.items():
+            potential_cfg["guidance_steering"] = False
+
         steering_config = {
             "num_particles": cfg.steering.num_particles,
             "start": cfg.steering.start,
@@ -70,14 +74,51 @@ def run_steering_experiment(cfg, sequence="GYDPETGTWG", do_steering=True):
             "fast_steering": cfg.steering.get("fast_steering", False),
             "potentials": potentials_config,
         }
+        print(
+            f"Resampling steering: {cfg.steering.num_particles} particles, guidance_steering=False"
+        )
+    elif experiment_type == "guidance_steering":
+        # Resampling steering WITH gradient guidance
+        # Load base config and set guidance_steering=True
+        repo_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        potentials_file = os.path.join(
+            repo_root, "src/bioemu/config/steering", "chingolin_steering.yaml"
+        )
+
+        with open(potentials_file) as f:
+            potentials_config = yaml.safe_load(f)
+
+        # Explicitly set guidance_steering=True on all potentials
+        for potential_name, potential_cfg in potentials_config.items():
+            potential_cfg["guidance_steering"] = True
+
+        # Use gentler hyperparameters that complement resampling
+        lr = 0.05
+        steps = 10
+        steering_config = {
+            "num_particles": cfg.steering.num_particles,
+            "start": cfg.steering.start,
+            "end": cfg.steering.end,
+            "resampling_freq": cfg.steering.resampling_freq,
+            "fast_steering": False,
+            "potentials": potentials_config,
+            "guidance_learning_rate": lr,  # Required when any potential has guidance_steering=True
+            "guidance_num_steps": steps,  # Required when any potential has guidance_steering=True
+        }
+        print(
+            f"Guidance steering: {cfg.steering.num_particles} particles, "
+            f"guidance_steering=True, lr={lr}, steps={steps}"
+        )
     else:
-        steering_config = None
+        raise ValueError(f"Unknown experiment type: {experiment_type}")
 
-    # Run sampling and keep data in memory
-    print(f"Starting sampling... Data will be kept in memory")
+    if steering_config:
+        print("Steering config:")
+        [print(f"{k:<15}: {v}") for k, v in steering_config.items()]
 
-    # Create a temporary output directory for the sample function (it needs one)
-    temp_output_dir = f"./temp_output_{'steered' if do_steering else 'no_steering'}"
+    # Run sampling
+    print(f"Starting sampling...")
+    temp_output_dir = f"./temp_output_{experiment_type}"
     os.makedirs(temp_output_dir, exist_ok=True)
 
     samples = sample(
@@ -100,102 +141,41 @@ def run_steering_experiment(cfg, sequence="GYDPETGTWG", do_steering=True):
     return samples
 
 
-def analyze_termini_distribution(steered_samples, no_steering_samples, cfg):
+def analyze_and_compare(samples_dict, cfg):
     """
-    Analyze and plot the distribution of termini distances for both experiments.
+    Analyze and compare termini distances across all experiments.
 
     Args:
-        steered_samples: Dictionary containing steered sample data
-        no_steering_samples: Dictionary containing non-steered sample data
-        cfg: Configuration object containing potential parameters
+        samples_dict: Dictionary of {experiment_type: samples}
+        cfg: Configuration object
     """
-    print(f"\n{'=' * 50}")
-    print("Analyzing termini distribution...")
-    print(f"{'=' * 50}")
+    print(f"\n{'=' * 60}")
+    print("ANALYZING TERMINI DISTRIBUTIONS")
+    print(f"{'=' * 60}")
 
-    # Extract position data directly from samples
-    steered_pos = steered_samples["pos"]
-    no_steering_pos = no_steering_samples["pos"]
-
-    print(f"Steered data shape: {steered_pos.shape}")
-    print(f"No-steering data shape: {no_steering_pos.shape}")
-
-    # Calculate termini distances (distance between first and last residue)
-    steered_termini_distance = np.linalg.norm(steered_pos[:, 0] - steered_pos[:, -1], axis=-1)
-    no_steering_termini_distance = np.linalg.norm(
-        no_steering_pos[:, 0] - no_steering_pos[:, -1], axis=-1
-    )
-
-    # Filter out extreme distances for better visualization
-    max_distance = 5.0
-    steered_termini_distance = steered_termini_distance[steered_termini_distance < max_distance]
-    no_steering_termini_distance = no_steering_termini_distance[
-        no_steering_termini_distance < max_distance
-    ]
-
-    print(
-        f"Steered samples: {len(steered_termini_distance)} (filtered from {len(steered_samples['pos'])} total)"
-    )
-    print(
-        f"No-steering samples: {len(no_steering_termini_distance)} (filtered from {len(no_steering_samples['pos'])} total)"
-    )
-
-    # Calculate statistics
-    print(
-        f"\nSteered termini distance - Mean: {steered_termini_distance.mean():.3f}, Std: {steered_termini_distance.std():.3f}"
-    )
-    print(
-        f"No-steering termini distance - Mean: {no_steering_termini_distance.mean():.3f}, Std: {no_steering_termini_distance.std():.3f}"
-    )
-
-    # Plotting
-    fig = plt.figure(figsize=(12, 8))
-
-    # Histograms (use bin edges)
-    bins = 50
-    x_edges = np.linspace(0, max_distance, bins + 1)
-
-    plt.hist(
-        steered_termini_distance,
-        bins=x_edges,
-        label="Steered",
-        alpha=0.7,
-        density=True,
-        color="red",
-    )
-    plt.hist(
-        no_steering_termini_distance,
-        bins=x_edges,
-        label="No Steering",
-        alpha=0.5,
-        density=True,
-        color="blue",
-    )
-
-    # Add theoretical potential and analytical posterior
-    # Extract potential parameters - load chingolin_steering config
+    # Load potential parameters
     import os
 
     potentials_path = os.path.join(
-        os.path.dirname(__file__), "../src/bioemu/config/steering/chingolin_steering.yaml"
+        os.path.dirname(__file__), "../src/bioemu/config/steering/guidance_steering.yaml"
     )
     potentials_config = OmegaConf.load(potentials_path)
-
-    # Get the termini potential config
     termini_config = potentials_config.termini
 
-    # Get parameters from the config
     target = termini_config.target
     flatbottom = termini_config.flatbottom
     slope = termini_config.slope
     order = termini_config.order
     linear_from = termini_config.linear_from
 
-    print(
-        f"Using potential parameters from config: target={target}, flatbottom={flatbottom}, slope={slope}"
-    )
+    # Compute termini distances for all experiments
+    max_distance = 5.0
+    bins = 50
+    x_edges = np.linspace(0, max_distance, bins + 1)
+    x_centers = 0.5 * (x_edges[:-1] + x_edges[1:])
+    dx = x_edges[1] - x_edges[0]
 
-    # Define energy function and compute on bin centers
+    # Define energy function
     energy_fn = lambda x: potential_loss_fn(
         torch.from_numpy(x),
         target=target,
@@ -205,189 +185,201 @@ def analyze_termini_distribution(steered_samples, no_steering_samples, cfg):
         linear_from=linear_from,
     ).numpy()
 
-    x_centers = 0.5 * (x_edges[:-1] + x_edges[1:])
-    dx = x_edges[1] - x_edges[0]
     energy_vals = energy_fn(x_centers)
 
-    # Boltzmann distribution from the potential (normalized)
+    # Boltzmann distribution
     kT = 1.0
     boltzmann = np.exp(-energy_vals / kT)
     boltzmann /= boltzmann.sum() * dx
 
-    # Empirical unsteered histogram (density) on the same bins
-    non_steered_hist, _ = np.histogram(no_steering_termini_distance, bins=x_edges, density=True)
+    # Get baseline (no steering) distribution for analytical posterior
+    baseline_pos = samples_dict["no_steering"]["pos"]
+    baseline_termini = np.linalg.norm(baseline_pos[:, 0] - baseline_pos[:, -1], axis=-1)
+    baseline_termini = baseline_termini[baseline_termini < max_distance]
+    baseline_hist, _ = np.histogram(baseline_termini, bins=x_edges, density=True)
 
-    # Analytical posterior: product of Boltzmann and unsteered distribution, renormalized
-    analytical_posterior = non_steered_hist * boltzmann
+    # Analytical posterior
+    analytical_posterior = baseline_hist * boltzmann
     analytical_posterior /= analytical_posterior.sum() * dx
 
-    # Overlay curves
-    plt.plot(x_centers, energy_vals, label="Potential Energy", color="green", linewidth=2)
-    plt.hist(
-        x_centers,
-        bins=x_edges,
-        weights=boltzmann,
-        label="Boltzmann Distribution",
-        alpha=0.7,
-        density=True,
-        color="green",
-        histtype="step",
-        linewidth=2,
-    )
-    plt.hist(
+    # Plotting
+    fig, axes = plt.subplots(1, 2, figsize=(18, 6))
+
+    # Plot 1: All distributions
+    ax1 = axes[0]
+    colors = {"no_steering": "blue", "resampling_only": "orange", "guidance_steering": "red"}
+    labels = {
+        "no_steering": "No Steering",
+        "resampling_only": "Resampling Only",
+        "guidance_steering": "Guidance Steering",
+    }
+
+    kl_divs = {}
+    for exp_type, samples in samples_dict.items():
+        pos = samples["pos"]
+        termini_dist = np.linalg.norm(pos[:, 0] - pos[:, -1], axis=-1)
+        termini_dist = termini_dist[termini_dist < max_distance]
+
+        ax1.hist(
+            termini_dist,
+            bins=x_edges,
+            label=labels[exp_type],
+            alpha=0.6,
+            density=True,
+            color=colors[exp_type],
+        )
+
+        # Compute KL divergence
+        empirical_hist, _ = np.histogram(termini_dist, bins=x_edges, density=True)
+        empirical_hist = empirical_hist + 1e-10
+        analytical_posterior_safe = analytical_posterior + 1e-10
+        empirical_hist = empirical_hist / np.sum(empirical_hist)
+        analytical_posterior_norm = analytical_posterior_safe / np.sum(analytical_posterior_safe)
+        kl_div = np.sum(empirical_hist * np.log(empirical_hist / analytical_posterior_norm))
+        kl_divs[exp_type] = kl_div
+
+        print(
+            f"{labels[exp_type]}: Mean={termini_dist.mean():.3f}, Std={termini_dist.std():.3f}, KL={kl_div:.4f}"
+        )
+
+    # Add analytical posterior
+    ax1.hist(
         x_centers,
         bins=x_edges,
         weights=analytical_posterior,
         label="Analytical Posterior",
         alpha=0.7,
         density=True,
-        color="orange",
+        color="green",
         histtype="step",
         linewidth=2,
     )
 
-    plt.xlabel("Termini Distance (nm)")
-    plt.ylabel("Density")
-    plt.title("Comparison of Termini Distance Distributions: Steered vs No Steering")
-    plt.legend()
-    plt.grid(True, alpha=0.3)
-    plt.ylim(0, 5)
+    ax1.set_xlabel("Termini Distance (nm)")
+    ax1.set_ylabel("Density")
+    ax1.set_title("Termini Distance Distributions")
+    ax1.legend()
+    ax1.grid(True, alpha=0.3)
+    ax1.set_ylim(0, 5)
+
+    # Plot 2: KL Divergence comparison
+    ax2 = axes[1]
+    exp_types = list(kl_divs.keys())
+    kl_values = [kl_divs[k] for k in exp_types]
+    bar_colors = [colors[k] for k in exp_types]
+    bar_labels = [labels[k] for k in exp_types]
+
+    bars = ax2.bar(range(len(exp_types)), kl_values, color=bar_colors, alpha=0.7)
+    ax2.set_xticks(range(len(exp_types)))
+    ax2.set_xticklabels(bar_labels, rotation=15, ha="right")
+    ax2.set_ylabel("KL Divergence")
+    ax2.set_title("KL Divergence from Analytical Posterior\n(Lower is Better)")
+    ax2.grid(True, alpha=0.3, axis="y")
+
+    # Add value labels on bars
+    for i, (bar, val) in enumerate(zip(bars, kl_values)):
+        height = bar.get_height()
+        ax2.text(
+            bar.get_x() + bar.get_width() / 2.0, height, f"{val:.4f}", ha="center", va="bottom"
+        )
+
     plt.tight_layout()
+
+    # Save the plot
+    output_path = "/home/luwinkler/bioemu/guidance_steering_comparison.png"
+    plt.savefig(output_path, dpi=150, bbox_inches="tight")
+    print(f"\n📊 Visualization saved to: {output_path}")
     plt.show()
 
-    # Save plot
-    plot_path = "./outputs/test_steering/termini_distribution_comparison.png"
-    # os.makedirs(os.path.dirname(plot_path), exist_ok=True)
-    # plt.savefig(plot_path, dpi=300, bbox_inches='tight')
-    # print(f"\nPlot saved to: {plot_path}")
-
-    return fig, analytical_posterior, x_centers
+    return kl_divs
 
 
 def compute_kl_divergence(empirical_data, analytical_distribution, x_centers, bins=50):
-    """
-    Compute Kullback-Leibler divergence between empirical and analytical distributions.
-
-    Args:
-        empirical_data: Array of empirical data points
-        analytical_distribution: Array of analytical distribution values
-        x_centers: Array of bin centers for the analytical distribution
-        bins: Number of bins for histogram
-
-    Returns:
-        kl_divergence: KL divergence value
-    """
-    # Create histogram of empirical data using the same bins as analytical distribution
-    x_edges = np.linspace(0, 5.0, bins + 1)  # Same range as in analyze_termini_distribution
+    """Compute KL divergence between empirical and analytical distributions."""
+    x_edges = np.linspace(0, 5.0, bins + 1)
     empirical_hist, _ = np.histogram(empirical_data, bins=x_edges, density=True)
-
-    # Ensure both distributions are normalized and have no zeros
-    empirical_hist = empirical_hist + 1e-10  # Add small epsilon to avoid log(0)
+    empirical_hist = empirical_hist + 1e-10
     analytical_distribution = analytical_distribution + 1e-10
-
-    # Normalize both distributions
     empirical_hist = empirical_hist / np.sum(empirical_hist)
     analytical_distribution = analytical_distribution / np.sum(analytical_distribution)
-
-    # Compute KL divergence: KL(P||Q) = sum(P * log(P/Q))
     kl_divergence = np.sum(empirical_hist * np.log(empirical_hist / analytical_distribution))
-
     return kl_divergence
 
 
 @hydra.main(config_path="../src/bioemu/config", config_name="bioemu.yaml", version_base="1.2")
 def main(cfg):
-    for target in [2]:
-        for num_particles in [2, 5]:
-            """Main function to run both experiments and analyze results."""
-            # Override sequence and parameters
-            cfg = hydra.compose(
-                config_name="bioemu.yaml",
-                overrides=[
-                    "sequence=GYDPETGTWG",
-                    "num_samples=1_000",
-                    "denoiser=dpm",
-                    "denoiser.N=50",
-                    f"steering.start=0.5",
-                    "steering.resampling_freq=1",
-                    f"steering.num_particles={num_particles}",
-                    "steering.potentials=chingolin_steering",
-                ],
-            )
-            # sequence = 'GYDPETGTWG'  # Chignolin
+    """Main function to run 3-way comparison: no steering, resampling only, guidance steering."""
+    # Override parameters
+    cfg = hydra.compose(
+        config_name="bioemu.yaml",
+        overrides=[
+            "sequence=GYDPETGTWG",
+            "num_samples=250",  # More samples for better statistics
+            "denoiser=dpm",
+            "denoiser.N=50",
+            "steering.start=1.",
+            "steering.end=0.1",
+            "steering.resampling_freq=1",
+            "steering.num_particles=5",
+            "steering.potentials=chingolin_steering",
+        ],
+    )
 
-            print("Starting steering comparison experiment...")
-            print(f"Sequence: {cfg.sequence} (length: {len(cfg.sequence)})")
+    print("=" * 60)
+    print("GUIDANCE STEERING COMPARISON TEST")
+    print("=" * 60)
+    print(f"Sequence: {cfg.sequence} (length: {len(cfg.sequence)})")
+    print(f"Num samples: {cfg.num_samples}")
+    print(f"Num particles: {cfg.steering.num_particles}")
+    print("=" * 60)
 
-            # Initialize wandb once for the entire comparison
-            wandb.init(
-                project="bioemu-chignolin-steering-comparison",
-                name=f"steering_comparison_{len(cfg.sequence)}_{cfg.sequence[:10]}",
-                config={
-                    "sequence": cfg.sequence,
-                    "sequence_length": len(cfg.sequence),
-                    "test_type": "steering_comparison",
-                }
-                | dict(OmegaConf.to_container(cfg, resolve=True)),
-                mode="disabled",  # Set to disabled for testing
-                settings=wandb.Settings(code_dir=".."),
-            )
+    # Initialize wandb
+    wandb.init(
+        project="bioemu-guidance-steering-test",
+        name=f"guidance_test_{cfg.sequence[:10]}",
+        config={
+            "sequence": cfg.sequence,
+            "sequence_length": len(cfg.sequence),
+            "test_type": "guidance_steering_comparison",
+        }
+        | dict(OmegaConf.to_container(cfg, resolve=True)),
+        mode="disabled",
+        settings=wandb.Settings(code_dir=".."),
+    )
 
-            # Run experiment without steering (steering_config=None)
-            # Just pass the cfg but with do_steering=False, which will skip building steering_config
-            no_steering_samples = run_steering_experiment(cfg, cfg.sequence, do_steering=False)
+    # Run all 3 experiments
+    experiments = ["no_steering", "resampling_only", "guidance_steering"]
+    # experiments = ["guidance_steering"]
+    samples_dict = {}
 
-            # Run experiment with steering
-            steered_samples = run_steering_experiment(cfg, cfg.sequence, do_steering=True)
+    for exp_type in experiments:
+        samples_dict[exp_type] = run_experiment(cfg, cfg.sequence, experiment_type=exp_type)
 
-            # Analyze and plot results using data in memory
-            fig, analytical_posterior, x_centers = analyze_termini_distribution(
-                steered_samples, no_steering_samples, cfg
-            )
-            fig.suptitle(f"Target: {target}, Num Particles: {num_particles}")
-            plt.tight_layout()
-            # plt.show()
+    # Analyze and compare results
+    kl_divs = analyze_and_compare(samples_dict, cfg)
 
-            # Compute KL divergence between steered distribution and analytical posterior
-            steered_termini_distance = np.linalg.norm(
-                steered_samples["pos"][:, 0] - steered_samples["pos"][:, -1], axis=-1
-            )
-            # Filter out extreme distances for consistency with analysis function
-            max_distance = 5.0
-            steered_termini_distance = steered_termini_distance[
-                steered_termini_distance < max_distance
-            ]
+    # Print final summary
+    print(f"\n{'=' * 60}")
+    print("FINAL RESULTS SUMMARY")
+    print(f"{'=' * 60}")
+    for exp_type in experiments:
+        label = exp_type.replace("_", " ").title()
+        print(f"{label:30s}: KL Divergence = {kl_divs[exp_type]:.4f}")
 
-            kl_divergence = compute_kl_divergence(
-                steered_termini_distance, analytical_posterior, x_centers
-            )
+    # Check if guidance steering improves over resampling only
+    improvement = kl_divs["resampling_only"] - kl_divs["guidance_steering"]
+    print(f"\n{'=' * 60}")
+    if improvement > 0:
+        print(f"✓ SUCCESS: Guidance steering IMPROVED KL by {improvement:.4f}")
+        print(f"  (Lower KL divergence means better alignment with target distribution)")
+    else:
+        print(f"✗ WARNING: Guidance steering did NOT improve KL (diff: {improvement:.4f})")
+    print(f"{'=' * 60}")
 
-            print(f"\n{'=' * 50}")
-            print("KULLBACK-LEIBLER DIVERGENCE ANALYSIS")
-            print(f"{'=' * 50}")
-            print(f"KL Divergence (Steered || Analytical Posterior): {kl_divergence:.4f}")
-            print(f"Interpretation:")
-            if kl_divergence < 0.1:
-                print(f"  - Very good agreement (KL < 0.1)")
-            elif kl_divergence < 0.5:
-                print(f"  - Good agreement (KL < 0.5)")
-            elif kl_divergence < 1.0:
-                print(f"  - Moderate agreement (KL < 1.0)")
-            else:
-                print(f"  - Poor agreement (KL >= 1.0)")
-            print(f"  - Lower values indicate better steering effectiveness")
-
-            # Finish wandb run
-            wandb.finish()
-
-            print(f"\n{'=' * 50}")
-            print("Experiment completed successfully!")
-            print(f"All data kept in memory for analysis.")
-            print(f"{'=' * 50}")
+    wandb.finish()
 
 
 if __name__ == "__main__":
     if any(a == "-f" or a == "--f" or a.startswith("--f=") for a in sys.argv[1:]):
-        # Jupyter/VS Code Interactive injects a kernel file via -f/--f
         sys.argv = [sys.argv[0]]
     main()

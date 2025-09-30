@@ -1,25 +1,68 @@
-
-
 import sys
 import torch
 import einops
+
 # No wandb logging needed
 
 import numpy as np
 import matplotlib.pyplot as plt
+
+
+@torch.enable_grad()
+def potential_gradient_minimization(x, potentials, learning_rate=0.1, num_steps=20):
+    """
+    Minimize potential energy via gradient descent (ported from enhancedsampling).
+
+    Only potentials with guidance_steering=True are used for gradient guidance.
+
+    Args:
+        x: Input positions in nm (will be converted to Angstroms for potentials)
+        potentials: List of potential functions
+        learning_rate: Step size for gradient descent
+        num_steps: Number of gradient steps
+
+    Returns:
+        delta_x: Position update in nm
+    """
+    assert x.dim() == 3 and x.shape[2] == 3, "x must be a 3D tensor with shape [BS, L, 3]"
+    # Filter: only potentials with guidance_steering=True
+    guidance_potentials = [p for p in potentials if getattr(p, "guidance_steering", False)]
+
+    if not guidance_potentials:
+        return torch.zeros_like(x)  # No correction if no guidance potentials
+
+    x_ = x.detach().clone()
+    for step in range(num_steps):
+        x_ = x_.requires_grad_(True)
+        # Convert nm to Angstroms (multiply by 10) for potentials
+        loss = sum(
+            potential(None, 10 * x_, None, None, t=0, N=1) for potential in guidance_potentials
+        )
+        grad = torch.autograd.grad(loss.sum(), x_, create_graph=False)[0]
+        x_ = (x_ - learning_rate * grad).detach()
+
+    return (x_ - x).detach()  # Return delta_x in nm
+
 
 from torch.nn.functional import relu
 from torch_geometric.data import Batch
 
 from bioemu.sde_lib import SDE
 from .so3_sde import SO3SDE, apply_rotvec_to_rotmat
-from bioemu.openfold.np.residue_constants import ca_ca, van_der_waals_radius, between_res_bond_length_c_n, between_res_bond_length_stddev_c_n, between_res_cos_angles_ca_c_n, between_res_cos_angles_c_n_ca
+from bioemu.openfold.np.residue_constants import (
+    ca_ca,
+    van_der_waals_radius,
+    between_res_bond_length_c_n,
+    between_res_bond_length_stddev_c_n,
+    between_res_cos_angles_ca_c_n,
+    between_res_cos_angles_c_n_ca,
+)
 from bioemu.convert_chemgraph import get_atom37_from_frames, batch_frames_to_atom37
 
 
 import torch.autograd.profiler as profiler
 
-plt.style.use('default')
+plt.style.use("default")
 
 
 def _get_x0_given_xt_and_score(
@@ -51,10 +94,11 @@ def _get_R0_given_xt_and_score(
 
     alpha_t, sigma_t = sde.mean_coeff_and_std(x=R, t=t, batch_idx=batch_idx)
 
-    return apply_rotvec_to_rotmat(R, -sigma_t**2 * score, tol=sde.tol)
+    return apply_rotvec_to_rotmat(R, -(sigma_t**2) * score, tol=sde.tol)
+
 
 def stratified_resample_slow(weights):
-    """ Performs the stratified resampling algorithm used by particle filters.
+    """Performs the stratified resampling algorithm used by particle filters.
 
     This algorithms aims to make selections relatively uniformly across the
     particles. It divides the cumulative sum of the weights into N equal
@@ -76,7 +120,7 @@ def stratified_resample_slow(weights):
 
     BS, N = weights.shape
     device = weights.device
-    
+
     # make N subdivisions, and chose a random position within each one for each batch
     positions = (torch.rand(BS, N, device=device) + torch.arange(N, device=device).unsqueeze(0)) / N
 
@@ -84,7 +128,7 @@ def stratified_resample_slow(weights):
     cumulative_sum = torch.cumsum(weights, dim=1)
 
     # Use searchsorted for vectorized resampling across all batches
-    
+
     for b in range(BS):
         i, j = 0, 0
         while i < N:
@@ -94,6 +138,7 @@ def stratified_resample_slow(weights):
             else:
                 j += 1
     return indexes
+
 
 def stratified_resample(weights: torch.Tensor) -> torch.Tensor:
     """
@@ -122,14 +167,14 @@ def get_pos0_rot0(sdes, batch, t, score):
         x=batch.pos,
         t=t,
         batch_idx=batch.batch,
-        score=score['pos'],
+        score=score["pos"],
     )
     R0_t = _get_R0_given_xt_and_score(
         sde=sdes["node_orientations"],
         R=batch.node_orientations,
         t=t,
         batch_idx=batch.batch,
-        score=score['node_orientations'],
+        score=score["node_orientations"],
     )
     seq_length = len(batch.sequence[0])
     x0_t = x0_t.reshape(batch.batch_size, seq_length, 3).detach()
@@ -157,9 +202,7 @@ def bond_mask(num_frames, show_plot=False):
     off_diag_matrix_lower = torch.diag(off_diag, diagonal=-1)
 
     # Sum the diagonal matrices to get the tri-diagonal matrix
-    tri_diag_matrix_ones = (
-        main_diag_matrix + off_diag_matrix_upper + off_diag_matrix_lower
-    )
+    tri_diag_matrix_ones = main_diag_matrix + off_diag_matrix_upper + off_diag_matrix_lower
 
     mask = ones - tri_diag_matrix_ones
 
@@ -197,9 +240,9 @@ def compute_clash_loss(atom14, vdw_radii):
         vwd, "f b -> 1 (f b)"
     )  # -> [Frames_a*Atoms_a, Frames_b*Atoms_b]
     vdw_sum = einops.repeat(vdw_sum, "... -> b ...", b=atom14.shape[0])
-    assert vdw_sum.shape == pairwise_distances.shape, (
-        f"vdw_sum shape: {vdw_sum.shape}, pairwise_distances shape: {pairwise_distances.shape}"
-    )
+    assert (
+        vdw_sum.shape == pairwise_distances.shape
+    ), f"vdw_sum shape: {vdw_sum.shape}, pairwise_distances shape: {pairwise_distances.shape}"
     return pairwise_distances, vdw_sum
 
 
@@ -215,24 +258,34 @@ def cos_bondangle(pos_atom1, pos_atom2, pos_atom3):
 
 def plot_caclashes(distances, loss_fn, t):
     """
-        Plot histogram and loss curve for Ca-Ca clashes.
+    Plot histogram and loss curve for Ca-Ca clashes.
     """
     distances_np = distances.detach().cpu().numpy().flatten()
     fig = plt.figure(figsize=(7, 4), dpi=200)
-    plt.hist(distances_np, bins=100, range=(0, 10), alpha=0.7, color='skyblue', label='Ca-Ca Distance', density=True)
+    plt.hist(
+        distances_np,
+        bins=100,
+        range=(0, 10),
+        alpha=0.7,
+        color="skyblue",
+        label="Ca-Ca Distance",
+        density=True,
+    )
 
     # Draw vertical lines for optimal (3.8) and physicality breach (1.0)
-    plt.axvline(3.4, color='green', linestyle='--', linewidth=2, label='Optimal (3.4 Å)')
-    plt.axvline(3.3, color='red', linestyle='--', linewidth=2, label='Physicality Breach (3.3 Å)')
+    plt.axvline(3.4, color="green", linestyle="--", linewidth=2, label="Optimal (3.4 Å)")
+    plt.axvline(3.3, color="red", linestyle="--", linewidth=2, label="Physicality Breach (3.3 Å)")
 
     # Plot loss_fn curve
     x_vals = np.linspace(0, 10, 200)
     loss_curve = loss_fn(torch.from_numpy(x_vals))
-    plt.plot(x_vals, loss_curve.detach().cpu().numpy(), color='purple', label='Loss')
+    plt.plot(x_vals, loss_curve.detach().cpu().numpy(), color="purple", label="Loss")
 
-    plt.xlabel('Ca-Ca Distance (Å)')
-    plt.ylabel('Frequency / Loss')
-    plt.title(f'CaClash: Ca-Ca Distances (<1.0: {(distances < 1.0).float().mean().item():.3f}), {t=:.2f}')
+    plt.xlabel("Ca-Ca Distance (Å)")
+    plt.ylabel("Frequency / Loss")
+    plt.title(
+        f"CaClash: Ca-Ca Distances (<1.0: {(distances < 1.0).float().mean().item():.3f}), {t=:.2f}"
+    )
     plt.legend()
     plt.ylim(0, 1)
     plt.tight_layout()
@@ -251,19 +304,29 @@ def plot_ca_ca_distances(ca_ca_dist, loss_fn, t=None):
     x_vals = np.linspace(0, 6, 200)
     # target_distance = np.clip(ca_ca_dist_np, 0, 6)  # Ensure target_distance is within the range of x_vals
     loss_curve = loss_fn(torch.from_numpy(x_vals)).detach().cpu().numpy()
-    plt.plot(x_vals, loss_curve, color='purple', label=f'Loss')
-    plt.hist(ca_ca_dist_np, bins=50, range=(0, 6), alpha=0.7, color='skyblue', label='Ca-Ca Distance', density=True)
+    plt.plot(x_vals, loss_curve, color="purple", label=f"Loss")
+    plt.hist(
+        ca_ca_dist_np,
+        bins=50,
+        range=(0, 6),
+        alpha=0.7,
+        color="skyblue",
+        label="Ca-Ca Distance",
+        density=True,
+    )
 
     # Draw vertical lines for optimal (3.8) and physicality breach (4.5)
-    plt.axvline(3.8, color='green', linestyle='--', linewidth=2, label='Optimal (3.8 Å)')
-    plt.axvline(4.8, color='red', linestyle='--', linewidth=2, label='Physicality Breach (4.8 Å)')
-    plt.axvline(2.8, color='red', linestyle='--', linewidth=2, label='Physicality Breach (2.8 Å)')
+    plt.axvline(3.8, color="green", linestyle="--", linewidth=2, label="Optimal (3.8 Å)")
+    plt.axvline(4.8, color="red", linestyle="--", linewidth=2, label="Physicality Breach (4.8 Å)")
+    plt.axvline(2.8, color="red", linestyle="--", linewidth=2, label="Physicality Breach (2.8 Å)")
 
     # Plot loss_fn curve
 
-    plt.xlabel('Ca-Ca Distance (Å)')
-    plt.ylabel('Frequency / Loss')
-    plt.title(f'CaCaDist: Ca-Ca Distances(>4.5: {(ca_ca_dist > 4.5).float().mean().item():.3f}), {t=:.2f}')
+    plt.xlabel("Ca-Ca Distance (Å)")
+    plt.ylabel("Frequency / Loss")
+    plt.title(
+        f"CaCaDist: Ca-Ca Distances(>4.5: {(ca_ca_dist > 4.5).float().mean().item():.3f}), {t=:.2f}"
+    )
     plt.legend()
     plt.ylim(0, 5)
     plt.tight_layout()
@@ -272,9 +335,9 @@ def plot_ca_ca_distances(ca_ca_dist, loss_fn, t=None):
 
 
 def log_physicality(pos, rot, sequence):
-    '''
+    """
     pos in nM
-    '''
+    """
     pos = 10 * pos  # convert to Angstrom
     n_residues = pos.shape[1]
     ca_ca_dist = (pos[..., :-1, :] - pos[..., 1:, :]).pow(2).sum(dim=-1).pow(0.5)
@@ -298,7 +361,7 @@ def log_physicality(pos, rot, sequence):
         # Count zero elements in x and normalize by number of entries
         filter_fn = lambda x: (x == 0).float().sum() / x.numel()
         # Physicality tolerance metrics computed but not logged
-    
+
     # Print physicality metrics
     print(f"physicality/ca_break_mean: {ca_break.sum().item()}")
     print(f"physicality/ca_clash_mean: {ca_clash.sum().item()}")
@@ -365,7 +428,10 @@ class Potential:
     def __repr__(self):
 
         # List __init__ arguments or attributes for display
-        attrs = [f"{k}={getattr(self, k)!r}" for k in getattr(self, '__dataclass_fields__', {}) or self.__dict__]
+        attrs = [
+            f"{k}={getattr(self, k)!r}"
+            for k in getattr(self, "__dataclass_fields__", {}) or self.__dict__
+        ]
         sig = f"({', '.join(attrs)})" if attrs else ""
 
         return f"{self.__class__.__name__}{sig}"
@@ -374,8 +440,13 @@ class Potential:
 class ChainBreakPotential(Potential):
 
     def __init__(
-        self, flatbottom: float = 0., slope: float = 1.0, order: float = 1, 
-        linear_from: float = 1., weight: float = 1.0
+        self,
+        flatbottom: float = 0.0,
+        slope: float = 1.0,
+        order: float = 1,
+        linear_from: float = 1.0,
+        weight: float = 1.0,
+        guidance_steering: bool = False,
     ):
         self.ca_ca = ca_ca
         self.flatbottom: float = flatbottom
@@ -383,6 +454,7 @@ class ChainBreakPotential(Potential):
         self.order = order
         self.linear_from = linear_from
         self.weight = weight
+        self.guidance_steering = guidance_steering
 
     def __call__(self, N_pos, Ca_pos, C_pos, O_pos, t, N):
         """
@@ -422,14 +494,23 @@ class ChainBreakPotential(Potential):
 #         loss_fn = lambda x: torch.relu(self.slope * (lit - self.tolerance - x))
 #         fig = plot_caclashes(distances, loss_fn, t)
 #         potential_energy = loss_fn(distances)
-        # CaClash potential metrics computed but not logged
+# CaClash potential metrics computed but not logged
 #         plt.close('all')
 #         return self.weight * potential_energy.sum(dim=(-1))
 
+
 class ChainClashPotential(Potential):
     """Potential to prevent CA atoms from clashing (getting too close)."""
-    
-    def __init__(self, flatbottom=0.0, dist=4.2, slope=1.0, weight=1.0, offset=3):
+
+    def __init__(
+        self,
+        flatbottom=0.0,
+        dist=4.2,
+        slope=1.0,
+        weight=1.0,
+        offset=3,
+        guidance_steering: bool = False,
+    ):
         """
         Args:
             flatbottom: Additional buffer distance (added to dist)
@@ -437,34 +518,36 @@ class ChainClashPotential(Potential):
             slope: Steepness of the penalty
             weight: Overall weight of this potential
             offset: Minimum residue separation to consider (default=1 excludes diagonal)
+            guidance_steering: Enable gradient guidance for this potential
         """
         self.flatbottom = flatbottom
         self.dist = dist
         self.slope = slope
         self.weight = weight
         self.offset = offset
-    
+        self.guidance_steering = guidance_steering
+
     def __call__(self, N_pos, Ca_pos, C_pos, O_pos, t, N):
         """
         Calculate clash potential for CA atoms.
-        
+
         Args:
             N_pos, Ca_pos, C_pos, O_pos: Backbone atom positions
             t: Time step
             N: Number of residues
-        
+
         Returns:
             Tensor of shape (batch_size,) with clash energies
         """
         # Calculate all pairwise distances
         pairwise_distances = torch.cdist(Ca_pos, Ca_pos)  # (batch_size, n_residues, n_residues)
-        
+
         # Use triu mask with offset to select relevant pairs
         n_residues = Ca_pos.shape[1]
         mask = torch.ones(n_residues, n_residues, dtype=torch.bool, device=Ca_pos.device)
         mask = mask.triu(diagonal=self.offset)
         relevant_distances = pairwise_distances[:, mask]  # (batch_size, n_pairs)
-        
+
         loss_fn = lambda x: torch.relu(self.slope * (self.dist - self.flatbottom - x))
         # fig = plot_caclashes(relevant_distances, loss_fn, t)
         potential_energy = loss_fn(relevant_distances)
@@ -475,7 +558,14 @@ class ChainClashPotential(Potential):
 
 class CNDistancePotential(Potential):
 
-    def __init__(self, flatbottom: float = 0., slope: float = 1.0, start: float = 0.5, loss_fn: str = 'mse', weight: float = 1.0):
+    def __init__(
+        self,
+        flatbottom: float = 0.0,
+        slope: float = 1.0,
+        start: float = 0.5,
+        loss_fn: str = "mse",
+        weight: float = 1.0,
+    ):
         self.loss_fn = loss_fn
         self.flatbottom: float = flatbottom
         self.weight = weight
@@ -504,7 +594,7 @@ class CNDistancePotential(Potential):
 
 
 class CaCNAnglePotential(Potential):
-    def __init__(self, flatbottom: float = 0., loss_fn: str = 'mse'):
+    def __init__(self, flatbottom: float = 0.0, loss_fn: str = "mse"):
         self.loss_fn = loss_fn
         self.flatbottom: float = flatbottom
 
@@ -526,7 +616,7 @@ class CaCNAnglePotential(Potential):
 
 
 class CNCaAnglePotential(Potential):
-    def __init__(self, flatbottom: float = 0., loss_fn: str = 'mse'):
+    def __init__(self, flatbottom: float = 0.0, loss_fn: str = "mse"):
         self.loss_fn = loss_fn
         self.flatbottom: float = flatbottom
 
@@ -547,13 +637,15 @@ class CNCaAnglePotential(Potential):
 
 
 class ClashPotential(Potential):
-    def __init__(self, flatbottom: float = 0., loss_fn: str = 'mse'):
+    def __init__(self, flatbottom: float = 0.0, loss_fn: str = "mse"):
         self.loss_fn = loss_fn
         self.flatbottom: float = flatbottom
 
     def __call__(self, pos, rot, seq, t):
         atom37, atom37_mask, atom37_aa = batch_frames_to_atom37(10 * pos, rot, seq)
-        assert atom37.ndim == 4, f"Expected atom37 to have 4 dimensions [BS, L, Atom37, 3], got {atom37.shape}"
+        assert (
+            atom37.ndim == 4
+        ), f"Expected atom37 to have 4 dimensions [BS, L, Atom37, 3], got {atom37.shape}"
         NCaCO = torch.index_select(
             atom37, 2, torch.tensor([0, 1, 2, 4], device=atom37.device)
         )  # index([BS, L, Atom37, 3])
@@ -564,17 +656,23 @@ class ClashPotential(Potential):
         pairwise_distances, vdw_sum = compute_clash_loss(NCaCO, vdw_radii)
         clash = loss_fn_callables[loss_fn](vdw_sum - pairwise_distances, self.flatbottom * 1.5)
         mask = bond_mask(num_frames=NCaCO.shape[1])
-        masked_loss = clash[einops.repeat(mask, '... -> b ...', b=atom37.shape[0]).bool()]
+        masked_loss = clash[einops.repeat(mask, "... -> b ...", b=atom37.shape[0]).bool()]
         denominator = masked_loss.numel()
-        masked_clash_loss = einops.einsum(masked_loss, 'b ... -> b') / (denominator + 1)
+        masked_clash_loss = einops.einsum(masked_loss, "b ... -> b") / (denominator + 1)
         # TODO: currently flattening everything to a single vector but needs to be [BS, ...]
         return masked_clash_loss
 
 
 class TerminiDistancePotential(Potential):
     def __init__(
-        self, target: float = 1.5, flatbottom: float = 0., slope: float = 1.0, 
-        order: float = 1, linear_from: float = 1., weight: float = 1.0
+        self,
+        target: float = 1.5,
+        flatbottom: float = 0.0,
+        slope: float = 1.0,
+        order: float = 1,
+        linear_from: float = 1.0,
+        weight: float = 1.0,
+        guidance_steering: bool = False,
     ):
         self.target = target
         self.flatbottom: float = flatbottom
@@ -582,6 +680,7 @@ class TerminiDistancePotential(Potential):
         self.order = order
         self.linear_from = linear_from
         self.weight = weight
+        self.guidance_steering = guidance_steering
 
     def __call__(self, N_pos, Ca_pos, C_pos, O_pos, t=None, N=None):
         """
@@ -596,15 +695,19 @@ class TerminiDistancePotential(Potential):
             flatbottom=self.flatbottom,
             slope=self.slope,
             order=self.order,
-            linear_from=self.linear_from
+            linear_from=self.linear_from,
         )
         return self.weight * energy
 
 
 class DisulfideBridgePotential(Potential):
     def __init__(
-        self, flatbottom: float = 0.01, slope: float = 10.0, weight: float = 1.0,
-        specified_pairs: list[tuple[int, int]] = None
+        self,
+        flatbottom: float = 0.01,
+        slope: float = 10.0,
+        weight: float = 1.0,
+        specified_pairs: list[tuple[int, int]] = None,
+        guidance_steering: bool = False,
     ):
         """
         Potential for guiding disulfide bridge formation between specified cysteine pairs.
@@ -614,15 +717,17 @@ class DisulfideBridgePotential(Potential):
             slope: Steepness of penalty outside flatbottom region
             weight: Overall weight of this potential
             specified_pairs: List of (i,j) tuples specifying cysteine pairs to form disulfides
+            guidance_steering: Enable gradient guidance for this potential
         """
         self.flatbottom = flatbottom
         self.slope = slope
         self.weight = weight
         self.specified_pairs = specified_pairs or []
+        self.guidance_steering = guidance_steering
 
         # Define valid CaCa distance range for disulfide bridges (in Angstroms)
         self.min_valid_dist = 3.75  # Minimum valid CaCa distance
-        self.max_valid_dist = 6.6   # Maximum valid CaCa distance
+        self.max_valid_dist = 6.6  # Maximum valid CaCa distance
         self.target = (self.min_valid_dist + self.max_valid_dist) / 2  # Target is middle of range
 
         # Parameters for potential function
@@ -660,13 +765,15 @@ class DisulfideBridgePotential(Potential):
             energies.append(energy)
 
         total_energy = torch.stack(energies, dim=-1).sum(dim=-1)
-        print(f"total_energy.shape: {total_energy.shape}, {distance.mean().item()} vs {self.min_valid_dist}")
-        
+        print(
+            f"total_energy.shape: {total_energy.shape}, {distance.mean().item()} vs {self.min_valid_dist}"
+        )
+
         return self.weight * total_energy
 
 
 class StructuralViolation(Potential):
-    def __init__(self, flatbottom: float = 0., loss_fn: str = 'mse'):
+    def __init__(self, flatbottom: float = 0.0, loss_fn: str = "mse"):
         self.ca_ca_distance = ChainBreakPotential(flatbottom=flatbottom, loss_fn=loss_fn)
         self.caclash_potential = ChainClashPotential(flatbottom=flatbottom, loss_fn=loss_fn)
         self.c_n_distance = CNDistancePotential(flatbottom=flatbottom, loss_fn=loss_fn)
@@ -675,10 +782,10 @@ class StructuralViolation(Potential):
         self.clash_potential = ClashPotential(flatbottom=flatbottom, loss_fn=loss_fn)
 
     def __call__(self, pos, rot, seq, t):
-        '''
+        """
         pos: [BS, Frames, 3] with Atoms = [N, C_a, C, O] in nm
         rot: [BS, Frames, 3, 3]
-        '''
+        """
         # if t < 0.5:
         #     # If t < 0.5, we assume the potential is not applied yet
         #     return None
@@ -698,7 +805,7 @@ class StructuralViolation(Potential):
         loss = (
             # einops.reduce(bondangle_CaCN_loss, 'b ... -> b', "mean")
             # + einops.reduce(bondangle_CNCa_loss, 'b ... -> b', "mean")
-            einops.reduce(caca_bondlength_loss, 'b ... -> b', "mean")
+            einops.reduce(caca_bondlength_loss, "b ... -> b", "mean")
             # + einops.reduce(cn_bondlength_loss, 'b ... -> b', "mean")
             # + einops.reduce(caclash_potential, 'b ... -> b', "mean")
             # + clash_loss
@@ -712,36 +819,50 @@ class StructuralViolation(Potential):
         return loss
 
 
-def resample_batch(batch, num_fk_samples, num_resamples, energy, previous_energy=None):
+def resample_batch(
+    batch, num_fk_samples, num_resamples, energy, previous_energy=None, log_weights=None
+):
     """
     Resample the batch based on the energy.
     If previous_energy is provided, it is used to compute the resampling probability.
+    If log_weights is provided (from gradient guidance), it is added to correct the resampling probabilities.
     """
     BS = energy.shape[0] // num_fk_samples
     # assert energy.shape == (BS, num_fk_samples), f"Expected energy shape {(BS, num_fk_samples)}, got {energy.shape}"
 
     energy = energy.reshape(BS, num_fk_samples)
     # transition_log_prob = transition_log_prob.reshape(BS, num_fk_samples)
-    if previous_energy is not None: 
+    if previous_energy is not None:
         previous_energy = previous_energy.reshape(BS, num_fk_samples)
         # Compute the resampling probability based on the energy difference
         # If previous_energy > energy, high probability to resample since new energy is lower
-        resample_logprob = (previous_energy - energy)
+        resample_logprob = previous_energy - energy
     elif previous_energy is None:
         # If no previous energy is provided, use the energy directly
         # resample_prob = torch.exp(-energy).clamp(max=100)  # Avoid overflow
         resample_logprob = -energy
 
+    # Add importance weights from gradient guidance (if provided)
+    if log_weights is not None:
+        log_weights_grouped = log_weights.view(BS, num_fk_samples)
+        resample_logprob = resample_logprob + log_weights_grouped
+
     # Sample indices per sample in mini batch [BS, Replica]
     # p(i) = exp(-E_i) / Sum[exp(-E_i)]
     resample_prob = torch.exp(torch.nn.functional.log_softmax(resample_logprob, dim=-1))  # in [0,1]
-    indices = torch.multinomial(resample_prob, num_samples=num_resamples, replacement=True)  # [BS, num_fk_samples]
+    indices = torch.multinomial(
+        resample_prob, num_samples=num_resamples, replacement=True
+    )  # [BS, num_fk_samples]
     # indices = einops.repeat(torch.argmin(energy, dim=1), 'b -> b n', n=num_resamples)
-    BS_offset = torch.arange(BS).unsqueeze(-1) * num_fk_samples  # [0, 1xnum_fk_samples, 2xnum_fk_samples, ...]
+    BS_offset = (
+        torch.arange(BS).unsqueeze(-1) * num_fk_samples
+    )  # [0, 1xnum_fk_samples, 2xnum_fk_samples, ...]
     # The indices are of shape [BS, num_particles], with 0<= index < num_particles
     # We need to add the batch offset to get the correct indices in the energy tensor
     # e.g. [0, 1, 2]+(0xnum_fk_samples) + [0, 2, 2]+(1xnum_fk_samples) ... for num_fk_samples=3
-    indices = (indices + BS_offset.to(indices.device)).flatten()  # [BS, num_fk_samples] -> [BS*num_fk_samples] with offset
+    indices = (
+        indices + BS_offset.to(indices.device)
+    ).flatten()  # [BS, num_fk_samples] -> [BS*num_fk_samples] with offset
     # if len(set(indices.tolist())) < energy.shape[0]:
     #     dropped = set(range(energy.shape[0])) - set(indices.tolist())
     #     print(f"Dropped indices during resampling: {sorted(dropped)}")
@@ -753,4 +874,13 @@ def resample_batch(batch, num_fk_samples, num_resamples, energy, previous_energy
 
     resampled_energy = energy.flatten()[indices]  # [BS*num_fk_samples]
 
-    return batch, resampled_energy
+    # Reset log_weights after resampling (from enhancedsampling line 113)
+    if log_weights is not None:
+        # After resampling, all particles have uniform weight 1/num_fk_samples
+        resampled_log_weights = torch.log(
+            torch.ones(BS * num_resamples, device=batch.pos.device) / num_fk_samples
+        )
+    else:
+        resampled_log_weights = None
+
+    return batch, resampled_energy, resampled_log_weights
