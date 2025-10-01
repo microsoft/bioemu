@@ -107,10 +107,6 @@ def main(
     output_dir = Path(output_dir).expanduser().resolve()
     output_dir.mkdir(parents=True, exist_ok=True)  # Fail fast if output_dir is non-writeable
 
-    # Load steering configuration (similar to denoiser_config)
-    potentials = None
-    steering_config_dict = None
-
     if steering_config is None:
         # No steering - will pass None to denoiser
         steering_config_dict = None
@@ -149,16 +145,15 @@ def main(
             potentials_config = steering_config_dict.get("potentials", {})
 
             # Handle disulfide bridges special case
-            if disulfidebridges is not None:
-                # Load disulfide steering config and merge
-                disulfide_config_path = DEFAULT_STEERING_CONFIG_DIR / "disulfide_steering.yaml"
-                with open(disulfide_config_path) as f:
-                    disulfide_config = yaml.safe_load(f)
-                potentials_config.update(disulfide_config)
+            # if disulfidebridges is not None:
+            # Load disulfide steering config and merge
+            #     disulfide_config_path = DEFAULT_STEERING_CONFIG_DIR / "disulfide_steering.yaml"
+            #     with open(disulfide_config_path) as f:
+            #         disulfide_config = yaml.safe_load(f)
+            #     potentials_config.update(disulfide_config)
 
-            # Instantiate potentials
-            potentials_config_omega = OmegaConf.create(potentials_config)
-            potentials = hydra.utils.instantiate(potentials_config_omega)
+            # # Instantiate potentials
+            potentials = hydra.utils.instantiate(OmegaConf.create(potentials_config))
             potentials: list[Callable] = list(potentials.values())
 
             # Set specified_pairs on DisulfideBridgePotential if disulfidebridges was specified
@@ -178,15 +173,19 @@ def main(
                 ), "Disulfide pairs not correctly set"
 
             # Create final steering config (without potentials, those are passed separately)
-            steering_config_dict = {
-                "num_particles": num_particles,
-                "start": steering_config_dict.get("start", 0.0),
-                "end": steering_config_dict.get("end", 1.0),
-                "resampling_freq": steering_config_dict.get("resampling_freq", 1),
-                "fast_steering": steering_config_dict.get("fast_steering", False),
-                "guidance_learning_rate": steering_config_dict.get("guidance_learning_rate"),
-                "guidance_num_steps": steering_config_dict.get("guidance_num_steps"),
-            }
+            # Remove 'potentials' from steering_config_dict if present
+            steering_config_dict = dict(steering_config_dict)  # ensure mutable copy
+            steering_config_dict.pop("potentials", None)
+            # steering_config_dict = {
+            #     "num_particles": steering_config_dict["num_particles"],
+            #     "start": steering_config_dict["start"],
+            #     "end": steering_config_dict["end"],
+            #     "resampling_freq": steering_config_dict["resampling_freq"],
+            #     "fast_steering": steering_config_dict["fast_steering"],
+            #     "guidance_learning_rate": steering_config_dict["guidance_learning_rate"],
+            #     "guidance_num_steps": steering_config_dict["guidance_num_steps"],
+            #     "guidance_strength": steering_config_dict["guidance_strength"],
+            # }
         else:
             # num_particles <= 1, no steering
             steering_config_dict = None
@@ -311,6 +310,18 @@ def main(
             if steering_config_dict is not None:
                 actual_batch_size = actual_batch_size * num_particles
 
+        steering_config_dict = (
+            OmegaConf.create(steering_config_dict) if steering_config_dict is not None else None
+        )
+        print(
+            "steering_config_dict (OmegaConf):",
+            OmegaConf.to_yaml(steering_config_dict) if steering_config_dict is not None else None,
+        )
+        if potentials is not None:
+            print("Potentials:")
+            [print(f"\t {potential_}") for potential_ in potentials]
+        else:
+            print("Potentials: None")
         batch = generate_batch(
             score_model=score_model,
             sequence=sequence,

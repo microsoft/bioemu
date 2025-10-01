@@ -21,5 +21,6 @@ steering:
   end: 1.0 # End time for steering (default: continue until end)
   resampling_freq: 1
   fast_steering: false
+  guidance_strength: 3.0
   # Potentials configuration - uses physical_potentials.yaml
   potentials: physical_potentials

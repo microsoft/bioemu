@@ -702,7 +702,7 @@ class DisulfideBridgePotential(Potential):
     def __init__(
         self,
         flatbottom: float = 0.01,
-        slope: float = 10.0,
+        slope: float = 1.0,
         weight: float = 1.0,
         specified_pairs: list[tuple[int, int]] = None,
         guidance_steering: bool = False,
@@ -726,10 +726,11 @@ class DisulfideBridgePotential(Potential):
         # Define valid CaCa distance range for disulfide bridges (in Angstroms)
         self.min_valid_dist = 3.75  # Minimum valid CaCa distance
         self.max_valid_dist = 6.6  # Maximum valid CaCa distance
-        self.target = (self.min_valid_dist + self.max_valid_dist) / 2  # Target is middle of range
+        self.target = (self.min_valid_dist + self.max_valid_dist) / 2
+        self.flatbottom = (self.max_valid_dist - self.min_valid_dist) / 2
 
         # Parameters for potential function
-        self.order = 2.0
+        self.order = 1.0
         self.linear_from = 100.0
 
     def __call__(self, N_pos, Ca_pos, C_pos, O_pos, t=None, N=None):
@@ -744,9 +745,13 @@ class DisulfideBridgePotential(Potential):
         Returns:
             energy: [batch_size] potential energy per structure
         """
+        assert (
+            Ca_pos.ndim == 3
+        ), f"Expected Ca_pos to have 3 dimensions [BS, L, 3], got {Ca_pos.shape}"
 
         # Calculate CaCa distances for all specified pairs
-        energies = []
+        # energies = []
+        total_energy = 0
 
         for i, j in self.specified_pairs:
             # Extract Cα positions for the specified residues
@@ -758,14 +763,23 @@ class DisulfideBridgePotential(Potential):
 
             # Apply double-sided potential to keep distance within valid range
             # For distances below min_valid_dist
-            energy = (distance - self.min_valid_dist) ** self.order
+            energy = potential_loss_fn(
+                distance,
+                target=self.target,
+                flatbottom=self.flatbottom,
+                slope=self.slope,
+                order=self.order,
+                linear_from=self.linear_from,
+            )
+            total_energy = total_energy + energy
 
-            energies.append(energy)
+        if (1 - t / N) < 0.2:
+            total_energy = torch.zeros_like(total_energy)
 
-        total_energy = torch.stack(energies, dim=-1).sum(dim=-1)
-        print(
-            f"total_energy.shape: {total_energy.shape}, {distance.mean().item()} vs {self.min_valid_dist}"
-        )
+        # total_energy = torch.stack(energies, dim=-1).sum(dim=-1)
+        # print(
+        #     f"total_energy.shape: distance: {distance.mean().item():.2f} vs {self.min_valid_dist}"
+        # )
 
         return self.weight * total_energy
 

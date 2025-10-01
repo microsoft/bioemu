@@ -12,11 +12,11 @@ from torch_geometric.data.batch import Batch
 import time
 import torch.autograd.profiler as profiler
 from torch.profiler import profile, ProfilerActivity, record_function
-from tqdm import tqdm
+from tqdm.notebook import tqdm
 
-from .chemgraph import ChemGraph
-from .sde_lib import SDE, CosineVPSDE
-from .so3_sde import SO3SDE, apply_rotvec_to_rotmat
+from bioemu.chemgraph import ChemGraph
+from bioemu.sde_lib import SDE, CosineVPSDE
+from bioemu.so3_sde import SO3SDE, apply_rotvec_to_rotmat
 from bioemu.steering import (
     get_pos0_rot0,
     ChainBreakPotential,
@@ -298,6 +298,11 @@ def dpm_solver(
     Implements the DPM solver for the VPSDE, with the Cosine noise schedule.
     Following this paper: https://arxiv.org/abs/2206.00927 Algorithm 1 DPM-Solver-2.
     DPM solver is used only for positions, not node orientations.
+
+    Args:
+        steering_config: Configuration dictionary for steering. Can include:
+            - guidance_strength: Controls the strength of guidance steering (default: 3.0)
+            - Other steering parameters (start, end, num_particles, etc.)
     """
     grad_is_enabled = torch.is_grad_enabled()
     assert isinstance(batch, Batch)
@@ -466,8 +471,8 @@ def dpm_solver(
                 # Compute weighted combination of original and universal scores
                 # Weight scheduling (from enhancedsampling)
                 current_t = t_lambda[0].item()
-                # w_t_mod = torch.relu(3 * (torch.tensor(current_t, device=device) - 0.1))
-                w_t_mod = torch.tensor(3.0, device=device)
+                w_t_mod = torch.relu(3 * (torch.tensor(current_t, device=device) - 0.1))
+                # w_t_mod = torch.tensor(steering_config["guidance_strength"], device=device)
                 w_t_orig = torch.tensor(1.0, device=device)
                 w_t_mod = w_t_mod / (w_t_orig + w_t_mod)
                 w_t_orig = w_t_orig / (w_t_orig + w_t_mod)
@@ -494,8 +499,12 @@ def dpm_solver(
                 )
 
                 # Accumulate log weights
-                log_weights = log_weights + step_log_weight * 0.0
+                log_weights = log_weights + step_log_weight
                 score_u["pos"] = modified_score_u_pos
+
+                print(f"Sampling {timesteps[i]:.3f}: Guidance")
+            else:
+                print(f"Sampling {timesteps[i]:.3f}: No Guidance")
 
         pos_next = (
             alpha_t_next / alpha_t * batch_hat.pos

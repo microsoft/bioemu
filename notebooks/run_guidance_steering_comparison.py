@@ -88,17 +88,18 @@ def run_experiment(cfg, sequence="GYDPETGTWG", experiment_type="no_steering"):
             steering_config = steering_config | {
                 "guidance_learning_rate": 0.1,  # Required when any potential has guidance_steering=True
                 "guidance_num_steps": 50,  # Required when any potential has guidance_steering=True
+                "guidance_strength": cfg.steering.guidance_strength,
             }
             print(
                 f"Guidance steering: {cfg.steering.num_particles} particles, "
-                f"guidance_steering=True, lr={steering_config['guidance_learning_rate']}, steps={steering_config['guidance_num_steps']}"
+                f"guidance_steering=True, lr={steering_config['guidance_learning_rate']}, steps={steering_config['guidance_num_steps']} {steering_config['guidance_strength']=}"
             )
         # pass
     else:
         raise ValueError(f"Unknown experiment type: {experiment_type}")
 
     if steering_config:
-        print("Steering config:")
+        print("\nSteering config:")
         [print(f"{k:<15}: {v}") for k, v in steering_config.items()]
 
     # Run sampling
@@ -130,13 +131,14 @@ def run_experiment(cfg, sequence="GYDPETGTWG", experiment_type="no_steering"):
     return samples
 
 
-def analyze_and_compare(samples_dict, cfg):
+def analyze_and_compare(samples_dict, cfg, title=None):
     """
     Analyze and compare termini distances across all experiments.
 
     Args:
         samples_dict: Dictionary of {experiment_type: samples}
         cfg: Configuration object
+        title: Optional title for the plot
     """
     print(f"\n{'=' * 60}")
     print("ANALYZING TERMINI DISTRIBUTIONS")
@@ -272,6 +274,10 @@ def analyze_and_compare(samples_dict, cfg):
             bar.get_x() + bar.get_width() / 2.0, height, f"{val:.4f}", ha="center", va="bottom"
         )
 
+    # Add overall title if provided
+    if title:
+        plt.suptitle(title, fontsize=16, fontweight="bold")
+
     plt.tight_layout()
 
     # Save the plot
@@ -299,72 +305,79 @@ def compute_kl_divergence(empirical_data, analytical_distribution, x_centers, bi
 def main(cfg):
     """Main function to run 3-way comparison: no steering, resampling only, guidance steering."""
     # Override parameters
-    cfg = hydra.compose(
-        config_name="bioemu.yaml",
-        overrides=[
-            "sequence=GYDPETGTWG",
-            "num_samples=400",  # More samples for better statistics
-            "denoiser=dpm",
-            "denoiser.N=50",
-            "steering.start=0.9",
-            "steering.end=0.1",
-            "steering.resampling_freq=1",
-            "steering.num_particles=2",
-            "steering.potentials=chingolin_steering",
-        ],
-    )
+    for num_particles in [2, 5, 10]:
+        for guidance_strength in [0, 1, 3]:
 
-    print("=" * 60)
-    print("GUIDANCE STEERING COMPARISON TEST")
-    print("=" * 60)
-    print(f"Sequence: {cfg.sequence} (length: {len(cfg.sequence)})")
-    print(f"Num samples: {cfg.num_samples}")
-    print(f"Num particles: {cfg.steering.num_particles}")
-    print("=" * 60)
+            cfg = hydra.compose(
+                config_name="bioemu.yaml",
+                overrides=[
+                    "sequence=GYDPETGTWG",
+                    "num_samples=500",  # More samples for better statistics
+                    "denoiser=dpm",
+                    "denoiser.N=50",
+                    "steering.start=0.9",
+                    "steering.end=0.1",
+                    "steering.resampling_freq=1",
+                    f"steering.num_particles={num_particles}",
+                    f"steering.guidance_strength={guidance_strength}",
+                    "steering.potentials=chingolin_steering",
+                ],
+            )
 
-    # Initialize wandb
-    wandb.init(
-        project="bioemu-guidance-steering-test",
-        name=f"guidance_test_{cfg.sequence[:10]}",
-        config={
-            "sequence": cfg.sequence,
-            "sequence_length": len(cfg.sequence),
-            "test_type": "guidance_steering_comparison",
-        }
-        | dict(OmegaConf.to_container(cfg, resolve=True)),
-        mode="disabled",
-        settings=wandb.Settings(code_dir=".."),
-    )
+            print("=" * 60)
+            print("GUIDANCE STEERING COMPARISON TEST")
+            print("=" * 60)
+            print(f"Sequence: {cfg.sequence} (length: {len(cfg.sequence)})")
+            print(f"Num samples: {cfg.num_samples}")
+            print(f"Num particles: {cfg.steering.num_particles}")
+            print("=" * 60)
 
-    # Run all 3 experiments
-    experiments = ["no_steering", "resampling_only", "guidance_steering"]
-    samples_dict = {}
+            # Initialize wandb
+            wandb.init(
+                project="bioemu-guidance-steering-test",
+                name=f"guidance_test_{cfg.sequence[:10]}",
+                config={
+                    "sequence": cfg.sequence,
+                    "sequence_length": len(cfg.sequence),
+                    "test_type": "guidance_steering_comparison",
+                }
+                | dict(OmegaConf.to_container(cfg, resolve=True)),
+                mode="disabled",
+                settings=wandb.Settings(code_dir=".."),
+            )
 
-    for exp_type in experiments:
-        samples_dict[exp_type] = run_experiment(cfg, cfg.sequence, experiment_type=exp_type)
+            # Run all 3 experiments
+            experiments = ["no_steering", "resampling_only", "guidance_steering"]
+            samples_dict = {}
 
-    # Analyze and compare results
-    kl_divs = analyze_and_compare(samples_dict, cfg)
+            for exp_type in experiments:
+                samples_dict[exp_type] = run_experiment(cfg, cfg.sequence, experiment_type=exp_type)
 
-    # Print final summary
-    print(f"\n{'=' * 60}")
-    print("FINAL RESULTS SUMMARY")
-    print(f"{'=' * 60}")
-    for exp_type in experiments:
-        label = exp_type.replace("_", " ").title()
-        print(f"{label:30s}: KL Divergence = {kl_divs[exp_type]:.4f}")
+            # Create title with parameters
+            title = f"Guidance Steering Comparison\nNum Particles: {cfg.steering.num_particles}, Guidance Strength: {cfg.steering.guidance_strength}"
 
-    # Check if guidance steering improves over resampling only
-    improvement = kl_divs["resampling_only"] - kl_divs["guidance_steering"]
-    print(f"\n{'=' * 60}")
-    if improvement > 0:
-        print(f"✓ SUCCESS: Guidance steering IMPROVED KL by {improvement:.4f}")
-        print(f"  (Lower KL divergence means better alignment with target distribution)")
-    else:
-        print(f"✗ WARNING: Guidance steering did NOT improve KL (diff: {improvement:.4f})")
-    print(f"{'=' * 60}")
+            # Analyze and compare results
+            kl_divs = analyze_and_compare(samples_dict, cfg, title=title)
 
-    wandb.finish()
+            # Print final summary
+            print(f"\n{'=' * 60}")
+            print("FINAL RESULTS SUMMARY")
+            print(f"{'=' * 60}")
+            for exp_type in experiments:
+                label = exp_type.replace("_", " ").title()
+                print(f"{label:30s}: KL Divergence = {kl_divs[exp_type]:.4f}")
+
+            # Check if guidance steering improves over resampling only
+            improvement = kl_divs["resampling_only"] - kl_divs["guidance_steering"]
+            print(f"\n{'=' * 60}")
+            if improvement > 0:
+                print(f"✓ SUCCESS: Guidance steering IMPROVED KL by {improvement:.4f}")
+                print(f"  (Lower KL divergence means better alignment with target distribution)")
+            else:
+                print(f"✗ WARNING: Guidance steering did NOT improve KL (diff: {improvement:.4f})")
+            print(f"{'=' * 60}")
+
+            wandb.finish()
 
 
 if __name__ == "__main__":
