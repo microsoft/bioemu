@@ -605,8 +605,13 @@ def dpm_solver(
                         log_weights=log_weights,
                     )
                     previous_energy = total_energy
-                elif N - 1 == i:
-                    # print('Final Resampling [BS, FK_particles] back to BS')
+                elif N - 2 == i:  # The last step is N-2
+                    print("Final Resampling [BS, FK_particles] back to BS, with real x0 instead of pred x0.")
+                    energies = []
+                    for potential_ in fk_potentials:
+                        energies += [potential_(None, 10 * batch.pos, None, None, t=i, N=N)]
+                    total_energy = torch.stack(energies, dim=-1).sum(-1)  # [BS]
+
                     batch, total_energy, log_weights = resample_batch(
                         batch=batch,
                         energy=total_energy,
