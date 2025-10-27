@@ -321,9 +321,7 @@ class SAEncoder(nn.Module):
     ) -> torch.Tensor:
         batch_index = context.batch
         edge_index = context.edge_index
-        node_labels = context.get(
-            "node_labels", None
-        )  # node_labels is used for extra residue embeddings.
+        node_labels = context.node_labels  # node_labels is used for extra residue embeddings.
 
         for module in self.layers:
             x1d = module(

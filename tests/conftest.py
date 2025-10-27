@@ -11,6 +11,7 @@ import yaml
 from torch_geometric.data import Batch
 
 from bioemu.chemgraph import ChemGraph
+from bioemu.sample import _NODE_LABEL_MAPPING
 from bioemu.sde_lib import SDE
 from bioemu.shortcuts import CosineVPSDE, DiGConditionalScoreModel, DiGSO3SDE
 
@@ -152,6 +153,7 @@ def _get_dicts():
         edge_index=edge_index,
         single_embeds=torch.full(size=[num_nodes, 384], fill_value=0.5, dtype=DTYPE),
         pair_embeds=torch.full(size=[num_nodes**2, 128], fill_value=0.2, dtype=DTYPE),
+        node_labels=torch.LongTensor([_NODE_LABEL_MAPPING[x] for x in "GYDPETGTWG"]),
     )
     chemgraph2 = copy.copy(chemgraph1) | dict(
         single_embeds=chemgraph1["single_embeds"] + 0.1,
