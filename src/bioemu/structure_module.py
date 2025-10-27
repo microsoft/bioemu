@@ -9,7 +9,7 @@ import torch.nn.functional as F
 from torch import nn
 from torch_geometric.utils import to_dense_adj, to_dense_batch
 
-from .data import ChemGraph
+from .chemgraph import ChemGraph
 
 
 class FeedForward(nn.Module):
@@ -271,7 +271,7 @@ class SAEncoderLayer(nn.Module):
         bias: torch.Tensor,
         batch_index: torch.Tensor,
         edge_index: torch.Tensor,
-        node_labels: torch.Tensor | None = None,
+        node_labels: torch.LongTensor | None = None,
     ) -> torch.Tensor:
         # Add additional residue embeddings if specified
         if self.extra_residue_embeds:
@@ -352,6 +352,7 @@ class StructureModule(nn.Module):
         x1d: torch.Tensor,
         x2d: torch.Tensor,
         bias: torch.Tensor,
+        context: ChemGraph,
     ) -> tuple[torch.Tensor, torch.Tensor]:
-        x1d = self.encoder(x1d, x2d, pose, bias)
+        x1d = self.encoder(x1d, x2d, pose, bias, context=context)
         return self.diff_head(x1d)
