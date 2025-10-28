@@ -48,6 +48,7 @@ def test_ppft_loss(tiny_model, p_fold_target, expected_loss, sdes, chignolin_pdb
         sequence=sequence,
         system_id=system_id,
         node_orientations=orientations,
+        node_labels=torch.LongTensor([0 for _ in sequence]),
     )
     chemgraph2 = chemgraph1.replace(pos=pos2)
     chemgraph_list = [chemgraph1, chemgraph2]
