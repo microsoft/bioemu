@@ -249,19 +249,10 @@ class SAEncoderLayer(nn.Module):
             self.x2d_mul = nn.Embedding(1000, d_pair)
             self.x2d_add = nn.Embedding(1000, d_pair)
 
-            # Add one scalar "alpha" which is a trainable parameter
+            # alpha_1d and alpha_2d control the contribution of the extra residue embeddings.
+            # When zero, the extra embeddings have no effect.
             self.alpha_1d = nn.Parameter(torch.tensor(0.0))
             self.alpha_2d = nn.Parameter(torch.tensor(0.0))
-
-            # Initialize embeddings with specific values
-            self._initialize_embeddings()
-
-    def _initialize_embeddings(self):
-        # Initialize multiplicative embeddings with 1s
-        nn.init.normal_(self.x1d_mul.weight, mean=0.0, std=1.0)
-        nn.init.normal_(self.x1d_add.weight, mean=0.0, std=1.0)
-        nn.init.normal_(self.x2d_mul.weight, mean=0.0, std=1.0)
-        nn.init.normal_(self.x2d_add.weight, mean=0.0, std=1.0)
 
     def forward(
         self,
