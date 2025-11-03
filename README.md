@@ -25,7 +25,7 @@ This repository contains inference code and model weights.
 - [Citation](#citation)
 
 ## Installation
-bioemu is provided as a Linux-only pip-installable package:
+bioemu is provided as a Linux-only pip-installable package. We currently only support Python versions from 3.10 to 3.12:
 
 ```bash
 pip install bioemu
