@@ -13,7 +13,7 @@
 
 Biomolecular Emulator (BioEmu for short) is a model that samples from the approximated equilibrium distribution of structures for a protein monomer, given its amino acid sequence.
 
-For more information, see our [preprint](https://www.biorxiv.org/content/10.1101/2024.12.05.626885v1.abstract).
+For more information see our <a href="assets/bioemu_paper.pdf" target="_blank">paper</a>, [citation below](#citation).
 
 This repository contains inference code and model weights.
 
@@ -26,7 +26,7 @@ This repository contains inference code and model weights.
 - [Citation](#citation)
 
 ## Installation
-bioemu is provided as a Linux-only pip-installable package:
+bioemu is provided as a Linux-only pip-installable package. We currently only support Python versions from 3.10 to 3.12:
 
 ```bash
 pip install bioemu
@@ -144,7 +144,7 @@ python -m bioemu.sidechain_relax --pdb-path path/to/topology.pdb --xtc-path path
 
 
 > [!NOTE]
-> The first time this module is invoked, it will attempt to install `hpacker` and its dependencies into a separate `hpacker` conda environment. If you wish for it to be installed in a different location, please set the `HPACKER_ENVNAME` environment variable before using this module for the first time.
+> The first time this module is invoked, it will attempt to install `hpacker` and its dependencies into a separate `hpacker` conda environment. If you wish for it to be installed in a different location, please set the `HPACKER_ENV_NAME` environment variable before using this module for the first time.
 
 By default, side-chain reconstruction and local energy minimization are performed (no full MD integration for efficiency reasons).
 Note that the runtime of this code scales with the size of the system.
@@ -164,14 +164,15 @@ The code in the `openfold` subdirectory is copied from [openfold](https://github
 If you have any questions not covered here, please create an issue or contact the BioEmu team by writing to the corresponding author on our [preprint](https://doi.org/10.1101/2024.12.05.626885).
 
 ## Citation
-If you are using our code or model, please consider citing our work:
+If you are using our code or model, please cite the following paper:
 ```bibtex
 @article{bioemu2025,
   title={Scalable emulation of protein equilibrium ensembles with generative deep learning},
-  author={Lewis, Sarah and Hempel, Tim and Jim{\'e}nez-Luna, Jos{\'e} and Gastegger, Michael and Xie, Yu and Foong, Andrew YK and Satorras, Victor Garc{\'\i}a and Abdin, Osama and Veeling, Bastiaan S and Zaporozhets, Iryna and others},
+  author={Lewis, Sarah and Hempel, Tim and Jim{\'e}nez-Luna, Jos{\'e} and Gastegger, Michael and Xie, Yu and Foong, Andrew YK and Satorras, Victor Garc{\'\i}a and Abdin, Osama and Veeling, Bastiaan S and Zaporozhets, Iryna and Chen, Yaoyi and Yang, Soojung and Foster, Adam E. and Schneuing, Arne and Nigam, Jigyasa and Barbero, Federico and Stimper Vincent and  Campbell, Andrew and Yim, Jason and Lienen, Marten and Shi, Yu and Zheng, Shuxin and Schulz, Hannes and Munir, Usman and Sordillo, Roberto and Tomioka, Ryota and Clementi, Cecilia and No{\'e},  Frank},
   journal={Science},
   pages={eadv9817},
   year={2025},
-  publisher={American Association for the Advancement of Science}
+  publisher={American Association for the Advancement of Science},
+  doi={10.1126/science.adv9817}
 }
 ```

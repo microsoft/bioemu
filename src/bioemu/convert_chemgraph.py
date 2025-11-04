@@ -8,6 +8,7 @@ from matplotlib.pylab import f
 import mdtraj
 import numpy as np
 import torch
+from scipy.spatial import KDTree
 
 # No wandb logging needed
 
@@ -378,6 +379,7 @@ def _adjust_oxygen_pos(
     return atom_37
 
 
+
 def _adjust_oxygen_pos_batched(
     atom_37: torch.Tensor, pos_is_known: torch.Tensor | None = None
 ) -> torch.Tensor:
@@ -469,6 +471,38 @@ def _adjust_oxygen_pos_batched(
 
     return atom_37
 
+def _get_frames_non_clash_kdtree(
+    traj: mdtraj.Trajectory, clash_distance_angstrom: float
+) -> np.ndarray:
+    """Faster check for clashes using kd-trees. This version is faster than _get_frames_non_clash_mdtraj when there are many atoms, and also requires less memory."""
+    frames_non_clash = np.full(len(traj), True, dtype=bool)
+    atom2res = np.asarray([a.residue.index for a in traj[0].topology._atoms])
+    # Do not use 'enumerate(traj)' because if traj.time is missing or too short, it won't look at all the frames.
+    for i in range(len(traj)):
+        frame_kdtree = KDTree(traj.xyz[i, :, :])
+        frame_atom_pairs = frame_kdtree.query_pairs(
+            r=mdtraj.utils.in_units_of(clash_distance_angstrom, "angstrom", "nanometers")
+        )
+        for atom_pair in frame_atom_pairs:
+            # mdtraj.compute_contacts ignores the residue pairs (i,i+1) and (i,i+2)
+            if atom2res[atom_pair[1]] - atom2res[atom_pair[0]] > 2:
+                frames_non_clash[i] = False
+                break
+    return frames_non_clash
+
+
+def _get_frames_non_clash_mdtraj(
+    traj: mdtraj.Trajectory, clash_distance_angstrom: float
+) -> np.ndarray:
+    """Check for clashes using mdtraj.compute_contacts. This version is faster than _get_frames_non_clash_kdtree when there are few atoms."""
+    res_distances, _ = mdtraj.compute_contacts(traj, periodic=False)
+    frames_non_clash = np.all(
+        mdtraj.utils.in_units_of(res_distances, "nanometers", "angstrom") > clash_distance_angstrom,
+        axis=1,
+    )
+    return frames_non_clash
+
+
 
 def _filter_unphysical_traj_masks(
     traj: mdtraj.Trajectory,
@@ -514,6 +548,7 @@ def _filter_unphysical_traj_masks(
     frames_match_cn_seq_distance = np.all(cn_seq_distances < max_cn_seq_distance, axis=1)
 
     # Clashes between any two atoms from different residues
+
     rest_distances, _ = mdtraj.compute_contacts(traj, periodic=False)
     frames_non_clash = np.all(
         mdtraj.utils.in_units_of(rest_distances, "nanometers", "angstrom") > clash_distance,
@@ -528,6 +563,12 @@ def _filter_unphysical_traj_masks(
     path = str(Path(".").absolute()) + "/outputs/analysis"
     np.savez(path, **violations)
     # data = np.load(os.getcwd()+'/outputs/analysis.npz'); {key: data[key] for key in data.keys()}
+
+    if traj.n_residues <= 100:
+        frames_non_clash = _get_frames_non_clash_mdtraj(traj, clash_distance)
+    else:
+        frames_non_clash = _get_frames_non_clash_kdtree(traj, clash_distance)
+
     return frames_match_ca_seq_distance, frames_match_cn_seq_distance, frames_non_clash
 
 
@@ -687,6 +728,7 @@ def save_pdb_and_xtc(
     if filter_samples:
         num_samples_unfiltered = len(traj)
         logger.info("Filtering samples ...")
+
         traj = filter_unphysical_traj(traj)
         logger.info(
             f"Filtered {num_samples_unfiltered} samples down to {len(traj)} "
@@ -697,6 +739,29 @@ def save_pdb_and_xtc(
             "based on structure criteria. Filtering can be disabled with `--filter_samples=False`.",
         )
         # Filtering ratio computed but not logged
+
+        filtered_traj = filter_unphysical_traj(traj)
+
+        if filtered_traj.n_frames == 0:
+            xtc_path = Path(xtc_path).with_suffix("_unphysical.xtc")
+            logger.warning(
+                """Ended up with no physical samples after filtering. Here are a few things you can try to solve this:
+            1. Increase the number of requested samples.
+            2. Try with a different `denoiser_type` (e.g., `'heun'`), or increase the number of denoising steps through the
+               `denoiser_config_path` parameter. Some config examples can be found in `bioemu.sample.DEFAULT_DENOISER_CONFIG_DIR`
+            3. Disable the default filtering of unphysical samples by setting `filter_samples=False`.
+            All unphysical samples have been saved with the suffix `_unphysical.xtc`.
+            """
+            )
+        else:
+            if len(filtered_traj) < num_samples_unfiltered:
+                logger.info(
+                    f"Filtered {num_samples_unfiltered} samples down to {len(filtered_traj)} "
+                    "based on structure criteria. Filtering can be disabled with `--filter_samples=False`."
+                )
+            traj = filtered_traj
+
+
     traj.superpose(reference=traj, frame=0)
     traj.save_xtc(xtc_path)
 

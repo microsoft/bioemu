@@ -36,7 +36,38 @@ DEFAULT_STEERING_CONFIG_DIR = Path(__file__).parent / "config/steering/"
 SupportedDenoisersLiteral = Literal["dpm", "heun"]
 SUPPORTED_DENOISERS = list(typing.get_args(SupportedDenoisersLiteral))
 
+
 DEFAULT_STEERING_CONFIG_DIR = Path(__file__).parent / "config/steering/"
+
+# Mapping used in training of BioEmu-1.2 model.
+_NODE_LABEL_MAPPING: dict[str, int] = {
+    "A": 1,
+    "R": 15,
+    "N": 12,
+    "D": 3,
+    "C": 2,
+    "Q": 14,
+    "E": 4,
+    "G": 6,
+    "H": 7,
+    "I": 8,
+    "L": 10,
+    "K": 9,
+    "M": 11,
+    "F": 5,
+    "P": 13,
+    "S": 16,
+    "T": 17,
+    "W": 19,
+    "Y": 20,
+    "V": 18,
+    "U": 21,
+    "O": 22,
+    "X": 0,
+    "B": 23,
+    "Z": 25,
+}
+
 
 
 @print_traceback_on_exception
@@ -360,6 +391,8 @@ def get_context_chemgraph(
     pos = torch.full((n, 3), float("nan"))
     node_orientations = torch.full((n, 3, 3), float("nan"))
 
+    node_labels = torch.LongTensor([_NODE_LABEL_MAPPING[aa] for aa in sequence])
+
     return ChemGraph(
         edge_index=edge_index,
         pos=pos,
@@ -367,6 +400,7 @@ def get_context_chemgraph(
         single_embeds=single_embeds,
         pair_embeds=pair_embeds,
         sequence=sequence,
+        node_labels=node_labels,
     )
 
 

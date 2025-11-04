@@ -157,6 +157,7 @@ class DistributionalGraphormer(nn.Module):
         num_buckets: int = 64,
         max_distance_relative: int = 128,
         dropout: float = 0.1,
+        extra_residue_embeds: bool = False,
     ):
         """
         Basic distributional graphormer model. For architecture details, please refer to:
@@ -173,6 +174,7 @@ class DistributionalGraphormer(nn.Module):
             num_buckets: Number of buckets used in relative positional encoding.
             max_distance_relative: Maximum distance considered in relative positional encoding.
             dropout: _description_. Defaults to 0.1.
+            extra_residue_embeds: Whether to use additional residue embeddings.
 
             Let (T_in, R_in) be the input frames, and let (T, R) be an arbitrary rotation and translation.
             Let T_out, R_out = model(T_in, R_in). And let T_out_transformed, R_out_transformed = model((T, R) * (T_in, R_in)), where frames are
@@ -212,6 +214,7 @@ class DistributionalGraphormer(nn.Module):
             n_head=num_heads,
             dim_feedforward=dim_hidden,
             dropout=dropout,
+            extra_residue_embeds=extra_residue_embeds,
         )
 
     def forward(
@@ -298,7 +301,7 @@ class DistributionalGraphormer(nn.Module):
             T_eps,
             IR_eps,
         ) = self.st_module(  # st_module plays an equivalent role to BackboneUpdate in the Algorithm 20 of AF2 supplement.
-            (T_perturbed, IR_perturbed), x1d, x2d, bias
+            (T_perturbed, IR_perturbed), x1d, x2d, bias, context
         )
 
         # Introduce orientation dependence of the translation score.
@@ -339,6 +342,7 @@ class DiGConditionalScoreModel(torch.nn.Module):
         num_buckets: int = 64,
         max_distance_relative: int = 128,
         dropout: float = 0.1,
+        extra_residue_embeds: bool = False,
     ):
         """
         Args: all passed through to DistributionalGraphormer
@@ -354,6 +358,7 @@ class DiGConditionalScoreModel(torch.nn.Module):
             num_buckets=num_buckets,
             max_distance_relative=max_distance_relative,
             dropout=dropout,
+            extra_residue_embeds=extra_residue_embeds,
         )
 
     def forward(self, x: ChemGraph, t: torch.Tensor) -> ChemGraph:

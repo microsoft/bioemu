@@ -7,6 +7,9 @@ import math
 import torch
 import torch.nn.functional as F
 from torch import nn
+from torch_geometric.utils import to_dense_adj, to_dense_batch
+
+from .chemgraph import ChemGraph
 
 
 class FeedForward(nn.Module):
@@ -230,12 +233,26 @@ class SAEncoderLayer(nn.Module):
         n_head: int,
         dim_feedforward: int,
         dropout: float,
+        extra_residue_embeds: bool = False,
     ):
         super().__init__()
         self.norm1 = nn.LayerNorm(d_model)
         self.attn = SAAttention(d_model=d_model, d_pair=d_pair, n_head=n_head, dropout=dropout)
         self.norm2 = nn.LayerNorm(d_model)
         self.ffn = FeedForward(d_model=d_model, dim_feedforward=dim_feedforward, dropout=dropout)
+        self.extra_residue_embeds = extra_residue_embeds
+        if self.extra_residue_embeds:
+            # Define embeddings for 1D and 2D features. 1D is for residue types, we assume the number of residue types is not more than 30.
+            # 2D is for pairwise combinations of residue types, so we assume n_residue_types^2 combinations, use 1000 for safety.
+            self.x1d_mul = nn.Embedding(30, d_model)
+            self.x1d_add = nn.Embedding(30, d_model)
+            self.x2d_mul = nn.Embedding(1000, d_pair)
+            self.x2d_add = nn.Embedding(1000, d_pair)
+
+            # alpha_1d and alpha_2d control the contribution of the extra residue embeddings.
+            # When zero, the extra embeddings have no effect.
+            self.alpha_1d = nn.Parameter(torch.tensor(0.0))
+            self.alpha_2d = nn.Parameter(torch.tensor(0.0))
 
     def forward(
         self,
@@ -243,7 +260,36 @@ class SAEncoderLayer(nn.Module):
         x2d: torch.Tensor,
         pose: tuple[torch.Tensor, torch.Tensor],
         bias: torch.Tensor,
+        batch_index: torch.Tensor,
+        edge_index: torch.Tensor,
+        node_labels: torch.LongTensor | None = None,
     ) -> torch.Tensor:
+        # Add additional residue embeddings if specified
+        if self.extra_residue_embeds:
+            assert node_labels is not None
+            node_emb_mul_batch = self.x1d_mul(node_labels)
+            node_emb_mul, _ = to_dense_batch(
+                node_emb_mul_batch, batch_index
+            )  # [B, L, 384], embedding of the node features.
+            node_emb_add_batch = self.x1d_add(node_labels)
+            node_emb_add, _ = to_dense_batch(node_emb_add_batch, batch_index)
+
+            # Create edge_labels from pair-wise node labels
+            assert edge_index is not None
+            edge_labels = node_labels[edge_index[0]] * 30 + node_labels[edge_index[1]]
+
+            edge_emb_mul_batch = self.x2d_mul(edge_labels)
+            edge_emb_mul = to_dense_adj(  # [B, L, L, 128]
+                edge_index, batch_index, edge_attr=edge_emb_mul_batch
+            ).to(torch.float32)
+            edge_emb_add_batch = self.x2d_add(edge_labels)
+            edge_emb_add = to_dense_adj(edge_index, batch_index, edge_attr=edge_emb_add_batch).to(
+                torch.float32
+            )
+
+            x1d = x1d + self.alpha_1d * (x1d * node_emb_mul + node_emb_add)
+            x2d = x2d + self.alpha_2d * (x2d * edge_emb_mul + edge_emb_add)
+
         x1d = x1d + self.attn(self.norm1(x1d), x2d, pose, bias)
         x1d = x1d + self.ffn(self.norm2(x1d))
         return x1d
@@ -262,9 +308,22 @@ class SAEncoder(nn.Module):
         x2d: torch.Tensor,
         pose: tuple[torch.Tensor, torch.Tensor],
         bias: torch.Tensor,
+        context: ChemGraph,
     ) -> torch.Tensor:
+        batch_index = context.batch
+        edge_index = context.edge_index
+        node_labels = context.node_labels  # node_labels is used for extra residue embeddings.
+
         for module in self.layers:
-            x1d = module(x1d, x2d, pose, bias)
+            x1d = module(
+                x1d,
+                x2d,
+                pose,
+                bias,
+                batch_index=batch_index,
+                edge_index=edge_index,
+                node_labels=node_labels,
+            )
         return x1d
 
 
@@ -282,6 +341,7 @@ class StructureModule(nn.Module):
         x1d: torch.Tensor,
         x2d: torch.Tensor,
         bias: torch.Tensor,
+        context: ChemGraph,
     ) -> tuple[torch.Tensor, torch.Tensor]:
-        x1d = self.encoder(x1d, x2d, pose, bias)
+        x1d = self.encoder(x1d, x2d, pose, bias, context=context)
         return self.diff_head(x1d)

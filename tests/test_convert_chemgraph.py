@@ -2,9 +2,17 @@
 # Licensed under the MIT License.
 from pathlib import Path
 
+import mdtraj
+import numpy as np
 import torch
 
-from bioemu.convert_chemgraph import _adjust_oxygen_pos, _write_pdb, get_atom37_from_frames
+from bioemu.convert_chemgraph import (
+    _adjust_oxygen_pos,
+    _get_frames_non_clash_kdtree,
+    _get_frames_non_clash_mdtraj,
+    _write_pdb,
+    get_atom37_from_frames,
+)
 
 BATCH_SIZE = 32
 
@@ -66,6 +74,7 @@ def test_adjust_oxygen_pos(bb_pos_1ake):
     assert torch.mean(errors[:-1]) < 0.1
     assert errors[-1] < 3.0
     assert torch.allclose(original_oxygen_pos[:-1], new_oxygen_pos[:-1], rtol=5e-2)
+
 
 
 def test_tensor_batch_atom37_conversion(default_batch):
@@ -389,3 +398,20 @@ def test_atom37_reconstruction_ground_truth(default_batch):
     print(f"  - Pairwise distances computed: ✓")
     print(f"  - Backbone geometry validated: ✓")
     print(f"  - Single vs batched consistency: ✓")
+
+def test_get_frames_non_clash():
+    chignolin_pdb = Path(__file__).parent / "test_data" / "cln_bad_sample.pdb"
+    traj = mdtraj.load(chignolin_pdb)
+    n = 5
+    assert traj.n_frames == 1
+    # Now add a lot more frames with dummy data
+    _, n_atoms, _ = traj.xyz.shape
+    xyz = np.zeros((n, n_atoms, 3)) + np.arange(n_atoms).reshape(1, n_atoms, 1)
+    xyz = xyz * np.arange(n).reshape(n, 1, 1) * 0.01
+    traj.xyz = xyz
+    assert traj.n_frames == n
+    frames_non_clash_mdtraj = _get_frames_non_clash_mdtraj(traj, clash_distance_angstrom=5.0)
+    frames_non_clash_kdtree = _get_frames_non_clash_kdtree(traj, clash_distance_angstrom=5.0)
+    assert np.all(frames_non_clash_mdtraj == [False, False, False, True, True])
+    assert np.all(frames_non_clash_kdtree == [False, False, False, True, True])
+
