@@ -173,11 +173,11 @@ def analyze_termini_distribution(steered_samples, no_steering_samples, cfg):
     )
 
     # Add theoretical potential and analytical posterior
-    # Extract potential parameters - load chingolin_steering config
+    # Extract potential parameters - load chignolin_steering config
     import os
 
     potentials_path = os.path.join(
-        os.path.dirname(__file__), "../src/bioemu/config/steering/chingolin_steering.yaml"
+        os.path.dirname(__file__), "../src/bioemu/config/steering/chignolin_steering.yaml"
     )
     potentials_config = OmegaConf.load(potentials_path)
 
@@ -312,7 +312,7 @@ def main(cfg):
                     "steering.end=0.1",
                     "steering.resampling_freq=1",
                     f"steering.num_particles={num_particles}",
-                    "steering.potentials=chingolin_steering",
+                    "steering.potentials=chignolin_steering",
                 ],
             )
             # sequence = 'GYDPETGTWG'  # Chignolin
