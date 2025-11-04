@@ -1,6 +1,6 @@
 # BioEMU Hydra Run
 
-This directory contains `hydra_run.py`, an alternative entry point for BioEMU that uses Hydra configuration management instead of the CLI interface.
+This directory contains `hydra_run.py`, an alternative entry point for BioEmu that uses Hydra configuration management instead of the CLI interface.
 
 ## Overview
 
