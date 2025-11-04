@@ -99,7 +99,7 @@ sample(
 )
 ```
 
-### Key Steering Parameters
+### Key steering parameters
 
 - `num_steering_particles`: Number of particles per sample (1 = no steering, >1=steering)
 - `steering_start_time`: When to start steering (0.0-1.0, default: 0.0)
