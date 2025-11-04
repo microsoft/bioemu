@@ -107,7 +107,7 @@ sample(
 - `resampling_freq`: How often to resample particles (default: 1)
 - `steering_potentials_config`: Path to potentials configuration file (optional, defaults to physical_potentials.yaml)
 
-### Available Potentials
+### Available potentials
 
 When steering is enabled (num_steering_particles > 1) and no additional `steering_potentials_config.yaml` is provided, BioEMU automatically loads `physical_potentials.yaml` by default, which includes:
 - **ChainBreak**: Prevents backbone discontinuities
