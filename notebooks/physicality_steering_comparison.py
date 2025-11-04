@@ -106,7 +106,7 @@ def main(cfg):
                     # "steering.end=0.1",
                     # "steering.resampling_freq=1",
                     f"steering.num_particles={num_particles}",
-                    # "steering.potentials=chingolin_steering",
+                    # "steering.potentials=chignolin_steering",
                 ],
             )
             # sequence = 'GYDPETGTWG'  # Chignolin

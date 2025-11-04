@@ -56,7 +56,7 @@ def run_experiment(cfg, sequence="GYDPETGTWG", experiment_type="no_steering"):
         # Load base config and ensure guidance_steering=False
         repo_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
         potentials_file = os.path.join(
-            repo_root, "src/bioemu/config/steering", "chingolin_steering.yaml"
+            repo_root, "src/bioemu/config/steering", "chignolin_steering.yaml"
         )
 
         with open(potentials_file) as f:
@@ -320,7 +320,7 @@ def main(cfg):
                     "steering.resampling_freq=1",
                     f"steering.num_particles={num_particles}",
                     f"steering.guidance_strength={guidance_strength}",
-                    "steering.potentials=chingolin_steering",
+                    "steering.potentials=chignolin_steering",
                 ],
             )
 
