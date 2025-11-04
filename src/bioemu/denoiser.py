@@ -511,6 +511,7 @@ def dpm_solver(
                 if (
                     steering_config["start"] >= timesteps[i] >= steering_config["end"]
                     and i % steering_config["resampling_freq"] == 0
+                    and i < N - 2
                 ):
                     if steering_config["late_steering"]:
                         assert (
@@ -525,8 +526,19 @@ def dpm_solver(
                         log_weights=log_weights,
                     )
                     previous_energy = total_energy
+
                 # ... or a single final sample
-                elif N - 2 == i:
+                elif i >= N - 2:  # The last step is N-2
+                    print(
+                        "Final Resampling [BS, FK_particles] back to BS, with real x0 instead of pred x0."
+                    )
+                    seq_length = len(batch.sequence[0])
+                    x0 = batch.pos.view(batch.batch_size, seq_length, 3).detach()
+                    energies = []
+                    for potential_ in fk_potentials:
+                        energies += [potential_(N_pos, Ca_pos, C_pos, O_pos, t=i, N=N)]
+                    total_energy = torch.stack(energies, dim=-1).sum(-1)  # [BS]
+
                     batch, total_energy, log_weights = resample_batch(
                         batch=batch,
                         energy=total_energy,
