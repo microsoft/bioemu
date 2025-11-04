@@ -1,16 +1,14 @@
 # Steering is enabled when this config is provided
 num_particles: 3
-start: 0.5
-end: 1.0 # End time for steering (default: continue until end)
+start: 0.9
+end: 0.1 # End time for steering (default: continue until end)
 resampling_freq: 5
-fast_steering: true
-guidance_steering: true
+late_steering: false
 potentials:
   chainbreak:
     _target_: bioemu.steering.ChainBreakPotential
     flatbottom: 1.
     slope: 1.
-
     order: 1
     linear_from: 1.
     weight: 1.0

@@ -8,6 +8,7 @@ from matplotlib.pylab import f
 import mdtraj
 import numpy as np
 import torch
+
 # No wandb logging needed
 
 from .openfold.np import residue_constants
@@ -157,7 +158,9 @@ def get_atom37_from_frames(
     assert isinstance(pos, torch.Tensor) and isinstance(node_orientations, torch.Tensor)
     assert len(pos.shape) == 2 and pos.shape[1] == 3
     assert len(node_orientations.shape) == 3 and node_orientations.shape[1:] == (3, 3)
-    assert len(sequence) == pos.shape[0] == node_orientations.shape[0], f"{len(sequence)=} vs {pos.shape=}, {node_orientations.shape=}"
+    assert (
+        len(sequence) == pos.shape[0] == node_orientations.shape[0]
+    ), f"{len(sequence)=} vs {pos.shape=}, {node_orientations.shape=}"
     positions: torch.Tensor = pos.view(1, -1, 3)  # (1, N, 3)
     device = positions.device
     orientations: torch.Tensor = node_orientations.view(1, -1, 3, 3)  # (1, N, 3, 3)
@@ -234,6 +237,63 @@ def batch_frames_to_atom37(pos, rot, seq):
         atom37_mask.append(atom_37_mask_i)
         aa_type.append(aatype_i)
     return torch.stack(atom37, dim=0), torch.stack(atom37_mask, dim=0), torch.stack(aa_type, dim=0)
+
+
+def tensor_batch_frames_to_atom37(pos, rot, seq):
+    """
+    Fully batched transformation of backbone frame parameterization (pos, rot, seq) into atom37 coordinates.
+    All samples in the batch must have the same sequence.
+
+    This is a more efficient version of batch_frames_to_atom37 that uses only batched tensor operations
+    instead of a for-loop over the batch dimension.
+
+    Args:
+        pos: Tensor of shape (batch, L, 3) - backbone frame positions in nm
+        rot: Tensor of shape (batch, L, 3, 3) - backbone frame orientations
+        seq: String of length L - amino acid sequence (same for all samples in batch)
+
+    Returns:
+        atom37: Tensor of shape (batch, L, 37, 3) - atom coordinates in Angstroms
+        atom37_mask: Tensor of shape (batch, L, 37) - atom masks
+        aatype: Tensor of shape (batch, L) - residue types (same across batch)
+    """
+    batch_size, L, _ = pos.shape
+    assert rot.shape == (
+        batch_size,
+        L,
+        3,
+        3,
+    ), f"Expected rot shape {(batch_size, L, 3, 3)}, got {rot.shape}"
+    assert (
+        isinstance(seq, str) and len(seq) == L
+    ), f"Sequence must be a string of length {L}, got {type(seq)} of length {len(seq) if isinstance(seq, str) else 'N/A'}"
+    device = pos.device
+
+    # Convert sequence to aatype tensor (L,) then broadcast to (batch, L)
+    aatype_single = torch.tensor(
+        [residue_constants.restype_order.get(x, 0) for x in seq], device=device
+    )
+    aatype = aatype_single.unsqueeze(0).expand(batch_size, -1)  # (batch, L)
+
+    # Create Rigid objects - these support arbitrary batch dimensions
+    # pos: (batch, L, 3), rot: (batch, L, 3, 3)
+    rots = Rotation(rot_mats=rot)
+    rigids = Rigid(rots=rots, trans=pos)
+
+    # Compute backbone atoms - this already supports batching
+    psi_torsions = torch.zeros(batch_size, L, 2, device=device)
+    atom_37, atom_37_mask = compute_backbone(
+        bb_rigids=rigids,
+        psi_torsions=psi_torsions,
+        aatype=aatype,
+    )
+
+    # atom_37 is now (batch, L, 37, 3), atom_37_mask is (batch, L, 37)
+
+    # Adjust oxygen positions using batched version
+    atom_37 = _adjust_oxygen_pos_batched(atom_37, pos_is_known=None)
+
+    return atom_37, atom_37_mask, aatype
 
 
 def _adjust_oxygen_pos(
@@ -318,6 +378,98 @@ def _adjust_oxygen_pos(
     return atom_37
 
 
+def _adjust_oxygen_pos_batched(
+    atom_37: torch.Tensor, pos_is_known: torch.Tensor | None = None
+) -> torch.Tensor:
+    """
+    Batched version of _adjust_oxygen_pos that handles multiple structures simultaneously.
+
+    Imputes the position of the oxygen atom on the backbone by using adjacent frame information.
+    Specifically, we say that the oxygen atom is in the plane created by the Calpha and C from the
+    current frame and the nitrogen of the next frame. The oxygen is then placed c_o_bond_length Angstrom
+    away from the C in the current frame in the direction away from the Ca-C-N triangle.
+
+    For cases where the next frame is not available, for example we are at the C-terminus or the
+    next frame is not available in the data then we place the oxygen in the same plane as the
+    N-Ca-C of the current frame and pointing in the same direction as the average of the
+    Ca->C and Ca->N vectors.
+
+    Args:
+        atom_37 (torch.Tensor): (B, N, 37, 3) tensor of positions of the backbone atoms in atom_37 ordering
+                                which is ['N', 'CA', 'C', 'CB', 'O', ...]. In Angstroms.
+        pos_is_known (torch.Tensor): (B, N) mask for known residues, or None.
+
+    Returns:
+        atom_37 (torch.Tensor): (B, N, 37, 3) with adjusted oxygen positions.
+    """
+    B, N = atom_37.shape[0], atom_37.shape[1]
+    assert atom_37.shape == (B, N, 37, 3)
+
+    # Get vectors to Carbonyl from Carbon alpha and N of next residue. (B, N-1, 3)
+    # Note that the (N,) ordering is from N-terminal to C-terminal.
+
+    # Calpha to carbonyl both in the current frame. (B, N-1, 3)
+    calpha_to_carbonyl = (atom_37[:, :-1, 2, :] - atom_37[:, :-1, 1, :]) / (
+        torch.norm(atom_37[:, :-1, 2, :] - atom_37[:, :-1, 1, :], keepdim=True, dim=2) + 1e-7
+    )
+    # For masked positions, they are all 0 and so we add 1e-7 to avoid division by 0.
+    # The positions are in Angstroms and so are on the order ~1 so 1e-7 is an insignificant change.
+
+    # Nitrogen of the next frame to carbonyl of the current frame. (B, N-1, 3)
+    nitrogen_to_carbonyl = (atom_37[:, :-1, 2, :] - atom_37[:, 1:, 0, :]) / (
+        torch.norm(atom_37[:, :-1, 2, :] - atom_37[:, 1:, 0, :], keepdim=True, dim=2) + 1e-7
+    )
+
+    carbonyl_to_oxygen = calpha_to_carbonyl + nitrogen_to_carbonyl  # (B, N-1, 3)
+    carbonyl_to_oxygen = carbonyl_to_oxygen / (
+        torch.norm(carbonyl_to_oxygen, dim=2, keepdim=True) + 1e-7
+    )
+
+    atom_37[:, :-1, 4, :] = atom_37[:, :-1, 2, :] + carbonyl_to_oxygen * C_O_BOND_LENGTH
+
+    # Now we deal with frames for which there is no next frame available.
+
+    # Calpha to carbonyl both in the current frame. (B, N, 3)
+    calpha_to_carbonyl_term = (atom_37[:, :, 2, :] - atom_37[:, :, 1, :]) / (
+        torch.norm(atom_37[:, :, 2, :] - atom_37[:, :, 1, :], keepdim=True, dim=2) + 1e-7
+    )
+    # Calpha to nitrogen both in the current frame. (B, N, 3)
+    calpha_to_nitrogen_term = (atom_37[:, :, 0, :] - atom_37[:, :, 1, :]) / (
+        torch.norm(atom_37[:, :, 0, :] - atom_37[:, :, 1, :], keepdim=True, dim=2) + 1e-7
+    )
+    carbonyl_to_oxygen_term = calpha_to_carbonyl_term + calpha_to_nitrogen_term  # (B, N, 3)
+    carbonyl_to_oxygen_term = carbonyl_to_oxygen_term / (
+        torch.norm(carbonyl_to_oxygen_term, dim=2, keepdim=True) + 1e-7
+    )
+
+    # Create a mask that is 1 when the next residue is not available either
+    # due to this frame being the C-terminus or the next residue is not
+    # known due to pos_is_known being false.
+
+    if pos_is_known is None:
+        pos_is_known = torch.ones((B, N), dtype=torch.int64, device=atom_37.device)
+
+    next_res_gone = ~pos_is_known.bool()  # (B, N)
+    next_res_gone = torch.cat(
+        [next_res_gone, torch.ones((B, 1), device=pos_is_known.device).bool()], dim=1
+    )  # (B, N+1)
+    next_res_gone = next_res_gone[:, 1:]  # (B, N)
+
+    # Use masking to apply the terminal oxygen calculation
+    # next_res_gone shape: (B, N), we need to expand for broadcasting
+    next_res_gone_expanded = next_res_gone.unsqueeze(-1)  # (B, N, 1)
+
+    # Apply the terminal calculation where needed
+    terminal_oxygen_pos = (
+        atom_37[:, :, 2, :] + carbonyl_to_oxygen_term * C_O_BOND_LENGTH
+    )  # (B, N, 3)
+    atom_37[:, :, 4, :] = torch.where(
+        next_res_gone_expanded, terminal_oxygen_pos, atom_37[:, :, 4, :]
+    )
+
+    return atom_37
+
+
 def _filter_unphysical_traj_masks(
     traj: mdtraj.Trajectory,
     max_ca_seq_distance: float = 4.5,
@@ -368,10 +520,12 @@ def _filter_unphysical_traj_masks(
         axis=1,
     )
     # Ludi: Analysis Code
-    violations = {'ca_ca': ca_seq_distances,
-                  'cn_seq': cn_seq_distances,
-                  'rest_distances': 10 * rest_distances}
-    path = str(Path('.').absolute()) + '/outputs/analysis'
+    violations = {
+        "ca_ca": ca_seq_distances,
+        "cn_seq": cn_seq_distances,
+        "rest_distances": 10 * rest_distances,
+    }
+    path = str(Path(".").absolute()) + "/outputs/analysis"
     np.savez(path, **violations)
     # data = np.load(os.getcwd()+'/outputs/analysis.npz'); {key: data[key] for key in data.keys()}
     return frames_match_ca_seq_distance, frames_match_cn_seq_distance, frames_non_clash
@@ -538,8 +692,10 @@ def save_pdb_and_xtc(
             f"Filtered {num_samples_unfiltered} samples down to {len(traj)} "
             "based on structure criteria. Filtering can be disabled with `--filter_samples=False`."
         )
-        print(f"Filtered {num_samples_unfiltered} samples down to {len(traj)} ",
-              "based on structure criteria. Filtering can be disabled with `--filter_samples=False`.")
+        print(
+            f"Filtered {num_samples_unfiltered} samples down to {len(traj)} ",
+            "based on structure criteria. Filtering can be disabled with `--filter_samples=False`.",
+        )
         # Filtering ratio computed but not logged
     traj.superpose(reference=traj, frame=0)
     traj.save_xtc(xtc_path)
@@ -619,7 +775,7 @@ def _write_batch_pdb(
         pdb_str = to_pdb(protein)
         pdb_str = pdb_str.replace("\nEND\n", "")
         pdb_entries.append(f"MODEL        {i + 1}\n{pdb_str}\nENDMDL\n")
-    pdb_entries.append('END')
+    pdb_entries.append("END")
     filename = str(filename).replace(".pdb", "_batch.pdb")
     with open(filename, "w") as f:
         f.writelines(pdb_entries)

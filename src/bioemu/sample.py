@@ -98,7 +98,7 @@ def main(
             - start: Start time for steering (0.0-1.0)
             - end: End time for steering (0.0-1.0)
             - resampling_freq: Resampling frequency
-            - fast_steering: Enable fast mode (bool)
+            - late_steering: Enable fast mode (bool)
             - potentials: Dict of potential configurations
         disulfidebridges: List of integer tuple pairs specifying cysteine residue indices for disulfide
             bridge steering, e.g., [(3,40), (4,32), (16,26)].
@@ -107,6 +107,7 @@ def main(
     output_dir = Path(output_dir).expanduser().resolve()
     output_dir.mkdir(parents=True, exist_ok=True)  # Fail fast if output_dir is non-writeable
 
+    # Steering config can be [None, [str/Path], [dict/DictConfig]]
     if steering_config is None:
         # No steering - will pass None to denoiser
         steering_config_dict = None
@@ -136,73 +137,37 @@ def main(
             f"steering_config must be None, a path to a YAML file, or a dict, but got {type(steering_config)}"
         )
 
-    # If steering is enabled, extract potentials and create config
     if steering_config_dict is not None:
-        num_particles = steering_config_dict.get("num_particles", 1)
-
-        if num_particles > 1:
+        # If steering is enabled by defining a minimum of two particles, extract potentials and create config
+        num_particles = steering_config_dict["num_particles"]
+        if steering_config_dict["num_particles"] > 1:
             # Extract potentials configuration
             potentials_config = steering_config_dict.get("potentials", {})
 
-            # Handle disulfide bridges special case
-            # if disulfidebridges is not None:
-            # Load disulfide steering config and merge
-            #     disulfide_config_path = DEFAULT_STEERING_CONFIG_DIR / "disulfide_steering.yaml"
-            #     with open(disulfide_config_path) as f:
-            #         disulfide_config = yaml.safe_load(f)
-            #     potentials_config.update(disulfide_config)
-
-            # # Instantiate potentials
+            # Instantiate potentials
             potentials = hydra.utils.instantiate(OmegaConf.create(potentials_config))
             potentials: list[Callable] = list(potentials.values())
-
-            # Set specified_pairs on DisulfideBridgePotential if disulfidebridges was specified
-            if disulfidebridges is not None:
-                from bioemu.steering import DisulfideBridgePotential
-
-                disulfide_potentials = [
-                    p for p in potentials if isinstance(p, DisulfideBridgePotential)
-                ]
-                assert (
-                    len(disulfide_potentials) > 0
-                ), "DisulfideBridgePotential not found in instantiated potentials"
-                # Set the specified_pairs on the DisulfideBridgePotential
-                disulfide_potentials[0].specified_pairs = disulfidebridges
-                assert (
-                    disulfide_potentials[0].specified_pairs == disulfidebridges
-                ), "Disulfide pairs not correctly set"
 
             # Create final steering config (without potentials, those are passed separately)
             # Remove 'potentials' from steering_config_dict if present
             steering_config_dict = dict(steering_config_dict)  # ensure mutable copy
-            steering_config_dict.pop("potentials", None)
-            # steering_config_dict = {
-            #     "num_particles": steering_config_dict["num_particles"],
-            #     "start": steering_config_dict["start"],
-            #     "end": steering_config_dict["end"],
-            #     "resampling_freq": steering_config_dict["resampling_freq"],
-            #     "fast_steering": steering_config_dict["fast_steering"],
-            #     "guidance_learning_rate": steering_config_dict["guidance_learning_rate"],
-            #     "guidance_num_steps": steering_config_dict["guidance_num_steps"],
-            #     "guidance_strength": steering_config_dict["guidance_strength"],
-            # }
+            steering_config_dict.pop("potentials")
         else:
             # num_particles <= 1, no steering
             steering_config_dict = None
             potentials = None
 
-    # Validate steering configuration
-    if steering_config_dict is not None:
-        num_particles = steering_config_dict["num_particles"]
-        start_time = steering_config_dict["start"]
-        end_time = steering_config_dict["end"]
-
+        # Validate steering times for reverse diffusion start: t=1 to end: t=0
         assert (
-            0.0 <= end_time <= start_time <= 1.0
-        ), f"Steering end ({end_time}) must be between 0.0 and 1.0"
+            0.0 <= steering_config_dict["end"] <= steering_config_dict["start"] <= 1.0
+        ), f"Steering end ({steering_config_dict["end"]}) must be between 0.0 and 1.0"
 
-        if num_particles < 1:
-            raise ValueError(f"num_particles ({num_particles}) must be >= 1")
+        if steering_config_dict["num_particles"] < 1:
+            raise ValueError(
+                f"num_particles ({steering_config_dict["num_particles"]}) must be >= 1"
+            )
+    else:
+        num_particles = 1
 
     ckpt_path, model_config_path = maybe_download_checkpoint(
         model_name=model_name, ckpt_path=ckpt_path, model_config_path=model_config_path
@@ -264,22 +229,24 @@ def main(
     batch_size = int(batch_size_100 * (100 / len(sequence)) ** 2)
     print(f"Batch size before steering: {batch_size}")
 
-    num_particles = 1
+    # For a given batch_size, calculate the reduced batch size after taking steering particle multiplicity into account
     if steering_config_dict is not None:
+        assert (
+            batch_size >= steering_config_dict["num_particles"]
+        ), f"batch_size ({batch_size}) must be at least num_particles ({steering_config_dict["num_particles"]})"
         num_particles = steering_config_dict["num_particles"]
-        # Correct the batch size for the number of particles
-        # Effective batch size: BS <- BS / num_particles is decreased
-        # Round to largest multiple of num_particles
-        batch_size = (batch_size // num_particles) * num_particles
+
+        # Correct the number of samples we draw per sampling iteration by the number of particles
+        # Effective batch size is decreased: BS <- BS / num_particles
+        batch_size = (
+            batch_size // num_particles
+        ) * num_particles  # Round to largest multiple of num_particles
+        # late expansion of batch size by multiplicity, helper variable for denoiser to check proper late multiplicity
+        steering_config_dict["max_batch_size"] = batch_size
         batch_size = batch_size // num_particles  # effective batch size: BS <- BS / num_particles
         # batch size is now the maximum of what we can use while taking particle multiplicity into account
 
-        # Ensure batch_size is a multiple of num_particles and does not exceed the memory limit
-        assert (
-            batch_size >= num_particles
-        ), f"batch_size ({batch_size}) must be at least num_particles ({num_particles})"
-
-    print(f"Batch size after steering: {batch_size} particles: {num_particles}")
+        print(f"Batch size after steering: {batch_size} particles: {num_particles}")
 
     logger.info(f"Using batch size {min(batch_size, num_samples)}")
 
@@ -300,15 +267,15 @@ def main(
             f"Sampling batch {seed}/{num_samples} ({n} samples x {num_particles} particles)"
         )
 
-        # Calculate actual batch size for this iteration
-        actual_batch_size = min(batch_size, n)
-        if steering_config_dict is not None and steering_config_dict.get("fast_steering", False):
-            # For fast_steering, we start with smaller batch and expand later
-            actual_batch_size = actual_batch_size
+        if steering_config_dict is not None:
+            if steering_config_dict["late_steering"]:
+                # For late steering, we start with [BS] and later only expand to [BS * num_particles]
+                actual_batch_size = n
+            else:
+                # For regular steering, we directly draw [BS * num_particles] samples
+                actual_batch_size = n * num_particles
         else:
-            # For regular steering, multiply by num_particles upfront
-            if steering_config_dict is not None:
-                actual_batch_size = actual_batch_size * num_particles
+            actual_batch_size = n
 
         steering_config_dict = (
             OmegaConf.create(steering_config_dict) if steering_config_dict is not None else None
@@ -317,11 +284,7 @@ def main(
             "steering_config_dict (OmegaConf):",
             OmegaConf.to_yaml(steering_config_dict) if steering_config_dict is not None else None,
         )
-        if potentials is not None:
-            print("Potentials:")
-            [print(f"\t {potential_}") for potential_ in potentials]
-        else:
-            print("Potentials: None")
+
         batch = generate_batch(
             score_model=score_model,
             sequence=sequence,
@@ -443,14 +406,6 @@ def generate_batch(
     )
 
     context_batch = Batch.from_data_list([context_chemgraph] * batch_size)
-
-    # Add max_batch_size to steering_config for fast_steering if needed
-    if steering_config is not None and steering_config.get("fast_steering", False):
-        # Create a mutable copy of the steering_config to add max_batch_size
-        steering_config_copy = OmegaConf.to_container(steering_config, resolve=True)
-        steering_config_copy["max_batch_size"] = batch_size * steering_config["num_particles"]
-        steering_config = OmegaConf.create(steering_config_copy)
-
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
     sampled_chemgraph_batch = denoiser(
@@ -467,8 +422,6 @@ def generate_batch(
     node_orientations = torch.stack([x.node_orientations for x in sampled_chemgraphs]).to(
         "cpu"
     )  # [BS, L, 3, 3]
-    # denoised_pos = torch.stack(denoising_trajectory[0], axis=1)
-    # denoised_node_orientations = torch.stack(denoising_trajectory[1], axis=1)
 
     return {"pos": pos, "node_orientations": node_orientations}
 

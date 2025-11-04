@@ -472,31 +472,6 @@ class ChainBreakPotential(Potential):
         return self.weight * dist_diff.sum(dim=-1)
 
 
-# class CaClashPotential(Potential):
-#     def __init__(self, tolerance: float = 0., dist: float = 1.0, slope: float = 1.0, weight: float = 1.0):
-#         self.dist = dist
-#         self.tolerance: float = tolerance
-#         self.weight = weight
-#         self.slope = slope
-
-#     def __call__(self, N_pos, Ca_pos, C_pos, O_pos, t, N):
-#         """
-#         Compute the potential energy based on clashes using CA atom positions.
-#         """
-#         distances = torch.cdist(Ca_pos, Ca_pos)  # shape: (batch, L, L)
-#         # lit = 2 * van_der_waals_radius['C']
-#         lit = self.dist
-#         mask = ~torch.eye(Ca_pos.shape[1], dtype=torch.bool, device=distances.device)
-#         distances = distances[:, mask]
-
-#         loss_fn = lambda x: torch.relu(self.slope * (lit - self.tolerance - x))
-#         fig = plot_caclashes(distances, loss_fn, t)
-#         potential_energy = loss_fn(distances)
-# CaClash potential metrics computed but not logged
-#         plt.close('all')
-#         return self.weight * potential_energy.sum(dim=(-1))
-
-
 class ChainClashPotential(Potential):
     """Potential to prevent CA atoms from clashing (getting too close)."""
 

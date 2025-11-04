@@ -306,7 +306,7 @@ def main(cfg):
     """Main function to run 3-way comparison: no steering, resampling only, guidance steering."""
     # Override parameters
     for num_particles in [2, 5, 10]:
-        for guidance_strength in [0, 1, 3]:
+        for guidance_strength in [0]:
 
             cfg = hydra.compose(
                 config_name="bioemu.yaml",

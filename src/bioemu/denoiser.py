@@ -24,7 +24,11 @@ from bioemu.steering import (
     resample_batch,
     print_once,
 )
-from bioemu.convert_chemgraph import _write_batch_pdb, batch_frames_to_atom37
+from bioemu.convert_chemgraph import (
+    _write_batch_pdb,
+    batch_frames_to_atom37,
+    tensor_batch_frames_to_atom37,
+)
 
 TwoBatches = tuple[Batch, Batch]
 ThreeBatches = tuple[torch.Tensor, torch.Tensor, torch.Tensor]
@@ -345,6 +349,8 @@ def dpm_solver(
     # Initialize log_weights for importance weight tracking (for gradient guidance)
     log_weights = torch.zeros(batch.num_graphs, device=device)
 
+    expanded_for_late_steering = False
+
     for i in tqdm(range(N - 1), position=1, desc="Denoising: ", ncols=0, leave=False):
         t = torch.full((batch.num_graphs,), timesteps[i], device=device)
         t_hat = t - noise * dt if (i > 0 and t[0] > ts_min and t[0] < ts_max) else t
@@ -392,9 +398,6 @@ def dpm_solver(
 
         # Update positions to the intermediate timestep t_lambda
         batch_u = batch.replace(pos=u)
-
-        # Get node orientation at t_lambda
-
         # Denoise from t to t_lambda
         assert score["node_orientations"].shape == (u.shape[0], 3)
         assert batch.node_orientations.shape == (u.shape[0], 3, 3)
@@ -420,91 +423,6 @@ def dpm_solver(
         # Evaluate score at updated pos and node orientations
         with torch.set_grad_enabled(grad_is_enabled and (i in record_grad_steps)):
             score_u = get_score(batch=batch_u, t=t_lambda, sdes=sdes, score_model=score_model)
-
-        # Apply gradient guidance if enabled (BEFORE position update)
-        # modified_score_u_pos = score_u["pos"]  # Default to original score
-
-        """
-        Guidance Steering
-        Time: 1 -> 0
-        """
-        if (
-            fk_potentials is not None
-            and steering_config is not None
-            and steering_config["start"] >= t_lambda[i] >= steering_config["end"]
-        ):
-            # Check if ANY potential has guidance_steering=True
-            has_guidance = any(getattr(p, "guidance_steering", False) for p in fk_potentials)
-
-            if has_guidance:
-                from bioemu.steering import potential_gradient_minimization
-
-                # Get guidance parameters
-                learning_rate = steering_config.get("guidance_learning_rate")
-                num_steps = steering_config.get("guidance_num_steps")
-
-                if learning_rate is None or num_steps is None:
-                    raise ValueError(
-                        "When any potential has guidance_steering=True, you MUST specify both "
-                        "guidance_learning_rate and guidance_num_steps in steering_config"
-                    )
-
-                x0_pred_guidance, _ = get_pos0_rot0(sdes, batch_u, t_lambda, score)  # [BS, L, 3]
-
-                # Apply gradient descent to minimize potential energy
-                delta_x = potential_gradient_minimization(
-                    10 * x0_pred_guidance,
-                    fk_potentials,
-                    learning_rate=learning_rate,
-                    num_steps=num_steps,
-                )
-                x0_pred_guidance = x0_pred_guidance.flatten(0, 1)
-                delta_x = delta_x.flatten(0, 1)
-
-                # Compute universal backward score using the guided x0_pred
-                # universal_backward_score = -(x - alpha_t * (x0_pred + delta_x)) / sigma_t^2
-                # Expand alpha_t_lambda and sigma_t_lambda to match batch_u.pos shape
-                universal_backward_score = -(
-                    batch_u.pos - alpha_t_lambda * (x0_pred_guidance + delta_x)
-                ) / (sigma_t_lambda**2)
-
-                # Compute weighted combination of original and universal scores
-                # Weight scheduling (from enhancedsampling)
-                current_t = t_lambda[0].item()
-                w_t_mod = torch.relu(3 * (torch.tensor(current_t, device=device) - 0.1))
-                # w_t_mod = torch.tensor(steering_config["guidance_strength"], device=device)
-                w_t_orig = torch.tensor(1.0, device=device)
-                w_t_mod = w_t_mod / (w_t_orig + w_t_mod)
-                w_t_orig = w_t_orig / (w_t_orig + w_t_mod)
-
-                modified_score_u_pos = (
-                    w_t_orig * score_u["pos"] + w_t_mod * universal_backward_score
-                )
-
-                # Compute importance weight for this step
-                # From enhancedsampling: -(A + B)^2 + B^2 where A = beta*(modified_score - score)*dt, B = diffusion*dW
-                # Since we're in DPM solver, we approximate the importance weight contribution
-                beta_t_lambda = pos_sde.beta(
-                    t=torch.full((modified_score_u_pos.shape[0], 3), t_lambda[0], device=device)
-                )  # Shape: [batch_size], not batch_size * length
-                score_diff = (
-                    modified_score_u_pos - score_u["pos"]
-                )  # Shape: [batch_size, num_residues, 3]
-
-                # Approximate: step_log_weight ≈ -(beta * score_diff * dt_effective)^2 / (2 * beta^2 * dt_effective)
-                dt_effective = abs(dt)
-                step_log_weight = -((beta_t_lambda * score_diff * dt_effective) ** 2)
-                step_log_weight = (step_log_weight / (2 * beta_t_lambda**2 * dt_effective)).sum(
-                    dim=(-2, -1)
-                )
-
-                # Accumulate log weights
-                log_weights = log_weights + step_log_weight
-                score_u["pos"] = modified_score_u_pos
-
-                print(f"Sampling {timesteps[i]:.3f}: Guidance")
-            else:
-                print(f"Sampling {timesteps[i]:.3f}: No Guidance")
 
         pos_next = (
             alpha_t_next / alpha_t * batch_hat.pos
@@ -537,14 +455,6 @@ def dpm_solver(
         )  # dt is negative, diffusion is 0
         batch = batch_next.replace(node_orientations=sample)
 
-        """
-        Steering
-        Currently [BS, ...]
-        expand to [BS, MC, ...] for steering
-        Batchsize is now BS, MC and we do [BS x MC, ...] predictions, reshape it to [BS, MC, ...]
-        then apply per sample a filtering op
-        """
-
         if (
             steering_config is not None and fk_potentials is not None
         ):  # steering enabled when steering_config is provided
@@ -552,18 +462,12 @@ def dpm_solver(
             x0 += [x0_t.cpu()]
             R0 += [R0_t.cpu()]
 
-            # Handle fast steering - expand batch at steering start time
-            expected_expansion_step = int(N * steering_config["start"])
-            max_batch_size = steering_config.get("max_batch_size", None)
+            # Handle fast steering - expand batch at steering start time if not expanded yet
             if (
-                steering_config.get("fast_steering", False)
-                and i >= expected_expansion_step
-                and max_batch_size is not None
-                and batch.num_graphs < max_batch_size
+                steering_config["late_steering"]
+                and steering_config["start"] >= timesteps[i]
+                and not expanded_for_late_steering
             ):
-                assert (
-                    batch.num_graphs * steering_config["num_particles"] == max_batch_size
-                ), f"Batch size {batch.num_graphs} * num_particles {steering_config['num_particles']} != max_batch_size {max_batch_size}"
                 # Expand batch using repeat_interleave at steering start time
 
                 # Expand all relevant tensors
@@ -576,26 +480,42 @@ def dpm_solver(
 
                 batch = Batch.from_data_list(expanded_data_list)
                 t = torch.full((batch.num_graphs,), timesteps[i], device=device)
-                # Recalculate x0_t and R0_t with the expanded batch
 
                 x0_t = torch.repeat_interleave(x0_t, steering_config["num_particles"], dim=0)
                 R0_t = torch.repeat_interleave(R0_t, steering_config["num_particles"], dim=0)
+                log_weights = torch.repeat_interleave(
+                    log_weights, steering_config["num_particles"], dim=0
+                )
+                expanded_for_late_steering = True  # if done, don't do it again
 
-            # N_pos, Ca_pos, C_pos, O_pos = atom37[..., 0, :], atom37[..., 1, :], atom37[..., 2, :], atom37[..., 4, :]  # [BS, L, 4, 3] -> [BS, L, 3] for N,Ca,C,O
+            # Reconstruct heavy backbone aotm postitions, nm to Angstrom conversion
+            atom37, _, _ = tensor_batch_frames_to_atom37(
+                pos=10 * x0_t, rot=R0_t, seq=batch.sequence[0]
+            )
+            N_pos, Ca_pos, C_pos, O_pos = (
+                atom37[..., 0, :],
+                atom37[..., 1, :],
+                atom37[..., 2, :],
+                atom37[..., 4, :],
+            )  # [BS, L, 4, 3] -> [BS, L, 3] for N,Ca,C,O
             energies = []
             for potential_ in fk_potentials:
-                # energies += [potential_(N_pos, Ca_pos, C_pos, O_pos, t=i, N=N)]
-                energies += [potential_(None, 10 * x0_t, None, None, t=i, N=N)]
+                energies += [potential_(N_pos, Ca_pos, C_pos, O_pos, t=i, N=N)]
+                # energies += [potential_(None, 10 * x0_t, None, None, t=i, N=N)]
 
             total_energy = torch.stack(energies, dim=-1).sum(-1)  # [BS]
 
-            if (
-                steering_config["num_particles"] > 1
-            ):  # if resampling implicitely given by num_fk_samples > 1
+            # if resampling implicitely given by num_fk_samples > 1
+            if steering_config["num_particles"] > 1:
+                # Resample between particles ...
                 if (
-                    steering_config["start"] >= t_lambda[i] >= steering_config["end"]
+                    steering_config["start"] >= timesteps[i] >= steering_config["end"]
                     and i % steering_config["resampling_freq"] == 0
                 ):
+                    if steering_config["late_steering"]:
+                        assert (
+                            expanded_for_late_steering
+                        ), "Batch must be expanded for late steering"
                     batch, total_energy, log_weights = resample_batch(
                         batch=batch,
                         energy=total_energy,
@@ -605,8 +525,8 @@ def dpm_solver(
                         log_weights=log_weights,
                     )
                     previous_energy = total_energy
-                elif N - 1 == i:
-                    # print('Final Resampling [BS, FK_particles] back to BS')
+                # ... or a single final sample
+                elif N - 2 == i:
                     batch, total_energy, log_weights = resample_batch(
                         batch=batch,
                         energy=total_energy,
@@ -617,7 +537,4 @@ def dpm_solver(
                     )
                     previous_energy = total_energy
 
-    # x0 = [x0[-1]] + x0  # add the last clean sample to the front to make Protein Viewer display it nicely
-    # R0 = [R0[-1]] + R0
-
-    return batch  # , (x0, R0)
+    return batch

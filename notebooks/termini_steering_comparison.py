@@ -67,7 +67,7 @@ def run_steering_experiment(cfg, sequence="GYDPETGTWG", do_steering=True):
             "start": cfg.steering.start,
             "end": cfg.steering.get("end", 1.0),
             "resampling_freq": cfg.steering.resampling_freq,
-            "fast_steering": cfg.steering.get("fast_steering", False),
+            "late_steering": cfg.steering.get("late_steering", False),
             "potentials": potentials_config,
         }
     else:
@@ -304,7 +304,7 @@ def main(cfg):
             cfg = hydra.compose(
                 config_name="bioemu.yaml",
                 overrides=[
-                    "sequence=GYDPETGTWG",
+                    "sequence=MTEIAQKLKESNEPILYLAERYGFESQQTLTRTFKNYFDVPPHKYRMTNMQGESRFLHPL",
                     "num_samples=500",
                     "denoiser=dpm",
                     "denoiser.N=50",
