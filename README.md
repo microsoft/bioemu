@@ -70,7 +70,7 @@ This code only supports sampling structures of monomers. You can try to sample m
 
 BioEmu includes a [steering system](https://arxiv.org/abs/2501.06848) that uses [Sequential Monte Carlo (SMC)](https://www.stats.ox.ac.uk/~doucet/doucet_defreitas_gordon_smcbookintro.pdf) to guide the diffusion process toward more physically plausible protein structures. Steering applies potential energy functions during denoising to favor conformations that satisfy physical constraints. Algorithmically, steering simulates *multiple particles* per desired sample and resamples between these particles according to the favorability of the provided potentials. 
 
-### Quick Start with Steering
+### Quick start with steering
 
 Enable steering with physical constraints using the CLI by setting `--num_steering_particles` > 1:
 
@@ -99,7 +99,7 @@ sample(
 )
 ```
 
-### Key Steering Parameters
+### Key steering parameters
 
 - `num_steering_particles`: Number of particles per sample (1 = no steering, >1=steering)
 - `steering_start_time`: When to start steering (0.0-1.0, default: 0.0)
@@ -107,7 +107,7 @@ sample(
 - `resampling_freq`: How often to resample particles (default: 1)
 - `steering_potentials_config`: Path to potentials configuration file (optional, defaults to physical_potentials.yaml)
 
-### Available Potentials
+### Available potentials
 
 When steering is enabled (num_steering_particles > 1) and no additional `steering_potentials_config.yaml` is provided, BioEMU automatically loads `physical_potentials.yaml` by default, which includes:
 - **ChainBreak**: Prevents backbone discontinuities
