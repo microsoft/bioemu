@@ -109,17 +109,14 @@ BioEmu-v1 model is **DiG** architecture (https://www.nature.com/articles/s42256-
 
 **BibTeX:**
 ```
-@article{
-doi:10.1126/science.adv9817,
-author = {Sarah Lewis  and Tim Hempel  and José Jiménez-Luna  and Michael Gastegger  and Yu Xie  and Andrew Y. K. Foong  and Victor García Satorras  and Osama Abdin  and Bastiaan S. Veeling  and Iryna Zaporozhets  and Yaoyi Chen  and Soojung Yang  and Adam E. Foster  and Arne Schneuing  and Jigyasa Nigam  and Federico Barbero  and Vincent Stimper  and Andrew Campbell  and Jason Yim  and Marten Lienen  and Yu Shi  and Shuxin Zheng  and Hannes Schulz  and Usman Munir  and Roberto Sordillo  and Ryota Tomioka  and Cecilia Clementi  and Frank Noé },
-title = {Scalable emulation of protein equilibrium ensembles with generative deep learning},
-journal = {Science},
-volume = {389},
-number = {6761},
-pages = {eadv9817},
-year = {2025},
-doi = {10.1126/science.adv9817},
-URL = {https://www.science.org/doi/abs/10.1126/science.adv9817},
+@article{bioemu2025,
+  title={Scalable emulation of protein equilibrium ensembles with generative deep learning},
+  author={Lewis, Sarah and Hempel, Tim and Jim{\'e}nez-Luna, Jos{\'e} and Gastegger, Michael and Xie, Yu and Foong, Andrew YK and Satorras, Victor Garc{\'\i}a and Abdin, Osama and Veeling, Bastiaan S and Zaporozhets, Iryna and Chen, Yaoyi and Yang, Soojung and Foster, Adam E. and Schneuing, Arne and Nigam, Jigyasa and Barbero, Federico and Stimper Vincent and  Campbell, Andrew and Yim, Jason and Lienen, Marten and Shi, Yu and Zheng, Shuxin and Schulz, Hannes and Munir, Usman and Sordillo, Roberto and Tomioka, Ryota and Clementi, Cecilia and No{\'e},  Frank},
+  journal={Science},
+  pages={eadv9817},
+  year={2025},
+  publisher={American Association for the Advancement of Science},
+  doi={10.1126/science.adv9817}
 }
 ```
 
@@ -127,7 +124,7 @@ URL = {https://www.science.org/doi/abs/10.1126/science.adv9817},
 
 We welcome feedback and collaboration from our audience. If you have suggestions, questions, or observe unexpected behavior in our technology, please contact us at: 
 - Frank Noe (franknoe@microsoft.com)
-- Ryota Tomioka (ryoto@microsoft.com)
+
 If the team receives reports of undesired behavior or identifies issues independently, we will update this repository with appropriate mitigations.
 
 ### Out-of-Scope Use
@@ -145,6 +142,6 @@ We expect that the approximations of these models are propagated to BioEmu.
 
 ### Recommendations
 We recommend using this model only for the purposes specified here or described in the [paper].
-In particular, we advice against predicting entities that are not considered by the used embeddings or represented in the training data, including but not limited to multi-chain proteins.
+In particular, we advise against predicting entities that are not considered by the used embeddings or represented in the training data, including but not limited to multi-chain proteins.
 
 [paper]: https://www.science.org/doi/10.1126/science.adv9817
