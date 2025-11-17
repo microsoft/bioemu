@@ -88,12 +88,13 @@ In all cases, please refer to the [paper] for details.
 
 ### Results
 
-For tasks investigating **conformational changes**, BioEmu model achieves overall coverages of 85 % for domain motion. Coverage for local unfolding events is 72% for locally folded and 74% for locally unfolded states respectively. For cryptic pockets, we observe coverages of 49 % for apo (unbound) and 85 % for holo (bound) states.
-On the **emulation of MD equilibrium distributions**, BioEmu achieves a mean absolute error of 0.91 kcal/mol using the above metric for the in-house dataset.
+For tasks investigating **conformational changes**, BioEmu model achieves overall coverages of 83 % for domain motion. Coverage for local unfolding events is 70 % for locally folded and 82 % for locally unfolded states respectively. For cryptic pockets, we observe coverages of 55 % for apo (unbound) and 88 % for holo (bound) states.
+On the **emulation of MD equilibrium distributions**, BioEmu achieves a mean absolute error of 0.9 kcal/mol using the above metric for the in-house dataset.
 Variants of BioEmu trained and tested on a dataset of fast folding proteins reported previously (https://doi.org/10.1126/science.1208351) achieved a mean absolute error of 0.74 kcal/mol.
-In the **protein stability prediction** tasks, we obtain free energy mean absolute errors of 0.76 kcal/mol relative to experimental measurements. The associated Pearson correlation coefficient is 0.66, and the Spearman's correlation coefficient is 0.64.
+In the **protein stability prediction** tasks, we obtain free energy mean absolute errors of 0.9 kcal/mol relative to experimental measurements. The associated Spearman's correlation coefficient is 0.6.
+These results are reported in the [paper].
 
-All test datasets and code necessary to reproduce these results will be released in a separate code package.
+All test datasets and code necessary to reproduce these results are released in a separate code package https://github.com/microsoft/bioemu-benchmarks/tree/main. The results from all the released model checkpoitns are also included there.
 
 ## Technical Specifications
 
