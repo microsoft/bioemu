@@ -175,7 +175,7 @@ def main(
                 f"Not sure why {npz_path} already exists when so far only {existing_num_samples} samples have been generated."
             )
         seed = base_seed + start_idx
-        logger.info(f"Sampling {seed=}")
+        logger.info(f"Sampling with {seed=}")
         batch = generate_batch(
             score_model=score_model,
             sequence=sequence,
