@@ -119,7 +119,7 @@ number = {6761},
 pages = {eadv9817},
 year = {2025},
 doi = {10.1126/science.adv9817},
-URL = {https://www.science.org/doi/abs/10.1126/science.adv9817}
+URL = {https://www.science.org/doi/abs/10.1126/science.adv9817},
 }
 
 ## Model Card Contact
