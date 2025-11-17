@@ -3,6 +3,7 @@
 """Script for sampling from a trained model."""
 
 import logging
+import time
 import typing
 from collections.abc import Callable
 from pathlib import Path
@@ -79,6 +80,7 @@ def main(
     cache_so3_dir: str | Path | None = None,
     msa_host_url: str | None = None,
     filter_samples: bool = True,
+    base_seed: int | None = None,
 ) -> None:
     """
     Generate samples for a specified sequence, using a trained model.
@@ -103,7 +105,12 @@ def main(
         cache_so3_dir: Directory to store SO3 precomputations. If not set, this defaults to `~/sampling_so3_cache`.
         msa_host_url: MSA server URL. If not set, this defaults to colabfold's remote server. If sequence is an a3m file, this is ignored.
         filter_samples: Filter out unphysical samples with e.g. long bond distances or steric clashes.
+        base_seed: Base random seed for sampling. If set, each batch's seed will be set to base_seed + (num samples already generated).
     """
+
+    if base_seed is None:
+        # Use system time
+        base_seed = time.time_ns()
 
     output_dir = Path(output_dir).expanduser().resolve()
     output_dir.mkdir(parents=True, exist_ok=True)  # Fail fast if output_dir is non-writeable
@@ -158,15 +165,16 @@ def main(
 
     existing_num_samples = count_samples_in_output_dir(output_dir)
     logger.info(f"Found {existing_num_samples} previous samples in {output_dir}.")
-    for seed in tqdm(
+    for start_idx in tqdm(
         range(existing_num_samples, num_samples, batch_size), desc="Sampling batches..."
     ):
-        n = min(batch_size, num_samples - seed)
-        npz_path = output_dir / format_npz_samples_filename(seed, n)
+        n = min(batch_size, num_samples - start_idx)
+        npz_path = output_dir / format_npz_samples_filename(start_idx, n)
         if npz_path.exists():
             raise ValueError(
                 f"Not sure why {npz_path} already exists when so far only {existing_num_samples} samples have been generated."
             )
+        seed = base_seed + start_idx
         logger.info(f"Sampling {seed=}")
         batch = generate_batch(
             score_model=score_model,
