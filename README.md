@@ -73,7 +73,13 @@ BioEmu is also available on [Azure AI Foundry](https://ai.azure.com/). See [How 
 ## Reproducing results from the paper
 You can use this code together with code from [bioemu-benchmarks](https://github.com/microsoft/bioemu-benchmarks) to approximately reproduce results from our [paper].
 
-The `bioemu-v1.0` checkpoint contains the model weights used to produce the results in the preprint and `bioemu-v1.1` checkpoint contains the model weights used to produce the results in the [paper]. Due to simplifications made in the embedding computation and a more efficient sampler, the results obtained with this code are not identical but consistent with the published statistics, i.e., mode coverage and free energy errors averaged over the proteins in a test set. Results for individual proteins may differ. For more details, please check the [BIOEMU_RESULTS.md](https://github.com/microsoft/bioemu-benchmarks/blob/main/bioemu_benchmarks/BIOEMU_RESULTS.md) document on the bioemu-benchmarks repository.
+- The `bioemu-v1.0` checkpoint contains the model weights used to produce the results in the preprint. Due to simplifications made in the embedding computation and a more efficient sampler, the results obtained with this code are not identical but consistent with the preprint statistics, i.e., mode coverage and free energy errors averaged over the proteins in a test set. Results for individual proteins may differ. 
+- [Default] The `bioemu-v1.1` checkpoint contains the model weights used to produce the results in the published Science [paper]. 
+- The `bioemu-v1.2` checkpoint contains the model weights trained from an extended set of MD simulations and experimental measurements of folding free energies. 
+
+For more details, please check the [BIOEMU_RESULTS.md](https://github.com/microsoft/bioemu-benchmarks/blob/main/bioemu_benchmarks/BIOEMU_RESULTS.md) document on the bioemu-benchmarks repository.
+
+To use a specific checkpoint, you can specify the `model_name` in the `bioemu.sample` args, for example, `--model_name="bioemu-v1.1"`.
 
 
 ## Side-chain reconstruction and MD-relaxation

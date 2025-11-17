@@ -36,10 +36,10 @@ Please refer to the BioEmu [paper] for more details on the model.
 
 ### Available Models
 
-|                    | bioemu-v1.0   |
-| ------------------ | --------------------- |
-| Training Data Size | 161k structures (AFDB), 216 ms MD simulations, 19k dG measurements |
-| Model Parameters   | 31M                  |
+|                    | bioemu-v1.0   | bioemu-v1.1 | bioemu-v1.2 |
+| ------------------ | --------------------- | ------------------ | ----------------------|
+| Training Data Size | 161k structures (AFDB), 216 ms MD simulations, 19k dG measurements | AFDB and MD same as v1.0, 502k dG measurements |  
+| Model Parameters   | 31.4M                  | 31.4M                 | 35.7M                   |
 
 
 ## Uses
@@ -100,6 +100,7 @@ All test datasets and code necessary to reproduce these results will be released
 ### Model Architecture and Objective
 
 BioEmu-v1 model is **DiG** architecture (https://www.nature.com/articles/s42256-024-00837-3) trained on a variety of datasets to sample systematically diverse structure ensembles. In the pretraining phase, we use denoising score matching to match the distribution of flexible protein structures curated from AFDB. In the fine-tuning phase, we use a combination of denoising score matching objective for molecular dynamics data and property prediction fine-tuning (PPFT) for matching the experimental folding free energies. For more details of PPFT, please see our [paper].
+BioEmu-v1.2 model adds extra embedding for residue types and residue pairs.
 
 #### Software
 
