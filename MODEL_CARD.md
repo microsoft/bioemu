@@ -38,7 +38,7 @@ Please refer to the BioEmu [paper] for more details on the model.
 
 |                    | bioemu-v1.0   | bioemu-v1.1 | bioemu-v1.2 |
 | ------------------ | --------------------- | ------------------ | ----------------------|
-| Training Data Size | 161k structures (AFDB), 216 ms MD simulations, 19k dG measurements | AFDB and MD same as v1.0, 502k dG measurements |  
+| Training Data Size | 161k structures (AFDB), 216 ms MD simulations, 19k dG measurements | AFDB and MD same as v1.0, 502k dG measurements |  AFDB same as v1.0, 145.4 ms MD simulations, 1.3M dG measurements |
 | Model Parameters   | 31.4M                  | 31.4M                 | 35.7M                   |
 
 
