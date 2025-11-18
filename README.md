@@ -70,10 +70,16 @@ This code only supports sampling structures of monomers. You can try to sample m
 BioEmu is also available on [Azure AI Foundry](https://ai.azure.com/). See [How to run BioEmu on Azure AI Foundry](AZURE_AI_FOUNDRY.md) for more details.
 
 
-## Reproducing results from the preprint
-You can use this code together with code from [bioemu-benchmarks](https://github.com/microsoft/bioemu-benchmarks) to approximately reproduce results from our [preprint](https://www.biorxiv.org/content/10.1101/2024.12.05.626885v1).
+## Reproducing results from the paper
+You can use this code together with code from [bioemu-benchmarks](https://github.com/microsoft/bioemu-benchmarks) to approximately reproduce results from our [paper].
 
-The `bioemu-v1.0` checkpoint contains the model weights used to produce the results in the preprint. Due to simplifications made in the embedding computation and a more efficient sampler, the results obtained with this code are not identical but consistent with the statistics shown in the preprint, i.e., mode coverage and free energy errors averaged over the proteins in a test set. Results for individual proteins may differ. For more details, please check the [BIOEMU_RESULTS.md](https://github.com/microsoft/bioemu-benchmarks/blob/main/bioemu_benchmarks/BIOEMU_RESULTS.md) document on the bioemu-benchmarks repository.
+- The `bioemu-v1.0` checkpoint contains the model weights used to produce the results in the preprint. Due to simplifications made in the embedding computation and a more efficient sampler, the results obtained with this code are not identical but consistent with the preprint statistics, i.e., mode coverage and free energy errors averaged over the proteins in a test set. Results for individual proteins may differ. 
+- [Default] The `bioemu-v1.1` checkpoint contains the model weights used to produce the results in the published Science [paper]. 
+- The `bioemu-v1.2` checkpoint contains the model weights trained from an extended set of MD simulations and experimental measurements of folding free energies. 
+
+For more details, please check the [BIOEMU_RESULTS.md](https://github.com/microsoft/bioemu-benchmarks/blob/main/bioemu_benchmarks/BIOEMU_RESULTS.md) document on the bioemu-benchmarks repository.
+
+To use a specific checkpoint, you can specify the `model_name` in the `bioemu.sample` args, for example, `--model_name="bioemu-v1.1"`.
 
 
 ## Side-chain reconstruction and MD-relaxation
@@ -112,7 +118,7 @@ The script saves reconstructed all-heavy-atom structures in `samples_sidechain_r
 ## Third-party code
 The code in the `openfold` subdirectory is copied from [openfold](https://github.com/aqlaboratory/openfold) with minor modifications. The modifications are described in the relevant source files.
 ## Get in touch
-If you have any questions not covered here, please create an issue or contact the BioEmu team by writing to the corresponding author on our [preprint](https://doi.org/10.1101/2024.12.05.626885).
+If you have any questions not covered here, please create an issue or contact the BioEmu team by writing to the corresponding author on our [paper].
 
 ## Citation
 If you are using our code or model, please cite the following paper:
@@ -127,3 +133,4 @@ If you are using our code or model, please cite the following paper:
   doi={10.1126/science.adv9817}
 }
 ```
+[paper]: https://www.science.org/doi/10.1126/science.adv9817
