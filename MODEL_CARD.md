@@ -94,7 +94,7 @@ Variants of BioEmu trained and tested on a dataset of fast folding proteins repo
 In the **protein stability prediction** tasks, we obtain free energy mean absolute errors of 0.9 kcal/mol relative to experimental measurements. The associated Spearman's correlation coefficient is 0.6.
 These results are reported in the [paper].
 
-All test datasets and code necessary to reproduce these results are released in a separate code package https://github.com/microsoft/bioemu-benchmarks/tree/main. The results from all the released model checkpoitns are also included there.
+All test datasets and code necessary to reproduce these results are released in a separate code package https://github.com/microsoft/bioemu-benchmarks/tree/main. The results from all the released model checkpoints are also included there.
 
 ## Technical Specifications
 
