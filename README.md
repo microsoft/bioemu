@@ -21,6 +21,7 @@ This repository contains inference code and model weights.
 - [Installation](#installation)
 - [Sampling structures](#sampling-structures)
 - [Azure AI Foundry](#azure-ai-foundry)
+- [Training data](#training-data)
 - [Get in touch](#get-in-touch)
 - [Citation](#citation)
 
@@ -69,6 +70,8 @@ This code only supports sampling structures of monomers. You can try to sample m
 ## Azure AI Foundry
 BioEmu is also available on [Azure AI Foundry](https://ai.azure.com/). See [How to run BioEmu on Azure AI Foundry](AZURE_AI_FOUNDRY.md) for more details.
 
+## Training data
+To find the molecular dynamics training data used for BioEmu, please look at the zenodo links in our <a href="assets/bioemu_paper.pdf" target="_blank">paper</a>.
 
 ## Reproducing results from the paper
 You can use this code together with code from [bioemu-benchmarks](https://github.com/microsoft/bioemu-benchmarks) to approximately reproduce results from our [paper].
