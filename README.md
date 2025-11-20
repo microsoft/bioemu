@@ -71,7 +71,12 @@ This code only supports sampling structures of monomers. You can try to sample m
 BioEmu is also available on [Azure AI Foundry](https://ai.azure.com/). See [How to run BioEmu on Azure AI Foundry](AZURE_AI_FOUNDRY.md) for more details.
 
 ## Training data
-To find the molecular dynamics training data used for BioEmu, please look at the zenodo links in our <a href="assets/bioemu_paper.pdf" target="_blank">paper</a>.
+The molecular dynamics training data used for BioEmu is available on Zenodo:
+- [CATH](https://doi.org/10.5281/zenodo.15629740)
+- [Octapeptides](https://doi.org/10.5281/zenodo.15641199)
+- [MegaSim](https://doi.org/10.5281/zenodo.15641184)
+
+For a full description of these, see the <a href="assets/bioemu_paper.pdf" target="_blank">paper</a>.
 
 ## Reproducing results from the paper
 You can use this code together with code from [bioemu-benchmarks](https://github.com/microsoft/bioemu-benchmarks) to approximately reproduce results from our [paper].
