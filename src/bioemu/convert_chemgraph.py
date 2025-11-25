@@ -1,7 +1,9 @@
 # Copyright (c) Microsoft Corporation.
 # Licensed under the MIT License.
+from contextlib import contextmanager
 import logging
 from pathlib import Path
+from tempfile import NamedTemporaryFile
 
 import mdtraj
 import numpy as np
@@ -460,13 +462,25 @@ def save_pdb_and_xtc(
         axis=1, keepdims=True
     )  # Center every structure at the origin
 
+    # save to topology_path directly if no physics filtering requested,
+    # or to a tempfile because the first frame may be filtered out
+    @contextmanager
+    def maybe_tempfile():
+        if filter_samples:
+            with NamedTemporaryFile(suffix=".pdb") as tmp:
+                yield tmp.name
+        else:
+            yield topology_path
+    
     # .pdb files contain coordinates in Angstrom
-    _write_pdb(
-        pos=pos_angstrom[0],
-        node_orientations=node_orientations[0],
-        sequence=sequence,
-        filename=topology_path,
-    )
+    with maybe_tempfile() as topology_path_:
+        _write_pdb(
+            pos=pos_angstrom[0],
+            node_orientations=node_orientations[0],
+            sequence=sequence,
+            filename=topology_path_,
+        )
+        topology = mdtraj.load_topology(topology_path_)
 
     xyz_angstrom = []
     for i in range(batch_size):
@@ -474,8 +488,6 @@ def save_pdb_and_xtc(
             pos=pos_angstrom[i], node_orientations=node_orientations[i], sequence=sequence
         )
         xyz_angstrom.append(atom_37.view(-1, 3)[atom_37_mask.flatten()].cpu().numpy())
-
-    topology = mdtraj.load_topology(topology_path)
 
     traj = mdtraj.Trajectory(xyz=np.stack(xyz_angstrom) * 0.1, topology=topology)
 
@@ -495,6 +507,7 @@ def save_pdb_and_xtc(
             All unphysical samples have been saved with the suffix `_unphysical.xtc`.
             """
             )
+            
         else:
             if len(filtered_traj) < num_samples_unfiltered:
                 logger.info(
@@ -502,6 +515,8 @@ def save_pdb_and_xtc(
                     "based on structure criteria. Filtering can be disabled with `--filter_samples=False`."
                 )
             traj = filtered_traj
+        # this is either first filtered frame, or if all were filtered, the unfiltered first frame
+        traj[0].save_pdb(topology_path)
 
     traj.superpose(reference=traj, frame=0)
     traj.save_xtc(xtc_path)
