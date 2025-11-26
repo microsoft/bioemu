@@ -1,6 +1,5 @@
 # Copyright (c) Microsoft Corporation.
 # Licensed under the MIT License.
-from contextlib import contextmanager
 import logging
 from pathlib import Path
 from tempfile import NamedTemporaryFile
@@ -498,7 +497,7 @@ def save_pdb_and_xtc(
             All unphysical samples have been saved with the suffix `_unphysical.xtc`.
             """
             )
-            
+
         else:
             if len(filtered_traj) < num_samples_unfiltered:
                 logger.info(
