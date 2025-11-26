@@ -462,25 +462,16 @@ def save_pdb_and_xtc(
         axis=1, keepdims=True
     )  # Center every structure at the origin
 
-    # save to topology_path directly if no physics filtering requested,
-    # or to a tempfile because the first frame may be filtered out
-    @contextmanager
-    def maybe_tempfile():
-        if filter_samples:
-            with NamedTemporaryFile(suffix=".pdb") as tmp:
-                yield tmp.name
-        else:
-            yield topology_path
-    
-    # .pdb files contain coordinates in Angstrom
-    with maybe_tempfile() as topology_path_:
+    # save topology to tmpfile first, final topology might require filtering
+    with NamedTemporaryFile(suffix=".pdb") as tmp:
+        # .pdb files contain coordinates in Angstrom
         _write_pdb(
             pos=pos_angstrom[0],
             node_orientations=node_orientations[0],
             sequence=sequence,
-            filename=topology_path_,
+            filename=tmp.name,
         )
-        topology = mdtraj.load_topology(topology_path_)
+        topology = mdtraj.load_topology(tmp.name)
 
     xyz_angstrom = []
     for i in range(batch_size):
@@ -515,9 +506,9 @@ def save_pdb_and_xtc(
                     "based on structure criteria. Filtering can be disabled with `--filter_samples=False`."
                 )
             traj = filtered_traj
-        # this is either first filtered frame, or if all were filtered, the unfiltered first frame
-        traj[0].save_pdb(topology_path)
 
+    # topology is either from filtered frames or from original samples (if no filtering, or if all samples get filtered)
+    traj[0].save_pdb(topology_path)
     traj.superpose(reference=traj, frame=0)
     traj.save_xtc(xtc_path)
 
