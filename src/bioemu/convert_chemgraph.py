@@ -2,6 +2,7 @@
 # Licensed under the MIT License.
 import logging
 from pathlib import Path
+from tempfile import NamedTemporaryFile
 
 import mdtraj
 import numpy as np
@@ -460,13 +461,16 @@ def save_pdb_and_xtc(
         axis=1, keepdims=True
     )  # Center every structure at the origin
 
-    # .pdb files contain coordinates in Angstrom
-    _write_pdb(
-        pos=pos_angstrom[0],
-        node_orientations=node_orientations[0],
-        sequence=sequence,
-        filename=topology_path,
-    )
+    # save topology to tmpfile first, final topology might require filtering
+    with NamedTemporaryFile(suffix=".pdb") as tmp:
+        # .pdb files contain coordinates in Angstrom
+        _write_pdb(
+            pos=pos_angstrom[0],
+            node_orientations=node_orientations[0],
+            sequence=sequence,
+            filename=tmp.name,
+        )
+        topology = mdtraj.load_topology(tmp.name)
 
     xyz_angstrom = []
     for i in range(batch_size):
@@ -474,8 +478,6 @@ def save_pdb_and_xtc(
             pos=pos_angstrom[i], node_orientations=node_orientations[i], sequence=sequence
         )
         xyz_angstrom.append(atom_37.view(-1, 3)[atom_37_mask.flatten()].cpu().numpy())
-
-    topology = mdtraj.load_topology(topology_path)
 
     traj = mdtraj.Trajectory(xyz=np.stack(xyz_angstrom) * 0.1, topology=topology)
 
@@ -495,6 +497,7 @@ def save_pdb_and_xtc(
             All unphysical samples have been saved with the suffix `_unphysical.xtc`.
             """
             )
+
         else:
             if len(filtered_traj) < num_samples_unfiltered:
                 logger.info(
@@ -503,6 +506,8 @@ def save_pdb_and_xtc(
                 )
             traj = filtered_traj
 
+    # topology is either from filtered frames or from original samples (if no filtering, or if all samples get filtered)
+    traj[0].save_pdb(topology_path)
     traj.superpose(reference=traj, frame=0)
     traj.save_xtc(xtc_path)
 
