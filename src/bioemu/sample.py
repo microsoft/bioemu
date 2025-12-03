@@ -3,9 +3,15 @@
 """Script for sampling from a trained model."""
 
 import logging
+import sys
+from pathlib import Path
+
+# Allow running as a script by adding the source directory to the path
+if __name__ == "__main__" and "bioemu" not in sys.modules:
+    sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "src"))
+
 import typing
 from collections.abc import Callable
-from pathlib import Path
 from typing import Literal
 
 import hydra
@@ -16,18 +22,17 @@ import yaml
 from torch_geometric.data.batch import Batch
 from tqdm import tqdm
 
-from .chemgraph import ChemGraph
-from .convert_chemgraph import save_pdb_and_xtc
-from .get_embeds import get_colabfold_embeds
-from .model_utils import load_model, load_sdes, maybe_download_checkpoint
-from .sde_lib import SDE
-from .seq_io import check_protein_valid, parse_sequence, write_fasta
-from .utils import (
-    count_samples_in_output_dir,
+from bioemu.chemgraph import ChemGraph
+from bioemu.convert_chemgraph import save_pdb_and_xtc
+from bioemu.get_embeds import get_colabfold_embeds
+from bioemu.model_utils import load_model, load_sdes, maybe_download_checkpoint
+from bioemu.sde_lib import SDE
+from bioemu.seq_io import check_protein_valid, parse_sequence, write_fasta
+from bioemu.utils import (    count_samples_in_output_dir,
     format_npz_samples_filename,
     print_traceback_on_exception,
 )
-from .steering import log_physicality
+from bioemu.steering import log_physicality
 
 logger = logging.getLogger(__name__)
 
@@ -191,11 +196,11 @@ def main(
         # Validate steering times for reverse diffusion start: t=1 to end: t=0
         assert (
             0.0 <= steering_config_dict["end"] <= steering_config_dict["start"] <= 1.0
-        ), f"Steering end ({steering_config_dict["end"]}) must be between 0.0 and 1.0"
+        ), f"Steering end ({steering_config_dict['end']}) must be between 0.0 and 1.0"
 
         if steering_config_dict["num_particles"] < 1:
             raise ValueError(
-                f"num_particles ({steering_config_dict["num_particles"]}) must be >= 1"
+                f"num_particles ({steering_config_dict['num_particles']}) must be >= 1"
             )
     else:
         num_particles = 1
@@ -264,7 +269,7 @@ def main(
     if steering_config_dict is not None:
         assert (
             batch_size >= steering_config_dict["num_particles"]
-        ), f"batch_size ({batch_size}) must be at least num_particles ({steering_config_dict["num_particles"]})"
+        ), f"batch_size ({batch_size}) must be at least num_particles ({steering_config_dict['num_particles']})"
         num_particles = steering_config_dict["num_particles"]
 
         # Correct the number of samples we draw per sampling iteration by the number of particles
@@ -355,7 +360,7 @@ def main(
 
     logger.info(f"Completed. Your samples are in {output_dir}.")
 
-    return {"pos": positions, "rot": node_orientations}
+    # return {"pos": positions, "rot": node_orientations} # Fire tries to build CLI from output and blocks further execution
 
 
 def get_context_chemgraph(

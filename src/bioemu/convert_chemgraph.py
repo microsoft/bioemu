@@ -561,6 +561,7 @@ def _filter_unphysical_traj_masks(
         "rest_distances": 10 * rest_distances,
     }
     path = str(Path(".").absolute()) + "/outputs/analysis"
+    os.makedirs(os.path.dirname(path), exist_ok=True)
     np.savez(path, **violations)
     # data = np.load(os.getcwd()+'/outputs/analysis.npz'); {key: data[key] for key in data.keys()}
 

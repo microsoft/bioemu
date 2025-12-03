@@ -22,7 +22,9 @@ dependencies = [
     "stackprinter",
     "typer",
     "uv",
-    "einops"
+    "einops",
+    "matplotlib>=3.10.7",
+    "pandas>=2.3.3",
 ]
 readme = "README.md"
 

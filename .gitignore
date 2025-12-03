@@ -151,3 +151,9 @@ notebooks/**out**
 .cursor/
 .cursor/** */
 docs/*
+uv.lock
+
+# samples
+*.pdb
+*.xtc
+*.fasta
