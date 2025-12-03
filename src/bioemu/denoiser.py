@@ -521,8 +521,7 @@ def dpm_solver(
                         batch=batch,
                         energy=total_energy,
                         previous_energy=previous_energy,
-                        num_fk_samples=steering_config["num_particles"],
-                        num_resamples=steering_config["num_particles"],
+                        num_particles=steering_config["num_particles"],
                         log_weights=log_weights,
                     )
                     previous_energy = total_energy

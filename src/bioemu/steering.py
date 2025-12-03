@@ -807,20 +807,20 @@ class StructuralViolation(Potential):
 
 
 def resample_batch(
-    batch, num_fk_samples, num_resamples, energy, previous_energy=None, log_weights=None
+    batch, num_particles, energy, previous_energy=None, log_weights=None
 ):
     """
     Resample the batch based on the energy.
     If previous_energy is provided, it is used to compute the resampling probability.
     If log_weights is provided (from gradient guidance), it is added to correct the resampling probabilities.
     """
-    BS = energy.shape[0] // num_fk_samples
+    # BS = energy.shape[0] // num_particles
     # assert energy.shape == (BS, num_fk_samples), f"Expected energy shape {(BS, num_fk_samples)}, got {energy.shape}"
 
-    energy = energy.reshape(BS, num_fk_samples)
+    # energy = energy.reshape(BS, num_particles)
     # transition_log_prob = transition_log_prob.reshape(BS, num_fk_samples)
     if previous_energy is not None:
-        previous_energy = previous_energy.reshape(BS, num_fk_samples)
+        previous_energy = previous_energy.reshape(BS, num_particles)
         # Compute the resampling probability based on the energy difference
         # If previous_energy > energy, high probability to resample since new energy is lower
         resample_logprob = previous_energy - energy
@@ -831,28 +831,22 @@ def resample_batch(
 
     # Add importance weights from gradient guidance (if provided)
     if log_weights is not None:
-        log_weights_grouped = log_weights.view(BS, num_fk_samples)
-        resample_logprob = resample_logprob + log_weights_grouped
+        # log_weights_grouped = log_weights.view(BS, num_particles)
+        resample_logprob = resample_logprob + log_weights
 
     # Sample indices per sample in mini batch [BS, Replica]
     # p(i) = exp(-E_i) / Sum[exp(-E_i)]
-    resample_prob = torch.exp(torch.nn.functional.log_softmax(resample_logprob, dim=-1))  # in [0,1]
-    indices = torch.multinomial(
-        resample_prob, num_samples=num_resamples, replacement=True
-    )  # [BS, num_fk_samples]
-    # indices = einops.repeat(torch.argmin(energy, dim=1), 'b -> b n', n=num_resamples)
-    BS_offset = (
-        torch.arange(BS).unsqueeze(-1) * num_fk_samples
-    )  # [0, 1xnum_fk_samples, 2xnum_fk_samples, ...]
-    # The indices are of shape [BS, num_particles], with 0<= index < num_particles
-    # We need to add the batch offset to get the correct indices in the energy tensor
-    # e.g. [0, 1, 2]+(0xnum_fk_samples) + [0, 2, 2]+(1xnum_fk_samples) ... for num_fk_samples=3
-    indices = (
-        indices + BS_offset.to(indices.device)
-    ).flatten()  # [BS, num_fk_samples] -> [BS*num_fk_samples] with offset
-    # if len(set(indices.tolist())) < energy.shape[0]:
-    #     dropped = set(range(energy.shape[0])) - set(indices.tolist())
-    #     print(f"Dropped indices during resampling: {sorted(dropped)}")
+    # TODO: something's weird with the shapes
+    # resample_prob = torch.exp(torch.nn.functional.log_softmax(resample_logprob, dim=-1))  # in [0,1]
+    chunks = torch.split(resample_logprob, split_size_or_sections=num_particles)
+    chunk_size = chunks[0].shape[0]
+    indices = []
+    for chunk_idx, chunk in enumerate(chunks):
+        chunk_prob = torch.exp(torch.nn.functional.log_softmax(chunk, dim=-1))
+        indices_ = torch.multinomial(chunk_prob, num_samples=chunk.numel(), replacement=True)
+        indices_ = indices_ + chunk_size * chunk_idx
+        indices.append(indices_)
+    indices = torch.cat(indices, dim=0)
 
     # Resample samples
     data_list = batch.to_data_list()
@@ -865,7 +859,7 @@ def resample_batch(
     if log_weights is not None:
         # After resampling, all particles have uniform weight 1/num_fk_samples
         resampled_log_weights = torch.log(
-            torch.ones(BS * num_resamples, device=batch.pos.device) / num_fk_samples
+            torch.ones(BS, device=batch.pos.device)
         )
     else:
         resampled_log_weights = None

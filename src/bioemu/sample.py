@@ -28,7 +28,8 @@ from bioemu.get_embeds import get_colabfold_embeds
 from bioemu.model_utils import load_model, load_sdes, maybe_download_checkpoint
 from bioemu.sde_lib import SDE
 from bioemu.seq_io import check_protein_valid, parse_sequence, write_fasta
-from bioemu.utils import (    count_samples_in_output_dir,
+from bioemu.utils import (
+    count_samples_in_output_dir,
     format_npz_samples_filename,
     print_traceback_on_exception,
 )
@@ -72,7 +73,6 @@ _NODE_LABEL_MAPPING: dict[str, int] = {
     "B": 23,
     "Z": 25,
 }
-
 
 
 @print_traceback_on_exception
@@ -176,34 +176,25 @@ def main(
     if steering_config_dict is not None:
         # If steering is enabled by defining a minimum of two particles, extract potentials and create config
         num_particles = steering_config_dict["num_particles"]
-        if steering_config_dict["num_particles"] > 1:
-            # Extract potentials configuration
-            potentials_config = steering_config_dict.get("potentials", {})
+        
+        # Extract potentials configuration
+        potentials_config = steering_config_dict.get("potentials", {})
 
-            # Instantiate potentials
-            potentials = hydra.utils.instantiate(OmegaConf.create(potentials_config))
-            potentials: list[Callable] = list(potentials.values())
+        # Instantiate potentials
+        potentials = hydra.utils.instantiate(OmegaConf.create(potentials_config))
+        potentials: list[Callable] = list(potentials.values())
 
-            # Create final steering config (without potentials, those are passed separately)
-            # Remove 'potentials' from steering_config_dict if present
-            steering_config_dict = dict(steering_config_dict)  # ensure mutable copy
-            steering_config_dict.pop("potentials")
-        else:
-            # num_particles <= 1, no steering
-            steering_config_dict = None
-            potentials = None
-
+        # Create final steering config (without potentials, those are passed separately)
+        # Remove 'potentials' from steering_config_dict if present
+        steering_config_dict = dict(steering_config_dict)  # ensure mutable copy
+        steering_config_dict.pop("potentials")
         # Validate steering times for reverse diffusion start: t=1 to end: t=0
         assert (
             0.0 <= steering_config_dict["end"] <= steering_config_dict["start"] <= 1.0
-        ), f"Steering end ({steering_config_dict['end']}) must be between 0.0 and 1.0"
+        ), f"Steering end ({steering_config_dict['end']}) must be between 0.0 and 1.0 and start ({steering_config_dict['start']}) must be between 0.0 and 1.0"
 
-        if steering_config_dict["num_particles"] < 1:
-            raise ValueError(
-                f"num_particles ({steering_config_dict['num_particles']}) must be >= 1"
-            )
     else:
-        num_particles = 1
+        potentials = None
 
     ckpt_path, model_config_path = maybe_download_checkpoint(
         model_name=model_name, ckpt_path=ckpt_path, model_config_path=model_config_path
@@ -263,27 +254,27 @@ def main(
     )
     # Adjust batch size by sequence length since longer sequence require quadratically more memory
     batch_size = int(batch_size_100 * (100 / len(sequence)) ** 2)
-    print(f"Batch size before steering: {batch_size}")
 
-    # For a given batch_size, calculate the reduced batch size after taking steering particle multiplicity into account
-    if steering_config_dict is not None:
-        assert (
-            batch_size >= steering_config_dict["num_particles"]
-        ), f"batch_size ({batch_size}) must be at least num_particles ({steering_config_dict['num_particles']})"
-        num_particles = steering_config_dict["num_particles"]
+    # # For a given batch_size, calculate the reduced batch size after taking steering particle multiplicity into account
+    # if steering_config_dict is not None:
+    #     assert (
+    #         batch_size >= steering_config_dict["num_particles"]
+    #     ), f"batch_size ({batch_size}) must be at least num_particles ({steering_config_dict['num_particles']})"
+    #     num_particles = steering_config_dict["num_particles"]
 
-        # Correct the number of samples we draw per sampling iteration by the number of particles
-        # Effective batch size is decreased: BS <- BS / num_particles
-        batch_size = (
-            batch_size // num_particles
-        ) * num_particles  # Round to largest multiple of num_particles
-        # late expansion of batch size by multiplicity, helper variable for denoiser to check proper late multiplicity
-        steering_config_dict["max_batch_size"] = batch_size
-        batch_size = batch_size // num_particles  # effective batch size: BS <- BS / num_particles
-        # batch size is now the maximum of what we can use while taking particle multiplicity into account
+    #     # Correct the number of samples we draw per sampling iteration by the number of particles
+    #     # Effective batch size is decreased: BS <- BS / num_particles
+    #     batch_size = (
+    #         batch_size // num_particles
+    #     ) * num_particles  # Round to largest multiple of num_particles
+    #     # late expansion of batch size by multiplicity, helper variable for denoiser to check proper late multiplicity
+    #     steering_config_dict["max_batch_size"] = batch_size
+    #     batch_size = batch_size // num_particles  # effective batch size: BS <- BS / num_particles
+    #     # batch size is now the maximum of what we can use while taking particle multiplicity into account
 
-        print(f"Batch size after steering: {batch_size} particles: {num_particles}")
-
+    #     print(f"Batch size after steering: {batch_size} particles: {num_particles}")
+    
+    batch_size = min(batch_size, num_samples)
     logger.info(f"Using batch size {min(batch_size, num_samples)}")
 
     existing_num_samples = count_samples_in_output_dir(output_dir)
@@ -299,19 +290,21 @@ def main(
                 f"{existing_num_samples} samples have been generated."
             )
         # logger.info(f"Sampling {seed=}")
-        batch_iterator.set_description(
-            f"Sampling batch {seed}/{num_samples} ({n} samples x {num_particles} particles)"
-        )
-
         if steering_config_dict is not None:
-            if steering_config_dict["late_steering"]:
-                # For late steering, we start with [BS] and later only expand to [BS * num_particles]
-                actual_batch_size = n
-            else:
-                # For regular steering, we directly draw [BS * num_particles] samples
-                actual_batch_size = n * num_particles
+            description = f"Sampling batch {seed}/{num_samples} ({n} samples with {steering_config_dict['num_particles']} particles)"
         else:
-            actual_batch_size = n
+            description = f"Sampling batch {seed}/{num_samples} ({n} samples)"
+        batch_iterator.set_description(description)
+
+        # if steering_config_dict is not None:
+        #     if steering_config_dict["late_steering"]:
+        #         # For late steering, we start with [BS] and later only expand to [BS * num_particles]
+        #         actual_batch_size = n
+        #     else:
+        #         # For regular steering, we directly draw [BS * num_particles] samples
+        #         actual_batch_size = n * num_particles
+        # else:
+        #     actual_batch_size = n
 
         steering_config_dict = (
             OmegaConf.create(steering_config_dict) if steering_config_dict is not None else None
@@ -325,7 +318,7 @@ def main(
             score_model=score_model,
             sequence=sequence,
             sdes=sdes,
-            batch_size=actual_batch_size,
+            batch_size=batch_size,
             seed=seed,
             denoiser=denoiser,
             cache_embeds_dir=cache_embeds_dir,
@@ -360,7 +353,7 @@ def main(
 
     logger.info(f"Completed. Your samples are in {output_dir}.")
 
-    # return {"pos": positions, "rot": node_orientations} # Fire tries to build CLI from output and blocks further execution
+    return {"pos": positions, "rot": node_orientations} # Fire tries to build CLI from output and blocks further execution
 
 
 def get_context_chemgraph(

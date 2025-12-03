@@ -113,12 +113,7 @@ def main(cfg: DictConfig):
             batch_size_100=batch_size_100,
             output_dir=output_dir,
             denoiser_config=cfg.denoiser,
-            steering_potentials_config=steering_potentials,
-            num_steering_particles=steering_config.num_particles if hasattr(steering_config, 'num_particles') else 1,
-            steering_start_time=steering_config.start if hasattr(steering_config, 'start') else 0.0,
-            steering_end_time=steering_config.end if hasattr(steering_config, 'end') else 1.0,
-            resampling_freq=steering_config.resampling_freq if hasattr(steering_config, 'resampling_freq') else 1,
-            fast_steering=steering_config.fast_steering if hasattr(steering_config, 'fast_steering') else False,
+            steering_config=steering_config,
             filter_samples=True
         )
         
