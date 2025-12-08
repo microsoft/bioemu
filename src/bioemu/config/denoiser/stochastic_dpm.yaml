@@ -2,5 +2,5 @@ _target_: bioemu.shortcuts.dpm_solver
 _partial_: true
 eps_t: 0.001
 max_t: 0.99
-N: 50
-noise: 0.0
+N: 100
+noise: 0.5
