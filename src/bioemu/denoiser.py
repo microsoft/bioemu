@@ -15,7 +15,6 @@ from bioemu.so3_sde import SO3SDE, apply_rotvec_to_rotmat
 from bioemu.steering import get_pos0_rot0, resample_batch
 
 TwoBatches = tuple[Batch, Batch]
-ThreeBatches = tuple[torch.Tensor, torch.Tensor, torch.Tensor]
 
 
 class EulerMaruyamaPredictor:
@@ -82,7 +81,7 @@ class EulerMaruyamaPredictor:
         dt: torch.Tensor,
         batch_idx: torch.LongTensor,
         score: torch.Tensor,
-    ) -> TwoBatches:
+    ) -> tuple[torch.Tensor, torch.Tensor]:
 
         # Set up different coefficients and terms.
         drift, diffusion = self.reverse_drift_and_diffusion(
@@ -90,13 +89,12 @@ class EulerMaruyamaPredictor:
         )
 
         # Update to next step using either special update for SDEs on SO(3) or standard update.
-        sample, mean = self.update_given_drift_and_diffusion(
+        return self.update_given_drift_and_diffusion(
             x=x,
             dt=dt,
             drift=drift,
             diffusion=diffusion,
         )
-        return sample, mean
 
     def forward_sde_step(
         self,
@@ -104,16 +102,13 @@ class EulerMaruyamaPredictor:
         t: torch.Tensor,
         dt: torch.Tensor,
         batch_idx: torch.LongTensor,
-    ) -> TwoBatches:
+    ) -> tuple[torch.Tensor, torch.Tensor]:
         """Update to next step using either special update for SDEs on SO(3) or standard update.
         Handles both SO(3) and Euclidean updates."""
 
         drift, diffusion = self.corruption.sde(x=x, t=t, batch_idx=batch_idx)
         # Update to next step using either special update for SDEs on SO(3) or standard update.
-        sample, mean = self.update_given_drift_and_diffusion(
-            x=x, dt=dt, drift=drift, diffusion=diffusion
-        )
-        return sample, mean
+        return self.update_given_drift_and_diffusion(x=x, dt=dt, drift=drift, diffusion=diffusion)
 
 
 def get_score(
