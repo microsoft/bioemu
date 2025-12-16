@@ -619,8 +619,8 @@ def save_pdb_and_xtc(
 
     # .pdb files contain coordinates in Angstrom
     _write_pdb(
-        pos=pos_angstrom[-1],
-        node_orientations=node_orientations[-1],
+        pos=pos_angstrom[0],
+        node_orientations=node_orientations[0],
         sequence=sequence,
         filename=topology_path,
     )
