@@ -58,7 +58,7 @@ class EulerMaruyamaPredictor:
         dt: torch.Tensor,
         drift: torch.Tensor,
         diffusion: torch.Tensor,
-    ) -> ThreeBatches:
+    ) -> tuple[torch.Tensor, torch.Tensor]:
         z = torch.randn_like(drift)
 
         # Update to next step using either special update for SDEs on SO(3) or standard update.
@@ -72,7 +72,7 @@ class EulerMaruyamaPredictor:
         else:
             mean = x + drift * dt
             sample = mean + self.noise_weight * diffusion * torch.sqrt(dt.abs()) * z
-        return sample, mean, z
+        return sample, mean
 
     def update_given_score(
         self,
@@ -90,7 +90,7 @@ class EulerMaruyamaPredictor:
         )
 
         # Update to next step using either special update for SDEs on SO(3) or standard update.
-        sample, mean, z = self.update_given_drift_and_diffusion(
+        sample, mean = self.update_given_drift_and_diffusion(
             x=x,
             dt=dt,
             drift=drift,
@@ -110,7 +110,7 @@ class EulerMaruyamaPredictor:
 
         drift, diffusion = self.corruption.sde(x=x, t=t, batch_idx=batch_idx)
         # Update to next step using either special update for SDEs on SO(3) or standard update.
-        sample, mean, z = self.update_given_drift_and_diffusion(
+        sample, mean = self.update_given_drift_and_diffusion(
             x=x, dt=dt, drift=drift, diffusion=diffusion
         )
         return sample, mean
@@ -228,7 +228,7 @@ def heun_denoiser(
             )
 
         for field in fields:
-            batch[field], _, _ = predictors[field].update_given_drift_and_diffusion(
+            batch[field], _ = predictors[field].update_given_drift_and_diffusion(
                 x=batch_hat[field],
                 dt=(t_next - t_hat)[0],
                 drift=drift_hat[field],
@@ -248,7 +248,7 @@ def heun_denoiser(
 
                 avg_drift[field] = (drifts[field] + drift_hat[field]) / 2
             for field in fields:
-                sample, _, _ = predictors[field].update_given_drift_and_diffusion(
+                sample, _ = predictors[field].update_given_drift_and_diffusion(
                     x=batch_hat[field],
                     dt=(t_next - t_hat)[0],
                     drift=avg_drift[field],
@@ -394,7 +394,7 @@ def dpm_solver(
             t=t_hat,
             batch_idx=batch_idx,
         )
-        sample, _, _ = so3_predictor.update_given_drift_and_diffusion(
+        sample, _ = so3_predictor.update_given_drift_and_diffusion(
             x=batch_hat.node_orientations,
             drift=drift,
             diffusion=0.0,
@@ -431,7 +431,7 @@ def dpm_solver(
             t=t_lambda,
             batch_idx=batch_idx,
         )
-        sample, _, _ = so3_predictor.update_given_drift_and_diffusion(
+        sample, _ = so3_predictor.update_given_drift_and_diffusion(
             x=batch_hat.node_orientations,
             drift=drift,
             diffusion=0.0,
