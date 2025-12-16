@@ -20,7 +20,7 @@ This repository contains inference code and model weights.
 ## Table of Contents
 - [Installation](#installation)
 - [Sampling structures](#sampling-structures)
-- [Steering for Enhanced Physical Realism](#steering-for-enhanced-physical-realism)
+- [Steering to avoid chain breaks and clashes](#steering-to-avoid-chain-breaks-and-clashes)
 - [Azure AI Foundry](#azure-ai-foundry)
 - [Get in touch](#get-in-touch)
 - [Citation](#citation)
@@ -66,22 +66,24 @@ By default, unphysical structures (steric clashes or chain discontinuities) will
 
 This code only supports sampling structures of monomers. You can try to sample multimers using the [linker trick](https://x.com/ag_smith/status/1417063635000598528), but in our limited experiments, this has not worked well.
 
-## Steering structures
+## Steering to avoid chain breaks and clashes
 
-BioEmu includes a [steering system](https://arxiv.org/abs/2501.06848) that uses [Sequential Monte Carlo (SMC)](https://www.stats.ox.ac.uk/~doucet/doucet_defreitas_gordon_smcbookintro.pdf) to guide the diffusion process toward more physically plausible protein structures. Steering applies potential energy functions during denoising to favor conformations that satisfy physical constraints. Algorithmically, steering simulates *multiple particles* per desired sample and resamples between these particles according to the favorability of the provided potentials. 
+BioEmu includes a [steering system](https://arxiv.org/abs/2501.06848) that uses [Sequential Monte Carlo (SMC)](https://www.stats.ox.ac.uk/~doucet/doucet_defreitas_gordon_smcbookintro.pdf) to guide the diffusion process toward more physically plausible protein structures. Steering applies potential energy functions during denoising to favor conformations that satisfy physical constraints. Algorithmically, steering simulates multiple *particles* (in the SMC sense, i.e., candidate samples) per desired output sample and resamples between these particles according to the favorability of the provided potentials. 
 
 ### Quick start with steering
 
-Enable steering with physical constraints using the CLI by setting `--num_steering_particles` > 1:
+Enable steering with physical constraints using the CLI:
 
 ```bash
 python -m bioemu.sample \
     --sequence GYDPETGTWG \
     --num_samples 100 \
     --output_dir ~/steered-samples \
-    --num_steering_particles 3 \
-    --steering_start_time 0.5 \
-    --resampling_freq 2
+    --steering_config src/bioemu/config/steering/physical_steering.yaml \
+    --num_steering_particles 5 \
+    --steering_start_time 0.1 \
+    --steering_end_time 0.9 \
+    --resampling_freq 3
 ```
 
 Or using the Python API:
@@ -93,6 +95,7 @@ sample(
     sequence='GYDPETGTWG',
     num_samples=100,
     output_dir='~/steered-samples',
+    steering_config='src/bioemu/config/steering/physical_steering.yaml',
     num_steering_particles=3,
     steering_start_time=0.5,
     resampling_freq=2
@@ -101,19 +104,19 @@ sample(
 
 ### Key steering parameters
 
-- `num_steering_particles`: Number of particles per sample (1 = no steering, >1=steering)
+- `num_steering_particles`: Number of particles per sample (1 = no steering, >1 enables steering)
 - `steering_start_time`: When to start steering (0.0-1.0, default: 0.0)
 - `steering_end_time`: When to stop steering (0.0-1.0, default: 1.0)
 - `resampling_freq`: How often to resample particles (default: 1)
-- `steering_potentials_config`: Path to potentials configuration file (optional, defaults to physical_potentials.yaml)
+- `steering_config`: Path to potentials configuration file (required for steering)
 
 ### Available potentials
 
-When steering is enabled (num_steering_particles > 1) and no additional `steering_potentials_config.yaml` is provided, BioEMU automatically loads `physical_potentials.yaml` by default, which includes:
+The [`physical_steering.yaml`](./src/bioemu/config/steering/physical_steering.yaml) configuration provides potentials for physical realism:
 - **ChainBreak**: Prevents backbone discontinuities
 - **ChainClash**: Avoids steric clashes between non-neighboring residues
 
-You can override this by providing a custom `steering_potentials_config` path.
+You can create a custom `steering_config` YAML file to define your own potentials.
 
 ## Azure AI Foundry
 BioEmu is also available on [Azure AI Foundry](https://ai.azure.com/). See [How to run BioEmu on Azure AI Foundry](AZURE_AI_FOUNDRY.md) for more details.

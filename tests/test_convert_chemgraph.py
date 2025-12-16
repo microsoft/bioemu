@@ -76,113 +76,42 @@ def test_adjust_oxygen_pos(bb_pos_1ake):
     assert torch.allclose(original_oxygen_pos[:-1], new_oxygen_pos[:-1], rtol=5e-2)
 
 
-
-def test_tensor_batch_atom37_conversion(default_batch):
+def test_batch_frames_to_atom37_correctness_and_performance(default_batch):
     """
-    Tests that for the Chignolin reference chemgraph, the atom37 conversion
-    is constructed correctly, maintaining the right information.
-    """
-    atom_37, atom_37_mask, aatype = get_atom37_from_frames(
-        pos=default_batch[0].pos,
-        node_orientations=default_batch[0].node_orientations,
-        sequence="YYDPETGTWY",
-    )
+    Test that batch_frames_to_atom37 produces identical results to per-sample
+    get_atom37_from_frames computation, while being faster.
 
-    assert atom_37.shape == (10, 37, 3)
-    assert atom_37_mask.shape == (10, 37)
-    assert aatype.shape == (10,)
-
-    # Check if the positions of CA (index 1) are correctly assigned
-    assert torch.all(atom_37[:, 1, :].reshape(-1, 3) == default_batch[0].pos.reshape(-1, 3))
-
-
-def test_tensor_batch_frames_to_atom37(default_batch):
-    """
-    Test that the batched tensor_batch_frames_to_atom37 produces identical results
-    to the loop-based batch_frames_to_atom37 implementation.
-    """
-    from bioemu.convert_chemgraph import batch_frames_to_atom37, tensor_batch_frames_to_atom37
-
-    # Extract batch data
-    batch_size = default_batch.num_graphs
-    seq_length = default_batch[0].pos.shape[0]
-    sequence = "YYDPETGTWY"  # Chignolin sequence
-
-    # Create batched tensors
-    pos_batch = torch.stack([default_batch[i].pos for i in range(batch_size)], dim=0)
-    rot_batch = torch.stack([default_batch[i].node_orientations for i in range(batch_size)], dim=0)
-
-    # Use the loop-based version
-    atom37_loop, mask_loop, aatype_loop = batch_frames_to_atom37(
-        pos=pos_batch, rot=rot_batch, seq=[sequence] * batch_size
-    )
-
-    # Use the batched tensor version
-    atom37_batched, mask_batched, aatype_batched = tensor_batch_frames_to_atom37(
-        pos=pos_batch, rot=rot_batch, seq=sequence
-    )
-
-    # Check shapes match
-    assert atom37_loop.shape == atom37_batched.shape
-    assert mask_loop.shape == mask_batched.shape
-    assert aatype_loop.shape == aatype_batched.shape
-
-    # Check that the outputs are identical (or very close due to floating point)
-    assert torch.allclose(
-        atom37_loop, atom37_batched, rtol=1e-5, atol=1e-7
-    ), f"atom37 mismatch: max diff = {(atom37_loop - atom37_batched).abs().max()}"
-
-    assert torch.all(mask_loop == mask_batched), "atom37_mask mismatch"
-
-    assert torch.all(aatype_loop == aatype_batched), "aatype mismatch"
-
-    # Additional validation: check that CA positions match the input positions
-    # atom37 index 1 is CA
-    assert torch.allclose(
-        atom37_batched[:, :, 1, :], pos_batch, rtol=1e-5
-    ), "CA positions don't match input positions"
-
-
-def test_tensor_batch_frames_to_atom37_performance(default_batch):
-    """
-    Compare the performance of three methods:
-    1. Per-sample computation using get_atom37_from_frames
-    2. Loop-based batch_frames_to_atom37
-    3. Fully batched tensor_batch_frames_to_atom37
+    This test:
+    1. Processes samples individually with get_atom37_from_frames
+    2. Processes the same samples in a batch with batch_frames_to_atom37
+    3. Verifies the results are identical
+    4. Verifies batch_frames_to_atom37 is faster
     """
     import time
-    from bioemu.convert_chemgraph import (
-        batch_frames_to_atom37,
-        tensor_batch_frames_to_atom37,
-        get_atom37_from_frames,
-    )
 
-    # Create a larger batch for more meaningful timing
-    batch_size = 32
-    seq_length = default_batch[0].pos.shape[0]
+    from bioemu.convert_chemgraph import batch_frames_to_atom37
+
+    batch_size = BATCH_SIZE
     sequence = "YYDPETGTWY"  # Chignolin sequence
 
-    # Replicate the data to create a larger batch
+    # Create batch data by sampling from default_batch
     pos_list = []
     rot_list = []
-    data_list = []
     for _ in range(batch_size):
         idx = torch.randint(0, default_batch.num_graphs, (1,)).item()
         pos_list.append(default_batch[idx].pos)
         rot_list.append(default_batch[idx].node_orientations)
-        data_list.append(default_batch[idx])
 
     pos_batch = torch.stack(pos_list, dim=0)
     rot_batch = torch.stack(rot_list, dim=0)
 
-    # Warm up (to ensure any lazy initialization is done)
+    # Warm up
     _ = get_atom37_from_frames(pos_list[0], rot_list[0], sequence)
-    _ = batch_frames_to_atom37(pos=pos_batch[:2], rot=rot_batch[:2], seq=[sequence] * 2)
-    _ = tensor_batch_frames_to_atom37(pos=pos_batch[:2], rot=rot_batch[:2], seq=sequence)
+    _ = batch_frames_to_atom37(pos=pos_batch[:2], rot=rot_batch[:2], seq=sequence)
 
     num_runs = 10
 
-    # Benchmark 1: Per-sample computation using get_atom37_from_frames
+    # Benchmark per-sample computation using get_atom37_from_frames
     per_sample_times = []
     for _ in range(num_runs):
         start = time.perf_counter()
@@ -194,65 +123,58 @@ def test_tensor_batch_frames_to_atom37_performance(default_batch):
             atom37_list.append(atom37_i)
             mask_list.append(mask_i)
             aatype_list.append(aatype_i)
-        # Stack results
-        _ = torch.stack(atom37_list, dim=0)
-        _ = torch.stack(mask_list, dim=0)
-        _ = torch.stack(aatype_list, dim=0)
+        atom37_per_sample = torch.stack(atom37_list, dim=0)
+        mask_per_sample = torch.stack(mask_list, dim=0)
+        aatype_per_sample = torch.stack(aatype_list, dim=0)
         per_sample_times.append(time.perf_counter() - start)
 
-    # Benchmark 2: Loop-based batch version
-    loop_times = []
-    for _ in range(num_runs):
-        start = time.perf_counter()
-        _ = batch_frames_to_atom37(pos=pos_batch, rot=rot_batch, seq=[sequence] * batch_size)
-        loop_times.append(time.perf_counter() - start)
-
-    # Benchmark 3: Fully batched version
+    # Benchmark batched computation
     batched_times = []
     for _ in range(num_runs):
         start = time.perf_counter()
-        _ = tensor_batch_frames_to_atom37(pos=pos_batch, rot=rot_batch, seq=sequence)
+        atom37_batched, mask_batched, aatype_batched = batch_frames_to_atom37(
+            pos=pos_batch, rot=rot_batch, seq=sequence
+        )
         batched_times.append(time.perf_counter() - start)
 
-    # Calculate statistics
+    # Verify correctness: results should be identical
+    assert (
+        atom37_per_sample.shape == atom37_batched.shape
+    ), f"Shape mismatch: {atom37_per_sample.shape} vs {atom37_batched.shape}"
+    assert (
+        mask_per_sample.shape == mask_batched.shape
+    ), f"Mask shape mismatch: {mask_per_sample.shape} vs {mask_batched.shape}"
+    assert (
+        aatype_per_sample.shape == aatype_batched.shape
+    ), f"aatype shape mismatch: {aatype_per_sample.shape} vs {aatype_batched.shape}"
+
+    assert torch.allclose(
+        atom37_per_sample, atom37_batched, rtol=1e-5, atol=1e-7
+    ), f"atom37 mismatch: max diff = {(atom37_per_sample - atom37_batched).abs().max()}"
+    assert torch.all(mask_per_sample == mask_batched), "atom37_mask mismatch"
+    assert torch.all(aatype_per_sample == aatype_batched), "aatype mismatch"
+
+    # Verify CA positions match input positions (atom37 index 1 is CA)
+    assert torch.allclose(
+        atom37_batched[:, :, 1, :], pos_batch, rtol=1e-5
+    ), "CA positions don't match input positions"
+
+    # Verify performance: batched should be faster
     per_sample_mean = sum(per_sample_times) / len(per_sample_times)
-    per_sample_std = (
-        sum((t - per_sample_mean) ** 2 for t in per_sample_times) / len(per_sample_times)
-    ) ** 0.5
-
-    loop_mean = sum(loop_times) / len(loop_times)
-    loop_std = (sum((t - loop_mean) ** 2 for t in loop_times) / len(loop_times)) ** 0.5
-
     batched_mean = sum(batched_times) / len(batched_times)
-    batched_std = (sum((t - batched_mean) ** 2 for t in batched_times) / len(batched_times)) ** 0.5
-
-    speedup_vs_per_sample = per_sample_mean / batched_mean
-    speedup_vs_loop = loop_mean / batched_mean
+    speedup = per_sample_mean / batched_mean
 
     print(f"\n{'=' * 70}")
-    print(f"Performance Comparison (batch_size={batch_size}, seq_length={seq_length})")
+    print(f"Performance Comparison (batch_size={batch_size})")
     print(f"{'=' * 70}")
-    print(f"1. Per-sample (get_atom37_from_frames in loop):")
-    print(f"   Mean: {per_sample_mean * 1000:.3f} ms ± {per_sample_std * 1000:.3f} ms")
-    print(f"\n2. Loop-based (batch_frames_to_atom37):")
-    print(f"   Mean: {loop_mean * 1000:.3f} ms ± {loop_std * 1000:.3f} ms")
-    print(f"   Speedup vs per-sample: {per_sample_mean / loop_mean:.2f}x")
-    print(f"\n3. Fully batched (tensor_batch_frames_to_atom37):")
-    print(f"   Mean: {batched_mean * 1000:.3f} ms ± {batched_std * 1000:.3f} ms")
-    print(f"   Speedup vs per-sample: {speedup_vs_per_sample:.2f}x")
-    print(f"   Speedup vs loop-based: {speedup_vs_loop:.2f}x")
+    print(f"Per-sample (get_atom37_from_frames): {per_sample_mean * 1000:.3f} ms")
+    print(f"Batched (batch_frames_to_atom37):    {batched_mean * 1000:.3f} ms")
+    print(f"Speedup: {speedup:.2f}x")
     print(f"{'=' * 70}\n")
 
-    # Assert that batched version is at least as fast as loop-based (allowing for small variations)
-
     assert (
-        batched_mean <= loop_mean * 1.1
-    ), f"Batched version should be comparable or faster than loop-based, but got {speedup_vs_loop:.2f}x"
-    assert (
-        batched_mean * 15 <= per_sample_mean
-    ), f"Batched version should be 15x faster than per-sample, but got {speedup_vs_per_sample:.2f}x"
-
-    print(f"✓ Performance test completed for batch_size={batch_size}, seq_length={seq_length}")
+        speedup >= 15
+    ), f"Batched version should be at least 15x faster than per-sample, but got {speedup:.2f}x"
 
 
 def test_atom37_reconstruction_ground_truth(default_batch):
@@ -266,8 +188,6 @@ def test_atom37_reconstruction_ground_truth(default_batch):
     3. Consistent atom masks for different amino acid types
     4. Proper pairwise distances between atoms within each residue
     """
-    from bioemu.convert_chemgraph import get_atom37_from_frames, tensor_batch_frames_to_atom37
-
     # Use the first structure from default_batch
     chemgraph = default_batch[0]
     sequence = "YYDPETGTWY"  # Chignolin sequence
@@ -364,7 +284,7 @@ def test_atom37_reconstruction_ground_truth(default_batch):
         else:  # Glycine
             cb_present = 3 in present_atoms
             assert not cb_present, f"CB should be absent for glycine residue {residue_idx}"
-            print(f"  Glycine - no CB atom")
+            print("  Glycine - no CB atom")
 
     # Test 3: Validate amino acid type encoding
     expected_aatype = torch.tensor([18, 18, 3, 14, 6, 16, 7, 16, 17, 18])  # YYDPETGTWY
@@ -372,32 +292,12 @@ def test_atom37_reconstruction_ground_truth(default_batch):
         aatype == expected_aatype
     ), f"Amino acid types don't match expected: {aatype} vs {expected_aatype}"
 
-    # Test 4: Compare with batched version for consistency
-    pos_batch = chemgraph.pos.unsqueeze(0)  # Add batch dimension
-    rot_batch = chemgraph.node_orientations.unsqueeze(0)
-
-    atom37_batched, mask_batched, aatype_batched = tensor_batch_frames_to_atom37(
-        pos=pos_batch, rot=rot_batch, seq=sequence
-    )
-
-    # Remove batch dimension for comparison
-    atom37_batched = atom37_batched[0]
-    mask_batched = mask_batched[0]
-    aatype_batched = aatype_batched[0]
-
-    # Should be identical (within numerical precision)
-    assert torch.allclose(
-        atom37, atom37_batched, rtol=1e-5, atol=1e-7
-    ), "Single and batched versions should produce identical results"
-    assert torch.all(mask_batched == atom37_mask), "Masks should be identical"
-    assert torch.all(aatype_batched == aatype), "Amino acid types should be identical"
-
     print(f"\n✓ Atom37 reconstruction test passed for sequence: {sequence}")
-    print(f"  - CA positions match input: ✓")
-    print(f"  - Individual residue analysis: ✓")
-    print(f"  - Pairwise distances computed: ✓")
-    print(f"  - Backbone geometry validated: ✓")
-    print(f"  - Single vs batched consistency: ✓")
+    print("  - CA positions match input: ✓")
+    print("  - Individual residue analysis: ✓")
+    print("  - Pairwise distances computed: ✓")
+    print("  - Backbone geometry validated: ✓")
+
 
 def test_get_frames_non_clash():
     chignolin_pdb = Path(__file__).parent / "test_data" / "cln_bad_sample.pdb"
@@ -414,4 +314,3 @@ def test_get_frames_non_clash():
     frames_non_clash_kdtree = _get_frames_non_clash_kdtree(traj, clash_distance_angstrom=5.0)
     assert np.all(frames_non_clash_mdtraj == [False, False, False, True, True])
     assert np.all(frames_non_clash_kdtree == [False, False, False, True, True])
-

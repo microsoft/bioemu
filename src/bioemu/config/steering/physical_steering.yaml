@@ -1,20 +1,48 @@
-# Steering is enabled when this config is provided
-num_particles: 3
-start: 0.9
-end: 0.1 # End time for steering (default: continue until end)
-resampling_freq: 5
-late_steering: false
+# Physical steering potentials configuration
+# This file contains only the potential definitions
+# Steering parameters (num_particles, start, end, etc.) are now CLI parameters
+
+# Mathematical Form of Potential Loss Function:
+# The potential_loss_fn implements a piecewise loss function:
+#
+# f(x) = {
+#     0                                               if |x - target| ≤ flatbottom
+#     (slope * (|x - target| - flatbottom))^order      if flatbottom < |x - target| ≤ linear_from
+#     slope * (|x - target| - flatbottom - linear_from)^1  if |x - target| > linear_from
+# }
+#
+# Key Properties:
+# 1. Flat-bottom region: Zero loss when |x - target| ≤ flatbottom
+# 2. Power law region: (slope * deviation)^order penalty for moderate deviations
+# 3. Linear region: Simple linear continuation for large deviations
+# 4. Continuous: Smooth transition between regions at linear_from
+
+num_particles: 5 # Number of particles for steering
+start: 0.1 # Start time for steering
+end: 0.0 # End time for steering (default: continue until end)
+resampling_freq: 5 # Resample every N steps
 potentials:
   chainbreak:
+    # Enforces realistic Ca-Ca distances (3.8A) using flat-bottom loss
     _target_: bioemu.steering.ChainBreakPotential
+    # flatbottom: Minimum allowed distance between non-neighboring Ca atoms (A) - zero penalty within this range
     flatbottom: 1.
+    # slope: Steepness of penalty outside flatbottom region
     slope: 1.
+    # order: Exponent for power law region
     order: 1
+    # linear_from: Distance from target where penalty transitions to linear
     linear_from: 1.
+    # weight: Overall weight of this potential in total potential calculation
     weight: 1.0
   chainclash:
+    # Prevents steric clashes between non-neighboring Ca atoms
     _target_: bioemu.steering.ChainClashPotential
+    # flatbottom: Minimum allowed distance between non-neighboring Ca atoms (A)
     flatbottom: 0.
+    # dist: Minimum acceptable distance between non-neighboring Ca atoms (A)
     dist: 4.1
+    # slope: Steepness of penalty outside flatbottom region
     slope: 3.
+    # weight: Overall weight of this potential in total potential calculation
     weight: 1.0

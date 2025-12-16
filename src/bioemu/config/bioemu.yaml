@@ -1,5 +1,5 @@
 defaults:
-  - denoiser: dpm
+  - denoiser: stochastic_dpm
   - steering: physical_steering
   - _self_
 

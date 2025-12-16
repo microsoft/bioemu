@@ -2,15 +2,11 @@
 # Licensed under the MIT License.
 import logging
 from pathlib import Path
-import os
 
-from matplotlib.pylab import f
 import mdtraj
 import numpy as np
 import torch
 from scipy.spatial import KDTree
-
-# No wandb logging needed
 
 from .openfold.np import residue_constants
 from .openfold.np.protein import Protein, to_pdb
@@ -218,35 +214,12 @@ def compute_backbone(
     return atom37_bb_pos, atom37_mask
 
 
-def batch_frames_to_atom37(pos, rot, seq):
-    """
-    Batch transforms backbone frame parameterization (pos, rot, seq) into atom37 coordinates.
-    Args:
-        pos: Tensor of shape (batch, L, 3) - backbone frame positions
-        rot: Tensor of shape (batch, L, 3, 3) - backbone frame orientations
-        seq: List or tensor of sequence strings or indices, length batch
-    Returns:
-        atom37: Tensor of shape (batch, L, 37, 3) - atom coordinates
-    """
-    batch_size, L, _ = pos.shape
-    atom37, atom37_mask, aa_type = [], [], []
-    for i in range(batch_size):
-        atom37_i, atom_37_mask_i, aatype_i = get_atom37_from_frames(
-            pos[i], rot[i], seq[i]
-        )  # (L, 37, 3)
-        atom37.append(atom37_i)
-        atom37_mask.append(atom_37_mask_i)
-        aa_type.append(aatype_i)
-    return torch.stack(atom37, dim=0), torch.stack(atom37_mask, dim=0), torch.stack(aa_type, dim=0)
-
-
-def tensor_batch_frames_to_atom37(pos, rot, seq):
+def batch_frames_to_atom37(
+    pos: torch.Tensor, rot: torch.Tensor, seq: str
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
     """
     Fully batched transformation of backbone frame parameterization (pos, rot, seq) into atom37 coordinates.
     All samples in the batch must have the same sequence.
-
-    This is a more efficient version of batch_frames_to_atom37 that uses only batched tensor operations
-    instead of a for-loop over the batch dimension.
 
     Args:
         pos: Tensor of shape (batch, L, 3) - backbone frame positions in nm
@@ -277,9 +250,8 @@ def tensor_batch_frames_to_atom37(pos, rot, seq):
     aatype = aatype_single.unsqueeze(0).expand(batch_size, -1)  # (batch, L)
 
     # Create Rigid objects - these support arbitrary batch dimensions
-    # pos: (batch, L, 3), rot: (batch, L, 3, 3)
-    rots = Rotation(rot_mats=rot)
-    rigids = Rigid(rots=rots, trans=pos)
+    rots = Rotation(rot_mats=rot)  # (batch, L, 3, 3)
+    rigids = Rigid(rots=rots, trans=pos)  # (batch, L, 3), (batch, L, 3, 3)
 
     # Compute backbone atoms - this already supports batching
     psi_torsions = torch.zeros(batch_size, L, 2, device=device)
@@ -292,7 +264,7 @@ def tensor_batch_frames_to_atom37(pos, rot, seq):
     # atom_37 is now (batch, L, 37, 3), atom_37_mask is (batch, L, 37)
 
     # Adjust oxygen positions using batched version
-    atom_37 = _adjust_oxygen_pos_batched(atom_37, pos_is_known=None)
+    atom_37 = _batch_adjust_oxygen_pos(atom_37, pos_is_known=None)
 
     return atom_37, atom_37_mask, aatype
 
@@ -379,8 +351,7 @@ def _adjust_oxygen_pos(
     return atom_37
 
 
-
-def _adjust_oxygen_pos_batched(
+def _batch_adjust_oxygen_pos(
     atom_37: torch.Tensor, pos_is_known: torch.Tensor | None = None
 ) -> torch.Tensor:
     """
@@ -471,6 +442,7 @@ def _adjust_oxygen_pos_batched(
 
     return atom_37
 
+
 def _get_frames_non_clash_kdtree(
     traj: mdtraj.Trajectory, clash_distance_angstrom: float
 ) -> np.ndarray:
@@ -501,7 +473,6 @@ def _get_frames_non_clash_mdtraj(
         axis=1,
     )
     return frames_non_clash
-
 
 
 def _filter_unphysical_traj_masks(
@@ -554,16 +525,6 @@ def _filter_unphysical_traj_masks(
         mdtraj.utils.in_units_of(rest_distances, "nanometers", "angstrom") > clash_distance,
         axis=1,
     )
-    # Ludi: Analysis Code
-    violations = {
-        "ca_ca": ca_seq_distances,
-        "cn_seq": cn_seq_distances,
-        "rest_distances": 10 * rest_distances,
-    }
-    path = str(Path(".").absolute()) + "/outputs/analysis"
-    os.makedirs(os.path.dirname(path), exist_ok=True)
-    np.savez(path, **violations)
-    # data = np.load(os.getcwd()+'/outputs/analysis.npz'); {key: data[key] for key in data.keys()}
 
     if traj.n_residues <= 100:
         frames_non_clash = _get_frames_non_clash_mdtraj(traj, clash_distance)
@@ -571,51 +532,6 @@ def _filter_unphysical_traj_masks(
         frames_non_clash = _get_frames_non_clash_kdtree(traj, clash_distance)
 
     return frames_match_ca_seq_distance, frames_match_cn_seq_distance, frames_non_clash
-
-
-def kabsch_align(P: np.ndarray, Q: np.ndarray) -> tuple[torch.Tensor, torch.Tensor]:
-    """
-    Computes the optimal rotation and translation (using the Kabsch algorithm)
-    that aligns point cloud P to point cloud Q, and applies the transformation
-    to both P and Q (returns aligned versions).
-
-    Args:
-        P: (N, 3) torch tensor of points to be aligned.
-        Q: (N, 3) torch tensor of reference points.
-
-    Returns:
-        R: (3, 3) optimal rotation matrix (torch tensor).
-        t: (3,) optimal translation vector (torch tensor).
-        P_aligned: (N, 3) P transformed to best align with Q.
-        Q_centered: (N, 3) Q centered at origin (for reference).
-    """
-    assert P.shape == Q.shape and P.shape[1] == 3
-
-    # Center the point clouds
-    P_centroid = P.mean(dim=0)
-    Q_centroid = Q.mean(dim=0)
-    P_centered = P - P_centroid
-    Q_centered = Q - Q_centroid
-
-    # Covariance matrix
-    H = P_centered.T @ Q_centered
-
-    # SVD
-    U, S, Vt = torch.linalg.svd(H)
-    R = Vt.T @ U.T
-
-    # Ensure right-handed coordinate system (determinant = +1)
-    if torch.det(R) < 0:
-        Vt[-1, :] *= -1
-        R = Vt.T @ U.T
-
-    t = Q_centroid - R @ P_centroid
-
-    # Apply transformation to P and Q
-    P_aligned = (R @ P.T).T + t
-    Q_centered = Q - Q_centroid  # Q centered at origin
-
-    return R, t  # ,P_aligned, Q_centered
 
 
 def _get_physical_traj_indices(
@@ -708,12 +624,6 @@ def save_pdb_and_xtc(
         sequence=sequence,
         filename=topology_path,
     )
-    _write_batch_pdb(
-        pos=pos_angstrom,
-        node_orientations=node_orientations,
-        sequence=sequence,
-        filename=str(topology_path),
-    )
 
     xyz_angstrom = []
     for i in range(batch_size):
@@ -729,17 +639,6 @@ def save_pdb_and_xtc(
     if filter_samples:
         num_samples_unfiltered = len(traj)
         logger.info("Filtering samples ...")
-
-        traj = filter_unphysical_traj(traj)
-        logger.info(
-            f"Filtered {num_samples_unfiltered} samples down to {len(traj)} "
-            "based on structure criteria. Filtering can be disabled with `--filter_samples=False`."
-        )
-        print(
-            f"Filtered {num_samples_unfiltered} samples down to {len(traj)} ",
-            "based on structure criteria. Filtering can be disabled with `--filter_samples=False`.",
-        )
-        # Filtering ratio computed but not logged
 
         filtered_traj = filter_unphysical_traj(traj)
 
@@ -761,7 +660,6 @@ def save_pdb_and_xtc(
                     "based on structure criteria. Filtering can be disabled with `--filter_samples=False`."
                 )
             traj = filtered_traj
-
 
     traj.superpose(reference=traj, frame=0)
     traj.save_xtc(xtc_path)
@@ -795,53 +693,3 @@ def _write_pdb(
     )
     with open(filename, "w") as f:
         f.write(to_pdb(protein))
-
-
-def _write_batch_pdb(
-    pos: torch.Tensor,
-    node_orientations: torch.Tensor,
-    sequence: str,
-    filename: str | Path,
-) -> None:
-    """
-    Write a batch of coarse-grained structures to a single PDB file, each as a MODEL entry.
-
-    Args:
-        pos_batch: (B, N, 3) tensor of positions in Angstrom.
-        node_orientations_batch: (B, N, 3, 3) tensor of node orientations.
-        sequence: Amino acid sequence.
-        filename: Output filename.
-    """
-    batch_size, num_residues, _ = pos.shape
-    assert node_orientations.shape == (batch_size, num_residues, 3, 3)
-    pdb_entries = []
-    ref_atom37 = None
-    for i in range(batch_size):
-        atom_37, atom_37_mask, aatype = get_atom37_from_frames(
-            pos=pos[i], node_orientations=node_orientations[i], sequence=sequence
-        )
-        # if ref_atom37 is None:
-        #     ref_atom37 = atom_37
-        # else:
-        #     # Align the current frame to the reference frame
-        #     R, t = kabsch_align(ref_atom37.view(-1, 3).cpu(), atom_37.view(-1, 3).cpu())
-        #     # Center atom_37, apply rotation, then shift back
-        #     atom_37_flat = atom_37.view(-1, 3).cpu()
-        #     centroid = atom_37_flat.mean(dim=0)
-        #     atom_37_centered = atom_37_flat - centroid
-        #     atom_37_rot = (R @ atom_37_centered.T).T + t
-        #     atom_37 = atom_37_rot.reshape(atom_37.shape)
-        protein = Protein(
-            atom_positions=atom_37.cpu().numpy(),
-            aatype=aatype.cpu().numpy(),
-            atom_mask=atom_37_mask.cpu().numpy(),
-            residue_index=np.arange(num_residues, dtype=np.int64),
-            b_factors=np.zeros((num_residues, 37)),
-        )
-        pdb_str = to_pdb(protein)
-        pdb_str = pdb_str.replace("\nEND\n", "")
-        pdb_entries.append(f"MODEL        {i + 1}\n{pdb_str}\nENDMDL\n")
-    pdb_entries.append("END")
-    filename = str(filename).replace(".pdb", "_batch.pdb")
-    with open(filename, "w") as f:
-        f.writelines(pdb_entries)

@@ -1,34 +1,18 @@
 # Copyright (c) Microsoft Corporation.
 # Licensed under the MIT License.
-from os import times_result
-import sys
-from typing import cast, Callable, List
+from collections.abc import Callable
+from typing import cast
 
 import numpy as np
 import torch
-
-import copy
 from torch_geometric.data.batch import Batch
-import time
-import torch.autograd.profiler as profiler
-from torch.profiler import profile, ProfilerActivity, record_function
 from tqdm.auto import tqdm
 
 from bioemu.chemgraph import ChemGraph
+from bioemu.convert_chemgraph import batch_frames_to_atom37
 from bioemu.sde_lib import SDE, CosineVPSDE
 from bioemu.so3_sde import SO3SDE, apply_rotvec_to_rotmat
-from bioemu.steering import (
-    get_pos0_rot0,
-    ChainBreakPotential,
-    StructuralViolation,
-    resample_batch,
-    print_once,
-)
-from bioemu.convert_chemgraph import (
-    _write_batch_pdb,
-    batch_frames_to_atom37,
-    tensor_batch_frames_to_atom37,
-)
+from bioemu.steering import get_pos0_rot0, resample_batch
 
 TwoBatches = tuple[Batch, Batch]
 ThreeBatches = tuple[torch.Tensor, torch.Tensor, torch.Tensor]
@@ -295,7 +279,7 @@ def dpm_solver(
     device: torch.device,
     record_grad_steps: set[int] = set(),
     noise: float = 0.0,
-    fk_potentials: List[Callable] | None = None,
+    fk_potentials: list[Callable] | None = None,
     steering_config: dict | None = None,
 ) -> ChemGraph:
     """
@@ -311,6 +295,8 @@ def dpm_solver(
     grad_is_enabled = torch.is_grad_enabled()
     assert isinstance(batch, Batch)
     assert max_t < 1.0
+    if steering_config is not None:
+        assert noise > 0, "Steering requires noise > 0 for stochastic sampling"
 
     batch = batch.to(device)
 
@@ -348,8 +334,6 @@ def dpm_solver(
 
     # Initialize log_weights for importance weight tracking (for gradient guidance)
     log_weights = torch.zeros(batch.num_graphs, device=device)
-
-    expanded_for_late_steering = False
 
     for i in tqdm(range(N - 1), position=1, desc="Denoising: ", ncols=0, leave=False):
         t = torch.full((batch.num_graphs,), timesteps[i], device=device)
@@ -458,40 +442,17 @@ def dpm_solver(
         if (
             steering_config is not None and fk_potentials is not None
         ):  # steering enabled when steering_config is provided
-            x0_t, R0_t = get_pos0_rot0(sdes=sdes, batch=batch, t=t, score=score)
+            # Compute predicted x0 and R0 from current state and score
+            # x0_t: predicted positions, shape (batch_size, seq_length, 3), differs from batch.pos which is (batch_size * seq_length, 3)
+            # R0_t: predicted rotations, shape (batch_size, seq_length, 3, 3)
+            x0_t, R0_t = get_pos0_rot0(
+                sdes=sdes, batch=batch, t=t, score=score
+            )  # batch -> x0_t:(batch_size, seq_length, 3), R0_t:(batch_size, seq_length, 3, 3)
             x0 += [x0_t.cpu()]
             R0 += [R0_t.cpu()]
 
-            # Handle fast steering - expand batch at steering start time if not expanded yet
-            if (
-                steering_config["late_steering"]
-                and steering_config["start"] >= timesteps[i]
-                and not expanded_for_late_steering
-            ):
-                # Expand batch using repeat_interleave at steering start time
-
-                # Expand all relevant tensors
-                data_list = batch.to_data_list()
-                expanded_data_list = []
-                for data in data_list:
-                    # Repeat each sample num_particles times
-                    for _ in range(steering_config["num_particles"]):
-                        expanded_data_list.append(data.clone())
-
-                batch = Batch.from_data_list(expanded_data_list)
-                t = torch.full((batch.num_graphs,), timesteps[i], device=device)
-
-                x0_t = torch.repeat_interleave(x0_t, steering_config["num_particles"], dim=0)
-                R0_t = torch.repeat_interleave(R0_t, steering_config["num_particles"], dim=0)
-                log_weights = torch.repeat_interleave(
-                    log_weights, steering_config["num_particles"], dim=0
-                )
-                expanded_for_late_steering = True  # if done, don't do it again
-
-            # Reconstruct heavy backbone aotm postitions, nm to Angstrom conversion
-            atom37, _, _ = tensor_batch_frames_to_atom37(
-                pos=10 * x0_t, rot=R0_t, seq=batch.sequence[0]
-            )
+            # Reconstruct heavy backbone atom positions, nm to Angstrom conversion
+            atom37, _, _ = batch_frames_to_atom37(pos=10 * x0_t, rot=R0_t, seq=batch.sequence[0])
             N_pos, Ca_pos, C_pos, O_pos = (
                 atom37[..., 0, :],
                 atom37[..., 1, :],
@@ -513,10 +474,6 @@ def dpm_solver(
                     and i % steering_config["resampling_freq"] == 0
                     and i < N - 2
                 ):
-                    if steering_config["late_steering"]:
-                        assert (
-                            expanded_for_late_steering
-                        ), "Batch must be expanded for late steering"
                     batch, total_energy, log_weights = resample_batch(
                         batch=batch,
                         energy=total_energy,
@@ -540,10 +497,9 @@ def dpm_solver(
 
                     batch, total_energy, log_weights = resample_batch(
                         batch=batch,
+                        num_particles=steering_config["num_particles"],
                         energy=total_energy,
                         previous_energy=previous_energy,
-                        num_fk_samples=steering_config["num_particles"],
-                        num_resamples=1,
                         log_weights=log_weights,
                     )
                     previous_energy = total_energy

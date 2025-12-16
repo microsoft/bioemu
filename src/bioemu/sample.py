@@ -3,22 +3,16 @@
 """Script for sampling from a trained model."""
 
 import logging
-import sys
-from pathlib import Path
-
-# Allow running as a script by adding the source directory to the path
-if __name__ == "__main__" and "bioemu" not in sys.modules:
-    sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "src"))
-
 import typing
 from collections.abc import Callable
+from pathlib import Path
 from typing import Literal
 
 import hydra
-from omegaconf import DictConfig, OmegaConf
 import numpy as np
 import torch
 import yaml
+from omegaconf import DictConfig, OmegaConf
 from torch_geometric.data.batch import Batch
 from tqdm import tqdm
 
@@ -28,12 +22,12 @@ from bioemu.get_embeds import get_colabfold_embeds
 from bioemu.model_utils import load_model, load_sdes, maybe_download_checkpoint
 from bioemu.sde_lib import SDE
 from bioemu.seq_io import check_protein_valid, parse_sequence, write_fasta
+from bioemu.steering import log_physicality
 from bioemu.utils import (
     count_samples_in_output_dir,
     format_npz_samples_filename,
     print_traceback_on_exception,
 )
-from bioemu.steering import log_physicality
 
 logger = logging.getLogger(__name__)
 
@@ -134,7 +128,6 @@ def main(
             - start: Start time for steering (0.0-1.0)
             - end: End time for steering (0.0-1.0)
             - resampling_freq: Resampling frequency
-            - late_steering: Enable fast mode (bool)
             - potentials: Dict of potential configurations
         disulfidebridges: List of integer tuple pairs specifying cysteine residue indices for disulfide
             bridge steering, e.g., [(3,40), (4,32), (16,26)].
@@ -148,7 +141,7 @@ def main(
         # No steering - will pass None to denoiser
         steering_config_dict = None
         potentials = None
-    elif isinstance(steering_config, (str, Path)):
+    elif isinstance(steering_config, str | Path):
         # Path to steering config YAML
         steering_config_path = Path(steering_config).expanduser().resolve()
         if not steering_config_path.is_absolute():
@@ -161,7 +154,7 @@ def main(
 
         with open(steering_config_path) as f:
             steering_config_dict = yaml.safe_load(f)
-    elif isinstance(steering_config, (dict, DictConfig)):
+    elif isinstance(steering_config, dict | DictConfig):
         # Already a dict/DictConfig
         steering_config_dict = (
             OmegaConf.to_container(steering_config, resolve=True)
@@ -175,14 +168,13 @@ def main(
 
     if steering_config_dict is not None:
         # If steering is enabled by defining a minimum of two particles, extract potentials and create config
-        num_particles = steering_config_dict["num_particles"]
-        
+
         # Extract potentials configuration
-        potentials_config = steering_config_dict.get("potentials", {})
+        potentials_config = steering_config_dict["potentials"]
 
         # Instantiate potentials
         potentials = hydra.utils.instantiate(OmegaConf.create(potentials_config))
-        potentials: list[Callable] = list(potentials.values())
+        potentials: list[Callable] = list(potentials.values())  # type: ignore
 
         # Create final steering config (without potentials, those are passed separately)
         # Remove 'potentials' from steering_config_dict if present
@@ -273,7 +265,7 @@ def main(
     #     # batch size is now the maximum of what we can use while taking particle multiplicity into account
 
     #     print(f"Batch size after steering: {batch_size} particles: {num_particles}")
-    
+
     batch_size = min(batch_size, num_samples)
     logger.info(f"Using batch size {min(batch_size, num_samples)}")
 
@@ -295,16 +287,6 @@ def main(
         else:
             description = f"Sampling batch {seed}/{num_samples} ({n} samples)"
         batch_iterator.set_description(description)
-
-        # if steering_config_dict is not None:
-        #     if steering_config_dict["late_steering"]:
-        #         # For late steering, we start with [BS] and later only expand to [BS * num_particles]
-        #         actual_batch_size = n
-        #     else:
-        #         # For regular steering, we directly draw [BS * num_particles] samples
-        #         actual_batch_size = n * num_particles
-        # else:
-        #     actual_batch_size = n
 
         steering_config_dict = (
             OmegaConf.create(steering_config_dict) if steering_config_dict is not None else None
@@ -353,7 +335,10 @@ def main(
 
     logger.info(f"Completed. Your samples are in {output_dir}.")
 
-    return {"pos": positions, "rot": node_orientations} # Fire tries to build CLI from output and blocks further execution
+    return {
+        "pos": positions,
+        "rot": node_orientations,
+    }  # Fire tries to build CLI from output and blocks further execution
 
 
 def get_context_chemgraph(
