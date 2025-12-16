@@ -161,12 +161,8 @@ def get_colabfold_embeds(
     single_rep_file = os.path.join(cache_embeds_dir, f"{seqsha}_single.npy")
     pair_rep_file = os.path.join(cache_embeds_dir, f"{seqsha}_pair.npy")
 
-    # TODO: copy embed files as there's some problem with colabfold
-    #       check ~/.bioemu_embeds_cache and upload it with the job submission
-
     if os.path.exists(single_rep_file) and os.path.exists(pair_rep_file):
         logger.info(f"Using cached embeddings in {cache_embeds_dir}.")
-        print(f"Using cached embeddings in {cache_embeds_dir}.")
         return single_rep_file, pair_rep_file
 
     # If we don't already have embeds, run colabfold
