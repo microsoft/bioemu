@@ -105,8 +105,8 @@ sample(
 ### Key steering parameters
 
 - `num_steering_particles`: Number of particles per sample (1 = no steering, >1 enables steering)
-- `steering_start_time`: When to start steering (0.0-1.0, default: 0.0)
-- `steering_end_time`: When to stop steering (0.0-1.0, default: 1.0)
+- `steering_start_time`: When to start steering (0.0-1.0, default: 0.1) with reverse sampling 1 -> 0
+- `steering_end_time`: When to stop steering (0.0-1.0, default: 0.) with reverse sampling 1 -> 0
 - `resampling_freq`: How often to resample particles (default: 1)
 - `steering_config`: Path to potentials configuration file (required for steering)
 
