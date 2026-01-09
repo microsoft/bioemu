@@ -145,8 +145,8 @@ def _estimate_squared_mean_error(
         loss: an estimate of [(mean foldedness of samples) - (target mean foldedness)]^2.
     """
     assert isinstance(batch, list)  # Not a Batch!
-    sequences = [x.sequence for x in batch]
-    assert len(set(sequences)) == 1, "Batch must contain samples all from the same system."
+    sequences = {x.sequence for x in batch}
+    assert len(sequences) == 1, "Batch must contain samples all from the same system."
     n = len(batch)
     assert n >= 2, "Batch must contain at least two samples."
 

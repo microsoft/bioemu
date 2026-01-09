@@ -193,9 +193,9 @@ def main(
 
     logger.info("Converting samples to .pdb and .xtc...")
     samples_files = sorted(list(output_dir.glob("batch_*.npz")))
-    sequences = [np.load(f)["sequence"].item() for f in samples_files]
-    if set(sequences) != {sequence}:
-        raise ValueError(f"Expected all sequences to be {sequence}, but got {set(sequences)}")
+    sequences = {np.load(f)["sequence"].item() for f in samples_files}
+    if sequences != {sequence}:
+        raise ValueError(f"Expected all sequences to be {sequence}, but got {sequences}")
     positions = torch.tensor(np.concatenate([np.load(f)["pos"] for f in samples_files]))
     node_orientations = torch.tensor(
         np.concatenate([np.load(f)["node_orientations"] for f in samples_files])

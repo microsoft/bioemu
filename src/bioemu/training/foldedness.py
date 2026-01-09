@@ -87,8 +87,8 @@ def compute_fnc_for_list(batch: list[ChemGraph], reference_info: ReferenceInfo) 
     Returns:
         torch tensor of fraction of native contacts.
     """
-    seqs = [x.sequence for x in batch]
-    assert len(set(seqs)) == 1, "Batch should contain samples all from the same system."
+    seqs = {x.sequence for x in batch}
+    assert len(seqs) == 1, "Batch should contain samples all from the same system."
     sequence = seqs[0]
 
     device = batch[0].pos.device

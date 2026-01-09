@@ -41,13 +41,13 @@ def maybe_download_checkpoint(
 
     except HTTPError as e:
         fs = HfFileSystem()
-        available_checkpoints = [
+        available_checkpoints = {
             Path(p).parent.name for p in fs.glob("microsoft/bioemu/checkpoints/*/checkpoint.ckpt")
-        ]
+        }
         available_configs = [
             Path(p).parent.name for p in fs.glob("microsoft/bioemu/checkpoints/*/config.yaml")
         ]
-        available_model_names = sorted(set(available_checkpoints).intersection(available_configs))
+        available_model_names = sorted(available_checkpoints.intersection(available_configs))
         raise ValueError(
             f"Model {model_name} not found. Available model names: " f"{available_model_names}"
         ) from e
