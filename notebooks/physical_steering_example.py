@@ -17,31 +17,6 @@ def main():
     num_samples = 128
     base_output_dir = Path("comparison_outputs")
 
-    # Steering configuration for physicality
-    steering_config = {
-        "num_particles": 5,
-        "start": 0.1,
-        "end": 0.0,
-        "resampling_interval": 5,
-        "potentials": {
-            "chainbreak": {
-                "_target_": "bioemu.steering.ChainBreakPotential",
-                "flatbottom": 1.0,
-                "slope": 1.0,
-                "order": 1,
-                "linear_from": 1.0,
-                "weight": 1.0,
-            },
-            "chainclash": {
-                "_target_": "bioemu.steering.ChainClashPotential",
-                "flatbottom": 0.0,
-                "dist": 4.1,
-                "slope": 3.0,
-                "weight": 1.0,
-            },
-        },
-    }
-
     # Sample WITHOUT steering
     logger.info("=" * 80)
     logger.info("Sampling WITHOUT steering...")
@@ -51,7 +26,7 @@ def main():
         sequence=sequence,
         num_samples=num_samples,
         output_dir=output_dir_no_steering,
-        denoiser_config="stochastic_dpm.yaml",  # Use stochastic DPM
+        denoiser_config="../src/bioemu/config/denoiser/stochastic_dpm.yaml",  # Use stochastic DPM
         steering_config=None,  # No steering
     )
 
@@ -64,8 +39,8 @@ def main():
         sequence=sequence,
         num_samples=num_samples,
         output_dir=output_dir_with_steering,
-        denoiser_config="stochastic_dpm.yaml",  # Use stochastic DPM
-        steering_config=steering_config,
+        denoiser_config="../src/bioemu/config/denoiser/stochastic_dpm.yaml",  # Use stochastic DPM
+        steering_config="../src/bioemu/config/steering/physicality_steering.yaml",  # Use physicality steering
     )
 
     logger.info("=" * 80)

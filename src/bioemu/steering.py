@@ -312,6 +312,86 @@ class ChainClashPotential(Potential):
         return self.weight * potential_energy.sum(dim=-1)
 
 
+class DisulfideBridgePotential(Potential):
+    def __init__(
+        self,
+        specified_pairs: list[tuple[int, int]],
+        flatbottom: float = 0.01,
+        slope: float = 1.0,
+        weight: float = 1.0,
+    ):
+        """
+        Potential for guiding disulfide bridge formation between specified cysteine pairs.
+
+        Args:
+            flatbottom: Flat region width around target values (3.75Å to 6.6Å)
+            slope: Steepness of penalty outside flatbottom region
+            weight: Overall weight of this potential
+            specified_pairs: List of (i,j) tuples specifying cysteine pairs to form disulfides
+            guidance_steering: Enable gradient guidance for this potential
+        """
+        self.flatbottom = flatbottom
+        self.slope = slope
+        self.weight = weight
+        self.specified_pairs = specified_pairs or []
+
+        # Define valid CaCa distance range for disulfide bridges (in Angstroms)
+        self.min_valid_dist = 3.75  # Minimum valid CaCa distance
+        self.max_valid_dist = 6.6  # Maximum valid CaCa distance
+        self.target = (self.min_valid_dist + self.max_valid_dist) / 2
+        self.flatbottom = (self.max_valid_dist - self.min_valid_dist) / 2
+
+        # Parameters for potential function
+        self.order = 1.0
+        self.linear_from = 100.0
+
+    def __call__(self, N_pos, Ca_pos, C_pos, O_pos, i=None, N=None):
+        """
+        Calculate disulfide bridge potential energy.
+
+        Args:
+            Ca_pos: [batch_size, seq_len, 3] Cα positions in Angstroms
+            t: Current timestep
+            N: Total number of timesteps
+
+        Returns:
+            energy: [batch_size] potential energy per structure
+        """
+        assert (
+            Ca_pos.ndim == 3
+        ), f"Expected Ca_pos to have 3 dimensions [BS, L, 3], got {Ca_pos.shape}"
+
+        # Calculate CaCa distances for all specified pairs
+        total_energy = 0
+
+        ptm_distance = []
+        for i, j in self.specified_pairs:
+            # Extract Cα positions for the specified residues
+            ca_i = Ca_pos[:, i]  # [batch_size, L,  3] -> [batch_size, 3]
+            ca_j = Ca_pos[:, j]  # [batch_size, L, 3] -> [batch_size, 3]
+
+            # Calculate distance between the Cα atoms
+            distance = torch.linalg.norm(ca_i - ca_j, dim=-1)  # [batch_size]
+            ptm_distance.append(distance)
+
+            # Apply double-sided potential to keep distance within valid range
+            # For distances below min_valid_dist
+            energy = potential_loss_fn(
+                distance,
+                target=self.target,
+                flatbottom=self.flatbottom,
+                slope=self.slope,
+                order=self.order,
+                linear_from=self.linear_from,
+            )
+            total_energy = total_energy + energy
+
+        if (1 - i / N) < 0.2:
+            total_energy = torch.zeros_like(total_energy)
+
+        return self.weight * total_energy
+
+
 def resample_batch(batch, num_particles, energy, previous_energy=None, log_weights=None):
     """
     Resample the batch based on the energy.
