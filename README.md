@@ -70,7 +70,7 @@ This code only supports sampling structures of monomers. You can try to sample m
 ## Steering to avoid chain breaks and clashes
 
 BioEmu includes a [steering system](https://arxiv.org/abs/2501.06848) that uses [Sequential Monte Carlo (SMC)](https://www.stats.ox.ac.uk/~doucet/doucet_defreitas_gordon_smcbookintro.pdf) to guide the diffusion process toward more physically plausible protein structures.
-Empirically, using three or more steering particles per output sample greatly reduces the number of unphysical samples (steric clashes or chain breaks) produced by the model.
+Empirically, using three (or up to 10) steering particles per output sample greatly reduces the number of unphysical samples (steric clashes or chain breaks) produced by the model.
 Steering applies potential energy functions during denoising to favor conformations that satisfy physical constraints. 
 Algorithmically, steering simulates multiple *candidate samples* per desired output sample and resamples between these particles according to the favorability of the provided potentials. 
 
