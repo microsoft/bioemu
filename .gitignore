@@ -144,12 +144,4 @@ wandb/
 *amlt*
 *outputs*
 *cache*
-.cursor/
-.cursor/** */
-docs/*
-uv.lock
 
-# samples
-*.pdb
-*.xtc
-*.fasta

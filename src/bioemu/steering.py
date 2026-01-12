@@ -1,5 +1,5 @@
 """
-Steering potentials for BioEMU sampling.
+Steering potentials for BioEmu sampling.
 
 This module provides steering potentials to guide protein structure generation
 towards physically realistic conformations by penalizing chain breaks and clashes.
@@ -23,7 +23,7 @@ def _get_x0_given_xt_and_score(
     score: torch.Tensor,
 ) -> torch.Tensor:
     """
-    Compute x_0 given x_t and score.
+    Compute expected value of x_0 using x_t and score.
     """
     alpha_t, sigma_t = sde.mean_coeff_and_std(x=x, t=t, batch_idx=batch_idx)
     return (x + sigma_t**2 * score) / alpha_t
@@ -163,7 +163,15 @@ def potential_loss_fn(x, target, flatbottom, slope, order, linear_from):
 class Potential:
     """Base class for steering potentials."""
 
-    def __call__(self, **kwargs):
+    def __call__(
+        self,
+        N_pos: torch.Tensor,
+        Ca_pos: torch.Tensor,
+        C_pos: torch.Tensor,
+        O_pos: torch.Tensor,
+        i: int,
+        N: int,
+    ) -> torch.Tensor:
         raise NotImplementedError("Subclasses should implement this method.")
 
     def __repr__(self):
@@ -177,9 +185,9 @@ class Potential:
 
 class ChainBreakPotential(Potential):
     """
-    Potential to enforce realistic Ca-Ca distances (~3.8Å).
+    Enforces realistic Ca-Ca distances (3.8Å) using flat-bottom loss.
 
-    Penalizes deviations from the expected Ca-Ca distance using a flat-bottom loss.
+    Penalizes deviations from the expected Ca-Ca distance between neighboring residues.
     """
 
     def __init__(
@@ -191,6 +199,15 @@ class ChainBreakPotential(Potential):
         weight: float = 1.0,
         guidance_steering: bool = False,
     ):
+        """
+        Args:
+            flatbottom: Zero penalty within this range around target distance (Å).
+            slope: Steepness of penalty outside flatbottom region.
+            order: Exponent for power law region.
+            linear_from: Distance from target where penalty transitions to linear.
+            weight: Overall weight of this potential in total potential calculation.
+            guidance_steering: Enable gradient guidance for this potential.
+        """
         self.ca_ca = ca_ca
         self.flatbottom = flatbottom
         self.slope = slope
@@ -199,13 +216,21 @@ class ChainBreakPotential(Potential):
         self.weight = weight
         self.guidance_steering = guidance_steering
 
-    def __call__(self, N_pos, Ca_pos, C_pos, O_pos, t, N):
+    def __call__(
+        self,
+        N_pos: torch.Tensor,
+        Ca_pos: torch.Tensor,
+        C_pos: torch.Tensor,
+        O_pos: torch.Tensor,
+        i: int,
+        N: int,
+    ):
         """
         Compute the potential energy based on neighboring Ca-Ca distances.
 
         Args:
             N_pos, Ca_pos, C_pos, O_pos: Backbone atom positions
-            t: Time step
+            i: Denoising step index
             N: Number of residues
 
         Returns:
@@ -221,9 +246,10 @@ class ChainBreakPotential(Potential):
 
 class ChainClashPotential(Potential):
     """
-    Potential to prevent Ca atoms from clashing (getting too close).
+    Prevents steric clashes between non-neighboring Ca atoms.
 
-    Penalizes Ca-Ca distances below a minimum threshold.
+    Penalizes Ca-Ca distances below a minimum threshold for residues
+    separated by more than `offset` positions in sequence.
     """
 
     def __init__(
@@ -237,12 +263,12 @@ class ChainClashPotential(Potential):
     ):
         """
         Args:
-            flatbottom: Additional buffer distance (added to dist)
-            dist: Minimum allowed distance between Ca atoms (Angstroms)
-            slope: Steepness of the penalty
-            weight: Overall weight of this potential
-            offset: Minimum residue separation to consider (excludes nearby residues)
-            guidance_steering: Enable gradient guidance for this potential
+            flatbottom: Additional buffer distance added to dist (Å).
+            dist: Minimum acceptable distance between non-neighboring Ca atoms (Å).
+            slope: Steepness of penalty outside flatbottom region.
+            weight: Overall weight of this potential in total potential calculation.
+            offset: Minimum residue separation to consider (excludes nearby residues).
+            guidance_steering: Enable gradient guidance for this potential.
         """
         self.flatbottom = flatbottom
         self.dist = dist
@@ -251,13 +277,21 @@ class ChainClashPotential(Potential):
         self.offset = offset
         self.guidance_steering = guidance_steering
 
-    def __call__(self, N_pos, Ca_pos, C_pos, O_pos, t, N):
+    def __call__(
+        self,
+        N_pos: torch.Tensor,
+        Ca_pos: torch.Tensor,
+        C_pos: torch.Tensor,
+        O_pos: torch.Tensor,
+        i: int,
+        N: int,
+    ):
         """
         Calculate clash potential for Ca atoms.
 
         Args:
             N_pos, Ca_pos, C_pos, O_pos: Backbone atom positions
-            t: Time step
+            i: Denoising step index
             N: Number of residues
 
         Returns:

@@ -14,8 +14,6 @@ from bioemu.sde_lib import SDE, CosineVPSDE
 from bioemu.so3_sde import SO3SDE, apply_rotvec_to_rotmat
 from bioemu.steering import get_pos0_rot0, resample_batch
 
-TwoBatches = tuple[Batch, Batch]
-
 
 class EulerMaruyamaPredictor:
     """Euler-Maruyama predictor."""
@@ -456,8 +454,8 @@ def dpm_solver(
             )  # [BS, L, 4, 3] -> [BS, L, 3] for N,Ca,C,O
             energies = []
             for potential_ in fk_potentials:
-                energies += [potential_(N_pos, Ca_pos, C_pos, O_pos, t=i, N=N)]
-                # energies += [potential_(None, 10 * x0_t, None, None, t=i, N=N)]
+                energies += [potential_(N_pos, Ca_pos, C_pos, O_pos, i=i, N=N)]
+                # energies += [potential_(None, 10 * x0_t, None, None, i=i, N=N)]
 
             total_energy = torch.stack(energies, dim=-1).sum(-1)  # [BS]
 
@@ -466,7 +464,7 @@ def dpm_solver(
                 # Resample between particles ...
                 if (
                     steering_config["start"] >= timesteps[i] >= steering_config["end"]
-                    and i % steering_config["resampling_freq"] == 0
+                    and i % steering_config["resampling_interval"] == 0
                     and i < N - 2
                 ):
                     batch, total_energy, log_weights = resample_batch(
@@ -483,11 +481,9 @@ def dpm_solver(
                     print(
                         "Final Resampling [BS, FK_particles] back to BS, with real x0 instead of pred x0."
                     )
-                    seq_length = len(batch.sequence[0])
-                    x0 = batch.pos.view(batch.batch_size, seq_length, 3).detach()
                     energies = []
                     for potential_ in fk_potentials:
-                        energies += [potential_(N_pos, Ca_pos, C_pos, O_pos, t=i, N=N)]
+                        energies += [potential_(N_pos, Ca_pos, C_pos, O_pos, i=i, N=N)]
                     total_energy = torch.stack(energies, dim=-1).sum(-1)  # [BS]
 
                     batch, total_energy, log_weights = resample_batch(

@@ -36,9 +36,6 @@ DEFAULT_STEERING_CONFIG_DIR = Path(__file__).parent / "config/steering/"
 SupportedDenoisersLiteral = Literal["dpm", "heun"]
 SUPPORTED_DENOISERS = list(typing.get_args(SupportedDenoisersLiteral))
 
-
-DEFAULT_STEERING_CONFIG_DIR = Path(__file__).parent / "config/steering/"
-
 # Mapping used in training of BioEmu-1.2 model.
 _NODE_LABEL_MAPPING: dict[str, int] = {
     "A": 1,
@@ -86,51 +83,37 @@ def main(
     msa_host_url: str | None = None,
     filter_samples: bool = True,
     steering_config: str | Path | dict | None = None,
-    disulfidebridges: list[tuple[int, int]] | None = None,
 ) -> dict:
     """
     Generate samples for a specified sequence, using a trained model.
 
     Args:
-        sequence: Amino acid sequence for which to generate samples, or a path to a .fasta file,
-            or a path to an .a3m file with MSAs. If it is not an a3m file, then colabfold will be
-            used to generate an MSA and embedding.
-        num_samples: Number of samples to generate. If `output_dir` already contains samples, this
-            function will only generate additional samples necessary to reach the specified `num_samples`.
-        output_dir: Directory to save the samples. Each batch of samples will initially be dumped
-            as .npz files. Once all batches are sampled, they will be converted to .xtc and .pdb.
-        batch_size_100: Batch size you'd use for a sequence of length 100. The batch size will be
-            calculated from this, assuming that the memory requirement to compute each sample scales
-            quadratically with the sequence length. A100-80GB would give you ~900 right at the memory
-            limit, so 500 is reasonable
-        model_name: Name of pretrained model to use. If this is set, you do not need to provide
-            `ckpt_path` or `model_config_path`. The model will be retrieved from huggingface; the
-            following models are currently available:
-            - bioemu-v1.0: checkpoint used in the original preprint
+        sequence: Amino acid sequence for which to generate samples, or a path to a .fasta file, or a path to an .a3m file with MSAs.
+            If it is not an a3m file, then colabfold will be used to generate an MSA and embedding.
+        num_samples: Number of samples to generate. If `output_dir` already contains samples, this function will only generate additional samples necessary to reach the specified `num_samples`.
+        output_dir: Directory to save the samples. Each batch of samples will initially be dumped as .npz files. Once all batches are sampled, they will be converted to .xtc and .pdb.
+        batch_size_100: Batch size you'd use for a sequence of length 100. The batch size will be calculated from this, assuming
+           that the memory requirement to compute each sample scales quadratically with the sequence length.
+        model_name: Name of pretrained model to use. If this is set, you do not need to provide `ckpt_path` or `model_config_path`.
+            The model will be retrieved from huggingface; the following models are currently available:
+            - bioemu-v1.0: checkpoint used in the original preprint (https://www.biorxiv.org/content/10.1101/2024.12.05.626885v2)
             - bioemu-v1.1: checkpoint with improved protein stability performance
         ckpt_path: Path to the model checkpoint. If this is set, `model_name` will be ignored.
-        model_config_path: Path to the model config, defining score model architecture and the
-            corruption process the model was trained with. Only required if `ckpt_path` is set.
-        denoiser_type: Denoiser to use for sampling, if `denoiser_config` not specified.
-            Comes in with default parameter configuration. Must be one of ['dpm', 'heun']
-        denoiser_config: Path to the denoiser config, or a dict defining the denoising process.
-            If None, uses default config based on denoiser_type.
-        cache_embeds_dir: Directory to store MSA embeddings. If not set, this defaults to
-            `COLABFOLD_DIR/embeds_cache`.
-        cache_so3_dir: Directory to store SO3 precomputations. If not set, this defaults to
-            `~/sampling_so3_cache`.
-        msa_host_url: MSA server URL. If not set, this defaults to colabfold's remote server.
-            If sequence is an a3m file, this is ignored.
+        model_config_path: Path to the model config, defining score model architecture and the corruption process the model was trained with.
+           Only required if `ckpt_path` is set.
+        denoiser_type: Denoiser to use for sampling, if `denoiser_config_path` not specified. Comes in with default parameter configuration. Must be one of ['dpm', 'heun']
+        denoiser_config_path: Path to the denoiser config, defining the denoising process.
+        cache_embeds_dir: Directory to store MSA embeddings. If not set, this defaults to `COLABFOLD_DIR/embeds_cache`.
+        cache_so3_dir: Directory to store SO3 precomputations. If not set, this defaults to `~/sampling_so3_cache`.
+        msa_host_url: MSA server URL. If not set, this defaults to colabfold's remote server. If sequence is an a3m file, this is ignored.
         filter_samples: Filter out unphysical samples with e.g. long bond distances or steric clashes.
         steering_config: Path to steering config YAML, or a dict containing steering parameters.
             Can be None to disable steering (num_particles=1). The config should contain:
             - num_particles: Number of particles per sample (>1 enables steering)
             - start: Start time for steering (0.0-1.0)
             - end: End time for steering (0.0-1.0)
-            - resampling_freq: Resampling frequency
+            - resampling_interval: Resampling interval
             - potentials: Dict of potential configurations
-        disulfidebridges: List of integer tuple pairs specifying cysteine residue indices for disulfide
-            bridge steering, e.g., [(3,40), (4,32), (16,26)].
     """
 
     output_dir = Path(output_dir).expanduser().resolve()
@@ -247,25 +230,6 @@ def main(
     # Adjust batch size by sequence length since longer sequence require quadratically more memory
     batch_size = int(batch_size_100 * (100 / len(sequence)) ** 2)
 
-    # # For a given batch_size, calculate the reduced batch size after taking steering particle multiplicity into account
-    # if steering_config_dict is not None:
-    #     assert (
-    #         batch_size >= steering_config_dict["num_particles"]
-    #     ), f"batch_size ({batch_size}) must be at least num_particles ({steering_config_dict['num_particles']})"
-    #     num_particles = steering_config_dict["num_particles"]
-
-    #     # Correct the number of samples we draw per sampling iteration by the number of particles
-    #     # Effective batch size is decreased: BS <- BS / num_particles
-    #     batch_size = (
-    #         batch_size // num_particles
-    #     ) * num_particles  # Round to largest multiple of num_particles
-    #     # late expansion of batch size by multiplicity, helper variable for denoiser to check proper late multiplicity
-    #     steering_config_dict["max_batch_size"] = batch_size
-    #     batch_size = batch_size // num_particles  # effective batch size: BS <- BS / num_particles
-    #     # batch size is now the maximum of what we can use while taking particle multiplicity into account
-
-    #     print(f"Batch size after steering: {batch_size} particles: {num_particles}")
-
     batch_size = min(batch_size, num_samples)
     logger.info(f"Using batch size {min(batch_size, num_samples)}")
 
@@ -281,7 +245,7 @@ def main(
                 f"Not sure why {npz_path} already exists when so far only "
                 f"{existing_num_samples} samples have been generated."
             )
-        # logger.info(f"Sampling {seed=}")
+        logger.info(f"Sampling {seed=}")
         if steering_config_dict is not None:
             description = f"Sampling batch {seed}/{num_samples} ({n} samples with {steering_config_dict['num_particles']} particles)"
         else:
@@ -290,10 +254,6 @@ def main(
 
         steering_config_dict = (
             OmegaConf.create(steering_config_dict) if steering_config_dict is not None else None
-        )
-        print(
-            "steering_config_dict (OmegaConf):",
-            OmegaConf.to_yaml(steering_config_dict) if steering_config_dict is not None else None,
         )
 
         batch = generate_batch(
@@ -319,7 +279,6 @@ def main(
     if set(sequences) != {sequence}:
         raise ValueError(f"Expected all sequences to be {sequence}, but got {set(sequences)}")
     positions = torch.tensor(np.concatenate([np.load(f)["pos"] for f in samples_files]))
-    # denoised_positions = torch.tensor(np.concatenate([np.load(f)["denoised_pos"] for f in samples_files], axis=0))
     node_orientations = torch.tensor(
         np.concatenate([np.load(f)["node_orientations"] for f in samples_files])
     )
@@ -338,7 +297,7 @@ def main(
     return {
         "pos": positions,
         "rot": node_orientations,
-    }  # Fire tries to build CLI from output and blocks further execution
+    }
 
 
 def get_context_chemgraph(

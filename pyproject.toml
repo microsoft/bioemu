@@ -1,15 +1,14 @@
 [build-system]
-requires = ["setuptools", "wheel"]
-build-backend = "setuptools.build_meta"
+  requires      = ["setuptools", "wheel"]
+  build-backend = "setuptools.build_meta"
 
 [project]
-name = "bioemu"
-dynamic = ["version"]
-description = "Biomolecular emulator"
-authors = [
-]
-requires-python = ">=3.10"
-dependencies = [
+  name = "bioemu"
+  dynamic = ["version"]
+  description = "Biomolecular emulator"
+  authors = []
+  requires-python = ">=3.10"
+  dependencies = [
     "mdtraj>=1.9.9",
     "torch_geometric>=2.6.1",
     "torch>=2.6.0",
@@ -24,29 +23,26 @@ dependencies = [
     "uv",
     "einops",
     "matplotlib>=3.10.7",
-    "pandas>=2.3.3",
-]
-readme = "README.md"
+  ]
+  readme = "README.md"
 
 
 [tool.setuptools.dynamic]
-version = {attr = "bioemu.__version__"}
+  version = { attr = "bioemu.__version__" }
 
 
 [project.optional-dependencies]
-dev = [
-    "pytest", # For developers
+  dev = [
+    "pytest",     # For developers
     "pytest-cov",
     "pre-commit",
-]
-md = [
-    "openmm[cuda12]==8.2.0",
-]
+  ]
+  md = ["openmm[cuda12]==8.2.0"]
 
 [tool.black]
-line-length = 100
-include = '\.pyi?$'
-exclude = '''
+  line-length = 100
+  include = '\.pyi?$'
+  exclude = '''
 /(
     \.git
   | \.hg
@@ -62,17 +58,15 @@ exclude = '''
 '''
 
 [tool.isort]
-profile = "black"
-line_length = 100
-known_first_party = [
-    "bioemu",
-]
+  profile           = "black"
+  line_length       = 100
+  known_first_party = ["bioemu"]
 
 [tool.mypy]
-verbosity = 0
+  verbosity = 0
 
 [[tool.mypy.overrides]]
-module = [
+  module = [
     "Bio.*",
     "git.*",
     "hydra.*",
@@ -91,87 +85,84 @@ module = [
     "omegaconf.*",
     "scipy.*",
     "sklearn.*",
-]
-ignore_missing_imports = true
-
-
+  ]
+  ignore_missing_imports = true
 
 
 [tool.ruff]
-line-length = 100
+  line-length = 100
 
 [tool.ruff.lint]
-# Check https://beta.ruff.rs/docs/rules/ for full list of rules
-select = [
-  "E", "W",  # pycodestyle
-  "F",  # Pyflakes
-  # "C90",  # mccabe
-  # "I",  # isort
-  # "N",  # pep8-naming
-  # "D",  # pydocstyle
-  "UP",  # pyupgrade
-  # "YTT",  # flake8-2020
-  # "ANN",  # flake8-annotations
-  # "S",  # flake8-bandit
-  # "BLE",  # flake8-blind-except
-  # "FBT",  # flake8-boolean-trap
-  # "B",  # flake8-bugbear
-  # "A",  # flake8-builtins
-  # "COM",  # flake8-commas
-  # "C4",  # flake8-comprehensions
-  # "DTZ",  # flake8-datetimez
-  # "T10",  # flake8-debugger
-  # "DJ",  # flake8-django
-  # "EM",  # flake8-errmsg
-  # "EXE",  # flake8-executable
-  # "ISC",  # flake8-implicit-str-concat
-  # "ICN",  # flake8-import-conventions
-  # "G",  # flake8-logging-format
-  # "INP",  # flake8-no-pep420
-  # "PIE",  # flake8-pie
-  # "T20",  # flake8-print
-  # "PYI",  # flake8-pyi
-  # "PT",  # flake8-pytest-style
-  # "Q",  # flake8-quotes
-  # "RSE",  # flake8-raise
-  # "RET",  # flake8-return
-  # "SLF",  # flake8-self
-  # "SIM",  # flake8-simplify
-  # "TID",  # flake8-tidy-imports
-  # "TCH",  # flake8-type-checking
-  # "ARG",  # flake8-unused-arguments
-  # "PTH",  # flake8-use-pathlib
-  # "ERA",  # eradicate
-  # "PD",  # pandas-vet
-  # "PGH",  # pygrep-hooks
-  # "PLC",  # pylint-convention
-  "PLE",  # pylint-error
-  # "PLR",  # pylint-refactor
-  # "PLW",  # pylint-warning
-  # "TRY",  # tryceratops
-  # "NPY",  # numpy
-  # "RUF",  # ruff
-]
-ignore = [
-  # W605: invalid escape sequence -- triggered by pseudo-LaTeX in comments
-  "W605",
-  # E501: Line too long -- triggered by comments and such. black deals with shortening.
-  "E501",
-  # E402: Module level import not at top of file -- triggered by python path manipulations
-  "E402",
-  # E741:  Do not use variables named 'l', 'o', or 'i' -- disagree with PEP8
-  "E741",
-]
-extend-safe-fixes = [
-  "UP"
-]
-exclude=["openfold"]
+  # Check https://beta.ruff.rs/docs/rules/ for full list of rules
+  select = [
+    "E",
+    "W", # pycodestyle
+    "F", # Pyflakes
+    # "C90",  # mccabe
+    # "I",  # isort
+    # "N",  # pep8-naming
+    # "D",  # pydocstyle
+    "UP", # pyupgrade
+    # "YTT",  # flake8-2020
+    # "ANN",  # flake8-annotations
+    # "S",  # flake8-bandit
+    # "BLE",  # flake8-blind-except
+    # "FBT",  # flake8-boolean-trap
+    # "B",  # flake8-bugbear
+    # "A",  # flake8-builtins
+    # "COM",  # flake8-commas
+    # "C4",  # flake8-comprehensions
+    # "DTZ",  # flake8-datetimez
+    # "T10",  # flake8-debugger
+    # "DJ",  # flake8-django
+    # "EM",  # flake8-errmsg
+    # "EXE",  # flake8-executable
+    # "ISC",  # flake8-implicit-str-concat
+    # "ICN",  # flake8-import-conventions
+    # "G",  # flake8-logging-format
+    # "INP",  # flake8-no-pep420
+    # "PIE",  # flake8-pie
+    # "T20",  # flake8-print
+    # "PYI",  # flake8-pyi
+    # "PT",  # flake8-pytest-style
+    # "Q",  # flake8-quotes
+    # "RSE",  # flake8-raise
+    # "RET",  # flake8-return
+    # "SLF",  # flake8-self
+    # "SIM",  # flake8-simplify
+    # "TID",  # flake8-tidy-imports
+    # "TCH",  # flake8-type-checking
+    # "ARG",  # flake8-unused-arguments
+    # "PTH",  # flake8-use-pathlib
+    # "ERA",  # eradicate
+    # "PD",  # pandas-vet
+    # "PGH",  # pygrep-hooks
+    # "PLC",  # pylint-convention
+    "PLE", # pylint-error
+    # "PLR",  # pylint-refactor
+    # "PLW",  # pylint-warning
+    # "TRY",  # tryceratops
+    # "NPY",  # numpy
+    # "RUF",  # ruff
+  ]
+  ignore = [
+    # W605: invalid escape sequence -- triggered by pseudo-LaTeX in comments
+    "W605",
+    # E501: Line too long -- triggered by comments and such. black deals with shortening.
+    "E501",
+    # E402: Module level import not at top of file -- triggered by python path manipulations
+    "E402",
+    # E741:  Do not use variables named 'l', 'o', or 'i' -- disagree with PEP8
+    "E741",
+  ]
+  extend-safe-fixes = ["UP"]
+  exclude = ["openfold"]
 
 [tool.setuptools]
-include-package-data = true
+  include-package-data = true
 
 [tool.setuptools.packages.find]
-where = ["src"]
+  where = ["src"]
 
 [tool.setuptools.package-data]
-"*" = ["*.patch", "*.sh", "*.md"]
+  "*" = ["*.patch", "*.sh", "*.md"]

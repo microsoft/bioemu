@@ -68,7 +68,10 @@ This code only supports sampling structures of monomers. You can try to sample m
 
 ## Steering to avoid chain breaks and clashes
 
-BioEmu includes a [steering system](https://arxiv.org/abs/2501.06848) that uses [Sequential Monte Carlo (SMC)](https://www.stats.ox.ac.uk/~doucet/doucet_defreitas_gordon_smcbookintro.pdf) to guide the diffusion process toward more physically plausible protein structures. Steering applies potential energy functions during denoising to favor conformations that satisfy physical constraints. Algorithmically, steering simulates multiple *particles* (in the SMC sense, i.e., candidate samples) per desired output sample and resamples between these particles according to the favorability of the provided potentials. 
+BioEmu includes a [steering system](https://arxiv.org/abs/2501.06848) that uses [Sequential Monte Carlo (SMC)](https://www.stats.ox.ac.uk/~doucet/doucet_defreitas_gordon_smcbookintro.pdf) to guide the diffusion process toward more physically plausible protein structures.
+Empirically, using three or more steering particles per output sample greatly reduces the number of unphysical samples (steric clashes or chain breaks) produced by the model.
+Steering applies potential energy functions during denoising to favor conformations that satisfy physical constraints. 
+Algorithmically, steering simulates multiple *candidate samples* per desired output sample and resamples between these particles according to the favorability of the provided potentials. 
 
 ### Quick start with steering
 
@@ -83,7 +86,7 @@ python -m bioemu.sample \
     --num_steering_particles 5 \
     --steering_start_time 0.1 \
     --steering_end_time 0.9 \
-    --resampling_freq 3
+    --resampling_interval 3
 ```
 
 Or using the Python API:
@@ -98,7 +101,7 @@ sample(
     steering_config='src/bioemu/config/steering/physical_steering.yaml',
     num_steering_particles=3,
     steering_start_time=0.5,
-    resampling_freq=2
+    resampling_interval=2
 )
 ```
 
@@ -107,7 +110,7 @@ sample(
 - `num_steering_particles`: Number of particles per sample (1 = no steering, >1 enables steering)
 - `steering_start_time`: When to start steering (0.0-1.0, default: 0.1) with reverse sampling 1 -> 0
 - `steering_end_time`: When to stop steering (0.0-1.0, default: 0.) with reverse sampling 1 -> 0
-- `resampling_freq`: How often to resample particles (default: 1)
+- `resampling_interval`: How often to resample particles (default: 1)
 - `steering_config`: Path to potentials configuration file (required for steering)
 
 ### Available potentials
