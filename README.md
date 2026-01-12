@@ -84,10 +84,7 @@ python -m bioemu.sample \
     --num_samples 100 \
     --output_dir ~/steered-samples \
     --steering_config src/bioemu/config/steering/physical_steering.yaml \
-    --num_steering_particles 5 \
-    --steering_start_time 0.1 \
-    --steering_end_time 0.9 \
-    --resampling_interval 3
+    --denoiser_config src/bioemu/config/denoiser/stochastic_dpm.yaml
 ```
 
 Or using the Python API:
@@ -99,10 +96,8 @@ sample(
     sequence='GYDPETGTWG',
     num_samples=100,
     output_dir='~/steered-samples',
-    steering_config='src/bioemu/config/steering/physical_steering.yaml',
-    num_steering_particles=3,
-    steering_start_time=0.5,
-    resampling_interval=2
+    denoiser_config="../src/bioemu/config/denoiser/stochastic_dpm.yaml",  # Use stochastic DPM
+    steering_config="../src/bioemu/config/steering/physicality_steering.yaml",  # Use physicality steering
 )
 ```
 
@@ -119,6 +114,7 @@ sample(
 The [`physical_steering.yaml`](./src/bioemu/config/steering/physical_steering.yaml) configuration provides potentials for physical realism:
 - **ChainBreak**: Prevents backbone discontinuities
 - **ChainClash**: Avoids steric clashes between non-neighboring residues
+- **DisulfideBridge**: Encourages disulfide bond formation between specified cysteine pairs
 
 You can create a custom `steering_config` YAML file to define your own potentials.
 

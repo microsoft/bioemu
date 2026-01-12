@@ -84,7 +84,8 @@ def main(
     msa_host_url: str | None = None,
     filter_samples: bool = True,
     steering_config: str | Path | dict | None = None,
-) -> dict:
+    base_seed: int | None = None,
+) -> None:
     """
     Generate samples for a specified sequence, using a trained model.
 
@@ -292,10 +293,10 @@ def main(
 
     logger.info(f"Completed. Your samples are in {output_dir}.")
 
-    return {
-        "pos": positions,
-        "rot": node_orientations,
-    }
+    # return {
+    #     "pos": positions,
+    #     "rot": node_orientations,
+    # }
 
 
 def get_context_chemgraph(
