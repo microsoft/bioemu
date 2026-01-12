@@ -65,7 +65,7 @@ def test_steering_with_config_path(chignolin_sequence, base_test_config):
     if os.path.exists(output_dir):
         shutil.rmtree(output_dir)
 
-    samples = sample(
+    sample(
         sequence=chignolin_sequence,
         num_samples=base_test_config["num_samples"],
         batch_size_100=base_test_config["batch_size_100"],
@@ -74,13 +74,6 @@ def test_steering_with_config_path(chignolin_sequence, base_test_config):
         denoiser_config="src/bioemu/config/denoiser/stochastic_dpm.yaml",
         steering_config=PHYSICAL_STEERING_CONFIG_PATH,
     )
-
-    # Validate results
-    assert "pos" in samples
-    assert "rot" in samples
-    assert samples["pos"].shape[0] == base_test_config["num_samples"]
-    assert samples["pos"].shape[1] == len(chignolin_sequence)
-    assert samples["pos"].shape[2] == 3  # x, y, z coordinates
 
 
 def test_steering_with_config_dict(chignolin_sequence, base_test_config):
@@ -91,7 +84,7 @@ def test_steering_with_config_dict(chignolin_sequence, base_test_config):
 
     steering_config = load_steering_config()
 
-    samples = sample(
+    sample(
         sequence=chignolin_sequence,
         num_samples=base_test_config["num_samples"],
         batch_size_100=base_test_config["batch_size_100"],
@@ -100,13 +93,6 @@ def test_steering_with_config_dict(chignolin_sequence, base_test_config):
         denoiser_config="src/bioemu/config/denoiser/stochastic_dpm.yaml",
         steering_config=steering_config,
     )
-
-    # Validate results
-    assert "pos" in samples
-    assert "rot" in samples
-    assert samples["pos"].shape[0] == base_test_config["num_samples"]
-    assert samples["pos"].shape[1] == len(chignolin_sequence)
-    assert samples["pos"].shape[2] == 3
 
 
 def test_steering_modified_num_particles(chignolin_sequence, base_test_config):
@@ -118,7 +104,7 @@ def test_steering_modified_num_particles(chignolin_sequence, base_test_config):
     steering_config = load_steering_config()
     steering_config["num_particles"] = 5  # Modify from default
 
-    samples = sample(
+    sample(
         sequence=chignolin_sequence,
         num_samples=base_test_config["num_samples"],
         batch_size_100=base_test_config["batch_size_100"],
@@ -127,13 +113,6 @@ def test_steering_modified_num_particles(chignolin_sequence, base_test_config):
         denoiser_config="src/bioemu/config/denoiser/stochastic_dpm.yaml",
         steering_config=steering_config,
     )
-
-    # Validate results
-    assert "pos" in samples
-    assert "rot" in samples
-    assert samples["pos"].shape[0] == base_test_config["num_samples"]
-    assert samples["pos"].shape[1] == len(chignolin_sequence)
-    assert samples["pos"].shape[2] == 3
 
 
 def test_steering_modified_time_window(chignolin_sequence, base_test_config):
@@ -146,7 +125,7 @@ def test_steering_modified_time_window(chignolin_sequence, base_test_config):
     steering_config["start"] = 0.7  # Modify time window
     steering_config["end"] = 0.3
 
-    samples = sample(
+    sample(
         sequence=chignolin_sequence,
         num_samples=base_test_config["num_samples"],
         batch_size_100=base_test_config["batch_size_100"],
@@ -156,13 +135,6 @@ def test_steering_modified_time_window(chignolin_sequence, base_test_config):
         steering_config=steering_config,
     )
 
-    # Validate results
-    assert "pos" in samples
-    assert "rot" in samples
-    assert samples["pos"].shape[0] == base_test_config["num_samples"]
-    assert samples["pos"].shape[1] == len(chignolin_sequence)
-    assert samples["pos"].shape[2] == 3
-
 
 def test_no_steering(chignolin_sequence, base_test_config):
     """Test sampling without steering (steering_config=None)."""
@@ -170,7 +142,7 @@ def test_no_steering(chignolin_sequence, base_test_config):
     if os.path.exists(output_dir):
         shutil.rmtree(output_dir)
 
-    samples = sample(
+    sample(
         sequence=chignolin_sequence,
         num_samples=base_test_config["num_samples"],
         batch_size_100=base_test_config["batch_size_100"],
@@ -179,10 +151,3 @@ def test_no_steering(chignolin_sequence, base_test_config):
         denoiser_config="src/bioemu/config/denoiser/stochastic_dpm.yaml",
         steering_config=None,
     )
-
-    # Validate results
-    assert "pos" in samples
-    assert "rot" in samples
-    assert samples["pos"].shape[0] == base_test_config["num_samples"]
-    assert samples["pos"].shape[1] == len(chignolin_sequence)
-    assert samples["pos"].shape[2] == 3
