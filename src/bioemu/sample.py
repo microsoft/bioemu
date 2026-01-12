@@ -3,6 +3,7 @@
 """Script for sampling from a trained model."""
 
 import logging
+import time
 import typing
 from collections.abc import Callable
 from pathlib import Path
@@ -72,8 +73,8 @@ def main(
     sequence: str | Path,
     num_samples: int,
     output_dir: str | Path,
-    batch_size_100: int = 50,
-    model_name: Literal["bioemu-v1.0", "bioemu-v1.1"] | None = "bioemu-v1.1",
+    batch_size_100: int = 10,
+    model_name: Literal["bioemu-v1.0", "bioemu-v1.1", "bioemu-v1.2"] | None = "bioemu-v1.1",
     ckpt_path: str | Path | None = None,
     model_config_path: str | Path | None = None,
     denoiser_type: SupportedDenoisersLiteral | None = "dpm",
@@ -97,7 +98,8 @@ def main(
         model_name: Name of pretrained model to use. If this is set, you do not need to provide `ckpt_path` or `model_config_path`.
             The model will be retrieved from huggingface; the following models are currently available:
             - bioemu-v1.0: checkpoint used in the original preprint (https://www.biorxiv.org/content/10.1101/2024.12.05.626885v2)
-            - bioemu-v1.1: checkpoint with improved protein stability performance
+            - bioemu-v1.1: checkpoint used for our paper (https://www.science.org/doi/10.1126/science.adv9817)
+            - bioemu-v1.2: checkpoint trained with an extended set of MD simulations and experimental measurements of folding free energies.
         ckpt_path: Path to the model checkpoint. If this is set, `model_name` will be ignored.
         model_config_path: Path to the model config, defining score model architecture and the corruption process the model was trained with.
            Only required if `ckpt_path` is set.
@@ -114,7 +116,12 @@ def main(
             - end: End time for steering (0.0-1.0)
             - resampling_interval: Resampling interval
             - potentials: Dict of potential configurations
+        base_seed: Base random seed for sampling. If set, each batch's seed will be set to base_seed + (num samples already generated).
     """
+
+    if base_seed is None:
+        # Use system time
+        base_seed = time.time_ns()
 
     output_dir = Path(output_dir).expanduser().resolve()
     output_dir.mkdir(parents=True, exist_ok=True)  # Fail fast if output_dir is non-writeable
@@ -235,27 +242,18 @@ def main(
 
     existing_num_samples = count_samples_in_output_dir(output_dir)
     logger.info(f"Found {existing_num_samples} previous samples in {output_dir}.")
-    batch_iterator = tqdm(range(existing_num_samples, num_samples, batch_size), position=0, ncols=0)
-    for seed in batch_iterator:
-        n = min(batch_size, num_samples - seed)  # if remaining samples are smaller than batch size
-        npz_path = output_dir / format_npz_samples_filename(seed, n)
-
+    for start_idx in tqdm(
+        range(existing_num_samples, num_samples, batch_size), desc="Sampling batches..."
+    ):
+        n = min(batch_size, num_samples - start_idx)
+        npz_path = output_dir / format_npz_samples_filename(start_idx, n)
         if npz_path.exists():
             raise ValueError(
                 f"Not sure why {npz_path} already exists when so far only "
                 f"{existing_num_samples} samples have been generated."
             )
-        logger.info(f"Sampling {seed=}")
-        if steering_config_dict is not None:
-            description = f"Sampling batch {seed}/{num_samples} ({n} samples with {steering_config_dict['num_particles']} particles)"
-        else:
-            description = f"Sampling batch {seed}/{num_samples} ({n} samples)"
-        batch_iterator.set_description(description)
-
-        steering_config_dict = (
-            OmegaConf.create(steering_config_dict) if steering_config_dict is not None else None
-        )
-
+        seed = base_seed + start_idx
+        logger.info(f"Sampling with {seed=} ({base_seed=})")
         batch = generate_batch(
             score_model=score_model,
             sequence=sequence,
