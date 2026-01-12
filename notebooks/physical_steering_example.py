@@ -40,7 +40,7 @@ def main():
         num_samples=num_samples,
         output_dir=output_dir_with_steering,
         denoiser_config="../src/bioemu/config/denoiser/stochastic_dpm.yaml",  # Use stochastic DPM
-        steering_config="../src/bioemu/config/steering/physicality_steering.yaml",  # Use physicality steering
+        steering_config="../src/bioemu/config/steering/physical_steering.yaml",  # Use physicality steering
     )
 
     logger.info("=" * 80)

@@ -4,6 +4,7 @@ import logging
 from pathlib import Path
 
 import matplotlib.pyplot as plt
+import numpy as np
 import torch
 
 from bioemu.sample import main as sample_main
@@ -45,22 +46,26 @@ logger.info("=" * 80)
 logger.info("Sampling WITHOUT steering...")
 logger.info("=" * 80)
 output_dir_no_steering = base_output_dir / "no_steering"
-pos_rot_unsteered: dict = sample_main(
+sample_main(
     sequence=sequence,
     num_samples=num_samples,
     output_dir=output_dir_no_steering,
+    batch_size_100=500,
     denoiser_config="../src/bioemu/config/denoiser/stochastic_dpm.yaml",  # Use stochastic DPM
     steering_config=None,  # No steering
 )
+pos_unsteered = torch.from_numpy(
+    np.load(list(output_dir_no_steering.glob("batch_*.npz"))[0])["pos"]
+)
 
-unsteered_bridge_distances = bridge_distances(pos_rot_unsteered["pos"], bridge_indices)
+unsteered_bridge_distances = bridge_distances(pos_unsteered, bridge_indices)
 
 # Sample WITH steering
 logger.info("=" * 80)
 logger.info("Sampling WITH physicality steering...")
 logger.info("=" * 80)
 output_dir_with_steering = base_output_dir / "with_steering"
-pos_rot_steered: dict = sample_main(
+sample_main(
     sequence=sequence,
     num_samples=num_samples,
     output_dir=output_dir_with_steering,
@@ -68,10 +73,13 @@ pos_rot_steered: dict = sample_main(
     steering_config="../src/bioemu/config/steering/disulfide_bridge_steering.yaml",  # Use disulfide bridge steering
 )
 
-steered_bridge_distances = bridge_distances(
-    pos_rot_steered["pos"], bridge_indices
-)  # pos_rot_steered['pos'] in Angstrom
+pos_steered = torch.from_numpy(
+    np.load(list(output_dir_with_steering.glob("batch_*.npz"))[0])["pos"]
+)
 
+steered_bridge_distances = bridge_distances(
+    pos_steered, bridge_indices
+)  # pos_rot_steered in Angstrom
 logger.info("=" * 80)
 logger.info("Comparison complete!")
 logger.info(f"Results without steering: {output_dir_no_steering}")

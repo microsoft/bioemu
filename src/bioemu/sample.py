@@ -73,7 +73,7 @@ def main(
     sequence: str | Path,
     num_samples: int,
     output_dir: str | Path,
-    batch_size_100: int = 10,
+    batch_size_100: int = 200,
     model_name: Literal["bioemu-v1.0", "bioemu-v1.1", "bioemu-v1.2"] | None = "bioemu-v1.1",
     ckpt_path: str | Path | None = None,
     model_config_path: str | Path | None = None,
@@ -292,11 +292,6 @@ def main(
     )
 
     logger.info(f"Completed. Your samples are in {output_dir}.")
-
-    # return {
-    #     "pos": positions,
-    #     "rot": node_orientations,
-    # }
 
 
 def get_context_chemgraph(
