@@ -90,7 +90,7 @@ def get_pos0_rot0(sdes, batch, t, score):
     return x0_t, R0_t
 
 
-def log_physicality(pos, rot, sequence):
+def log_physicality(pos: torch.Tensor, rot: torch.Tensor, sequence: str):
     """
     Log physicality metrics for the generated structures.
 
@@ -131,7 +131,14 @@ def log_physicality(pos, rot, sequence):
     print(f"physicality/cn_dist_mean: {cn_dist.mean().item()}")
 
 
-def potential_loss_fn(x, target, flatbottom, slope, order, linear_from):
+def potential_loss_fn(
+    x: torch.Tensor,
+    target: torch.Tensor,
+    flatbottom: float,
+    slope: float,
+    order: float,
+    linear_from: float,
+) -> torch.Tensor:
     """
     Flat-bottom loss for continuous variables.
 
