@@ -4,6 +4,7 @@ Steering potentials for BioEmu sampling.
 This module provides steering potentials to guide protein structure generation
 towards physically realistic conformations by penalizing chain breaks and clashes.
 """
+import logging
 
 import torch
 from torch_geometric.data import Batch
@@ -13,6 +14,8 @@ from bioemu.openfold.np.residue_constants import ca_ca
 from bioemu.sde_lib import SDE
 
 from .so3_sde import apply_rotvec_to_rotmat
+
+logger = logging.getLogger(__name__)
 
 
 def _get_x0_given_xt_and_score(
@@ -123,12 +126,12 @@ def log_physicality(pos: torch.Tensor, rot: torch.Tensor, sequence: str):
     cn_break = (cn_dist > 2.0).float()
 
     # Print physicality metrics
-    print(f"physicality/ca_break_mean: {ca_break.sum().item()}")
-    print(f"physicality/ca_clash_mean: {ca_clash.sum().item()}")
-    print(f"physicality/cn_break_mean: {cn_break.sum().item()}")
-    print(f"physicality/ca_ca_dist_mean: {ca_ca_dist.mean().item()}")
-    print(f"physicality/clash_distances_mean: {clash_distances.mean().item()}")
-    print(f"physicality/cn_dist_mean: {cn_dist.mean().item()}")
+    logger.info(f"physicality/ca_break_mean: {ca_break.sum().item()}")
+    logger.info(f"physicality/ca_clash_mean: {ca_clash.sum().item()}")
+    logger.info(f"physicality/cn_break_mean: {cn_break.sum().item()}")
+    logger.info(f"physicality/ca_ca_dist_mean: {ca_ca_dist.mean().item()}")
+    logger.info(f"physicality/clash_distances_mean: {clash_distances.mean().item()}")
+    logger.info(f"physicality/cn_dist_mean: {cn_dist.mean().item()}")
 
 
 def potential_loss_fn(
