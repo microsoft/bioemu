@@ -119,6 +119,8 @@ def run_one_md(
     simtime_ns_nvt_equil: float = 0.1,
     simtime_ns_npt_equil: float = 0.4,
     simtime_ns: float = 0.0,
+    local_minimizer_tolerance: u.Quantity = 10 * u.kilojoules_per_mole / u.nanometer,
+    init_timesteps_ps: tuple[float, ...] = (1e-6, 1e-5, 1e-4),
     outpath: str = ".",
     file_prefix: str = "",
 ) -> mdtraj.Trajectory:
@@ -132,6 +134,8 @@ def run_one_md(
         simtime_ns_nvt_equil: simulation time (ns) for NVT equilibration
         simtime_ns_npt_equil: simulation time (ns) for NPT equilibration
         simtime_ns: simulation time in ns (only used if not `only_energy_minimization`)
+        local_minimizer_tolerance: tolerance for openMM local energy minimizer
+        init_timesteps_ps: initial integrator timesteps to use for equilibration (in ps)
         outpath: path to write simulation output to (only used if simtime_ns > 0)
         file_prefix: prefix for simulation output (only used if simtime_ns > 0)
     Returns:
@@ -142,7 +146,6 @@ def run_one_md(
 
     # fixed settings for standard protocol
     integrator_timestep_ps = 0.001
-    init_timesteps_ps = [1e-6, 1e-5, 1e-4]
     temperature_K = 300.0 * u.kelvin
     constraint_force_const = 1000
 
@@ -151,7 +154,9 @@ def run_one_md(
 
     # use high Langevin friction to relax the system quicker
     integrator = mm.LangevinIntegrator(
-        temperature_K, 200.0 / u.picoseconds, init_timesteps_ps[0] * u.picosecond
+        temperature_K,
+        200.0 / u.picoseconds,
+        (1e-6 if not init_timesteps_ps else init_timesteps_ps[0]) * u.picosecond,
     )
     integrator.setConstraintTolerance(0.00001)
 
@@ -174,7 +179,7 @@ def run_one_md(
     mdtop = mdtraj.Topology.from_openmm(modeller.topology)
 
     logger.debug("running local energy minimization")
-    simulation.minimizeEnergy()
+    simulation.minimizeEnergy(tolerance=local_minimizer_tolerance)
 
     if not only_energy_minimization:
         _do_equilibration(

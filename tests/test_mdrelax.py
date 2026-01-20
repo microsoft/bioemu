@@ -36,6 +36,8 @@ def run_one_md_nointegration(
         simtime_ns_nvt_equil=0.0,
         simtime_ns_npt_equil=0.0,
         simtime_ns=0.0,
+        local_minimizer_tolerance=5000 * u.kilojoule / u.mole / u.nanometer,
+        init_timesteps_ps=tuple(),
     )
 
 
