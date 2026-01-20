@@ -116,7 +116,7 @@ The [`physical_steering.yaml`](./src/bioemu/config/steering/physical_steering.ya
 - **ChainClash**: Avoids steric clashes between non-neighboring residues
 - **DisulfideBridge**: Encourages disulfide bond formation between specified cysteine pairs
 
-You can create a custom `steering_config` YAML file to define your own potentials.
+You can create a custom `steering_config.yaml` YAML file instantiating your own potential to steer the system with your own potentials.
 
 ## Azure AI Foundry
 BioEmu is also available on [Azure AI Foundry](https://ai.azure.com/). See [How to run BioEmu on Azure AI Foundry](AZURE_AI_FOUNDRY.md) for more details.

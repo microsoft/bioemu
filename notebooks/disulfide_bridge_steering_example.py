@@ -22,7 +22,7 @@ def bridge_distances(pos: torch.Tensor, bridge_indices: list[tuple[int, int]]) -
     import torch
 
     distances = []
-    for (i, j) in bridge_indices:
+    for i, j in bridge_indices:
         dist_ij = torch.norm(pos[:, i, :] - pos[:, j, :], dim=-1)  # (N,)
         distances.append(dist_ij)
     return torch.stack(distances, dim=-1)  # (N, num_bridges)
