@@ -143,7 +143,7 @@ def _add_constraint_force(system: mm.System, modeller: app.Modeller, k: float) -
 def _do_equilibration(
     simulation: app.Simulation,
     integrator: mm.Integrator,
-    init_timesteps_ps: list[float],
+    init_timesteps_ps: tuple[float, ...],
     integrator_timestep_ps: float,
     simtime_ns_nvt_equil: float,
     simtime_ns_npt_equil: float,
@@ -169,7 +169,7 @@ def _do_equilibration(
     """
     # start with tiny integrator steps and increase to target integrator step
     for init_int_ts_ps in tqdm(
-        init_timesteps_ps + [integrator_timestep_ps],
+        init_timesteps_ps + (integrator_timestep_ps,),
         desc="small timestep pre-equilibration",
         leave=False,
     ):
