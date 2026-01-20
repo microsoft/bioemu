@@ -519,14 +519,6 @@ def _filter_unphysical_traj_masks(
 
     frames_match_cn_seq_distance = np.all(cn_seq_distances < max_cn_seq_distance, axis=1)
 
-    # Clashes between any two atoms from different residues
-
-    rest_distances, _ = mdtraj.compute_contacts(traj, periodic=False)
-    frames_non_clash = np.all(
-        mdtraj.utils.in_units_of(rest_distances, "nanometers", "angstrom") > clash_distance,
-        axis=1,
-    )
-
     if traj.n_residues <= 100:
         frames_non_clash = _get_frames_non_clash_mdtraj(traj, clash_distance)
     else:

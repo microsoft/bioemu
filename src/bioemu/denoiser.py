@@ -1,5 +1,6 @@
 # Copyright (c) Microsoft Corporation.
 # Licensed under the MIT License.
+import logging
 from collections.abc import Callable
 from typing import cast
 
@@ -13,6 +14,8 @@ from bioemu.convert_chemgraph import batch_frames_to_atom37
 from bioemu.sde_lib import SDE, CosineVPSDE
 from bioemu.so3_sde import SO3SDE, apply_rotvec_to_rotmat
 from bioemu.steering import get_pos0_rot0, resample_batch
+
+logger = logging.getLogger(__name__)
 
 
 class EulerMaruyamaPredictor:
@@ -158,7 +161,6 @@ def heun_denoiser(
     """
     Get x0(x_t) from score
     Create batch of samples with the same information
-    Implement idealized bond lengths between neighboring C_a atoms and clash potentials between non-neighboring
     """
 
     batch = batch.to(device)
@@ -274,7 +276,7 @@ def dpm_solver(
     noise: float = 0.0,
     fk_potentials: list[Callable] | None = None,
     steering_config: dict | None = None,
-) -> ChemGraph:
+) -> Batch:
     """
     Implements the DPM solver for the VPSDE, with the Cosine noise schedule.
     Following this paper: https://arxiv.org/abs/2206.00927 Algorithm 1 DPM-Solver-2.
@@ -455,11 +457,8 @@ def dpm_solver(
             energies = []
             for potential_ in fk_potentials:
                 energies += [potential_(N_pos, Ca_pos, C_pos, O_pos, i=i, N=N)]
-                # energies += [potential_(None, 10 * x0_t, None, None, i=i, N=N)]
-
             total_energy = torch.stack(energies, dim=-1).sum(-1)  # [BS]
 
-            # if resampling implicitely given by num_fk_samples > 1
             if steering_config["num_particles"] > 1:
                 # Resample between particles ...
                 if (
@@ -469,23 +468,18 @@ def dpm_solver(
                 ):
                     batch, total_energy, log_weights = resample_batch(
                         batch=batch,
+                        num_particles=steering_config["num_particles"],
                         energy=total_energy,
                         previous_energy=previous_energy,
-                        num_particles=steering_config["num_particles"],
                         log_weights=log_weights,
                     )
                     previous_energy = total_energy
 
                 # ... or a single final sample
                 elif i >= N - 2:  # The last step is N-2
-                    print(
+                    logger.info(
                         "Final Resampling [BS, FK_particles] back to BS, with real x0 instead of pred x0."
                     )
-                    energies = []
-                    for potential_ in fk_potentials:
-                        energies += [potential_(N_pos, Ca_pos, C_pos, O_pos, i=i, N=N)]
-                    total_energy = torch.stack(energies, dim=-1).sum(-1)  # [BS]
-
                     batch, total_energy, log_weights = resample_batch(
                         batch=batch,
                         num_particles=steering_config["num_particles"],
