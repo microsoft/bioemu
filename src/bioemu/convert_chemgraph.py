@@ -231,6 +231,20 @@ def batch_frames_to_atom37(
         atom37: Tensor of shape (batch, L, 37, 3) - atom coordinates in Angstroms
         atom37_mask: Tensor of shape (batch, L, 37) - atom masks
         aatype: Tensor of shape (batch, L) - residue types (same across batch)
+
+    Example to denoise all backbone atoms from a batch of structures:
+     x0_t, R0_t = get_pos0_rot0(
+                sdes=sdes, batch=batch, t=t, score=score
+            )  # batch -> x0_t:(batch_size, seq_length, 3), R0_t:(batch_size, seq_length, 3, 3)
+
+    # Reconstruct heavy backbone atom positions, nm to Angstrom conversion
+    atom37, _, _ = batch_frames_to_atom37(pos=10 * x0_t, rot=R0_t, seq=batch.sequence[0])
+    N_pos, Ca_pos, C_pos, O_pos = (
+        atom37[..., 0, :],
+        atom37[..., 1, :],
+        atom37[..., 2, :],
+        atom37[..., 4, :],
+    )  # [BS, L, 4, 3] -> [BS, L, 3] for N,Ca,C,O
     """
     batch_size, L, _ = pos.shape
     assert rot.shape == (

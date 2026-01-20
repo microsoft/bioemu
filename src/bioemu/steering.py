@@ -175,10 +175,7 @@ class Potential:
 
     def __call__(
         self,
-        N_pos: torch.Tensor,
         Ca_pos: torch.Tensor,
-        C_pos: torch.Tensor,
-        O_pos: torch.Tensor,
         i: int,
         N: int,
     ) -> torch.Tensor:
@@ -228,10 +225,7 @@ class ChainBreakPotential(Potential):
 
     def __call__(
         self,
-        N_pos: torch.Tensor,
         Ca_pos: torch.Tensor,
-        C_pos: torch.Tensor,
-        O_pos: torch.Tensor,
         i: int,
         N: int,
     ):
@@ -289,10 +283,7 @@ class ChainClashPotential(Potential):
 
     def __call__(
         self,
-        N_pos: torch.Tensor,
         Ca_pos: torch.Tensor,
-        C_pos: torch.Tensor,
-        O_pos: torch.Tensor,
         i: int,
         N: int,
     ):
@@ -355,7 +346,7 @@ class DisulfideBridgePotential(Potential):
         self.order = 1.0
         self.linear_from = 100.0
 
-    def __call__(self, N_pos, Ca_pos, C_pos, O_pos, i=None, N=None):
+    def __call__(self, Ca_pos: torch.Tensor, i: int, N: int):
         """
         Calculate disulfide bridge potential energy.
 

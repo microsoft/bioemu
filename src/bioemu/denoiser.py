@@ -10,7 +10,6 @@ from torch_geometric.data.batch import Batch
 from tqdm.auto import tqdm
 
 from bioemu.chemgraph import ChemGraph
-from bioemu.convert_chemgraph import batch_frames_to_atom37
 from bioemu.sde_lib import SDE, CosineVPSDE
 from bioemu.so3_sde import SO3SDE, apply_rotvec_to_rotmat
 from bioemu.steering import get_pos0_rot0, resample_batch
@@ -324,7 +323,6 @@ def dpm_solver(
         )
         for name, sde in sdes.items()
     }
-    x0, R0 = [], []
     previous_energy = None
 
     # Initialize log_weights for importance weight tracking (for gradient guidance)
@@ -440,23 +438,13 @@ def dpm_solver(
             # Compute predicted x0 and R0 from current state and score
             # x0_t: predicted positions, shape (batch_size, seq_length, 3), differs from batch.pos which is (batch_size * seq_length, 3)
             # R0_t: predicted rotations, shape (batch_size, seq_length, 3, 3)
-            x0_t, R0_t = get_pos0_rot0(
+            denoised_x0_t, denoised_R0_t = get_pos0_rot0(
                 sdes=sdes, batch=batch, t=t, score=score
             )  # batch -> x0_t:(batch_size, seq_length, 3), R0_t:(batch_size, seq_length, 3, 3)
-            x0 += [x0_t.cpu()]
-            R0 += [R0_t.cpu()]
 
-            # Reconstruct heavy backbone atom positions, nm to Angstrom conversion
-            atom37, _, _ = batch_frames_to_atom37(pos=10 * x0_t, rot=R0_t, seq=batch.sequence[0])
-            N_pos, Ca_pos, C_pos, O_pos = (
-                atom37[..., 0, :],
-                atom37[..., 1, :],
-                atom37[..., 2, :],
-                atom37[..., 4, :],
-            )  # [BS, L, 4, 3] -> [BS, L, 3] for N,Ca,C,O
             energies = []
             for potential_ in fk_potentials:
-                energies += [potential_(N_pos, Ca_pos, C_pos, O_pos, i=i, N=N)]
+                energies += [potential_(10 * denoised_x0_t, i=i, N=N)]
             total_energy = torch.stack(energies, dim=-1).sum(-1)  # [BS]
 
             if steering_config["num_particles"] > 1:
