@@ -1,0 +1,9 @@
+defaults:
+  - denoiser: stochastic_dpm
+  - steering: physical_steering
+  - _self_
+
+# Basic sampling parameters
+num_samples: 128
+batch_size_100: 800 # A100-80GB upper limit is 900
+sequence: "MTEIAQKLKESNEPILYLAERYGFESQQTLTRTFKNYFDVPPHKYRMTNMQGESRFLHPL"

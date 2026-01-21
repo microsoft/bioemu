@@ -13,16 +13,18 @@ import hydra
 import numpy as np
 import torch
 import yaml
+from omegaconf import DictConfig, OmegaConf
 from torch_geometric.data.batch import Batch
 from tqdm import tqdm
 
-from .chemgraph import ChemGraph
-from .convert_chemgraph import save_pdb_and_xtc
-from .get_embeds import get_colabfold_embeds
-from .model_utils import load_model, load_sdes, maybe_download_checkpoint
-from .sde_lib import SDE
-from .seq_io import check_protein_valid, parse_sequence, write_fasta
-from .utils import (
+from bioemu.chemgraph import ChemGraph
+from bioemu.convert_chemgraph import save_pdb_and_xtc
+from bioemu.get_embeds import get_colabfold_embeds
+from bioemu.model_utils import load_model, load_sdes, maybe_download_checkpoint
+from bioemu.sde_lib import SDE
+from bioemu.seq_io import check_protein_valid, parse_sequence, write_fasta
+from bioemu.steering import log_physicality
+from bioemu.utils import (
     count_samples_in_output_dir,
     format_npz_samples_filename,
     print_traceback_on_exception,
@@ -31,6 +33,7 @@ from .utils import (
 logger = logging.getLogger(__name__)
 
 DEFAULT_DENOISER_CONFIG_DIR = Path(__file__).parent / "config/denoiser/"
+DEFAULT_STEERING_CONFIG_DIR = Path(__file__).parent / "config/steering/"
 SupportedDenoisersLiteral = Literal["dpm", "heun"]
 SUPPORTED_DENOISERS = list(typing.get_args(SupportedDenoisersLiteral))
 
@@ -75,11 +78,12 @@ def main(
     ckpt_path: str | Path | None = None,
     model_config_path: str | Path | None = None,
     denoiser_type: SupportedDenoisersLiteral | None = "dpm",
-    denoiser_config_path: str | Path | None = None,
+    denoiser_config: str | Path | dict | None = None,
     cache_embeds_dir: str | Path | None = None,
     cache_so3_dir: str | Path | None = None,
     msa_host_url: str | None = None,
     filter_samples: bool = True,
+    steering_config: str | Path | dict | None = None,
     base_seed: int | None = None,
 ) -> None:
     """
@@ -106,6 +110,13 @@ def main(
         cache_so3_dir: Directory to store SO3 precomputations. If not set, this defaults to `~/sampling_so3_cache`.
         msa_host_url: MSA server URL. If not set, this defaults to colabfold's remote server. If sequence is an a3m file, this is ignored.
         filter_samples: Filter out unphysical samples with e.g. long bond distances or steric clashes.
+        steering_config: Path to steering config YAML, or a dict containing steering parameters.
+            Can be None to disable steering (num_particles=1). The config should contain:
+            - num_particles: Number of particles per sample (>1 enables steering)
+            - start: Start time for steering (0.0-1.0)
+            - end: End time for steering (0.0-1.0)
+            - resampling_interval: Resampling interval
+            - potentials: Dict of potential configurations
         base_seed: Base random seed for sampling. If set, each batch's seed will be set to base_seed + (num samples already generated).
     """
 
@@ -115,6 +126,58 @@ def main(
 
     output_dir = Path(output_dir).expanduser().resolve()
     output_dir.mkdir(parents=True, exist_ok=True)  # Fail fast if output_dir is non-writeable
+
+    # Steering config can be [None, [str/Path], [dict/DictConfig]]
+    if steering_config is None:
+        # No steering - will pass None to denoiser
+        steering_config_dict = None
+        potentials = None
+    elif isinstance(steering_config, str | Path):
+        # Path to steering config YAML
+        steering_config_path = Path(steering_config).expanduser().resolve()
+        if not steering_config_path.is_absolute():
+            # Try relative to DEFAULT_STEERING_CONFIG_DIR
+            steering_config_path = DEFAULT_STEERING_CONFIG_DIR / steering_config
+
+        assert (
+            steering_config_path.is_file()
+        ), f"steering_config path '{steering_config_path}' does not exist or is not a file."
+
+        with open(steering_config_path) as f:
+            steering_config_dict = yaml.safe_load(f)
+    elif isinstance(steering_config, dict | DictConfig):
+        # Already a dict/DictConfig
+        steering_config_dict = (
+            OmegaConf.to_container(steering_config, resolve=True)
+            if isinstance(steering_config, DictConfig)
+            else steering_config
+        )
+    else:
+        raise ValueError(
+            f"steering_config must be None, a path to a YAML file, or a dict, but got {type(steering_config)}"
+        )
+
+    if steering_config_dict is not None:
+        # If steering is enabled by defining a minimum of two particles, extract potentials and create config
+
+        # Extract potentials configuration
+        potentials_config = steering_config_dict["potentials"]
+
+        # Instantiate potentials
+        potentials = hydra.utils.instantiate(OmegaConf.create(potentials_config))
+        potentials: list[Callable] = list(potentials.values())  # type: ignore
+
+        # Create final steering config (without potentials, those are passed separately)
+        # Remove 'potentials' from steering_config_dict if present
+        steering_config_dict = dict(steering_config_dict)  # ensure mutable copy
+        steering_config_dict.pop("potentials")
+        # Validate steering times for reverse diffusion start: t=1 to end: t=0
+        assert (
+            0.0 <= steering_config_dict["end"] <= steering_config_dict["start"] <= 1.0
+        ), f"Steering end ({steering_config_dict['end']}) must be between 0.0 and 1.0 and start ({steering_config_dict['start']}) must be between 0.0 and 1.0"
+
+    else:
+        potentials = None
 
     ckpt_path, model_config_path = maybe_download_checkpoint(
         model_name=model_name, ckpt_path=ckpt_path, model_config_path=model_config_path
@@ -145,23 +208,37 @@ def main(
         # Save FASTA file in output_dir
         write_fasta([sequence], fasta_path)
 
-    if denoiser_config_path is None:
+    if denoiser_config is None:
+        # load default config
         assert (
             denoiser_type in SUPPORTED_DENOISERS
         ), f"denoiser_type must be one of {SUPPORTED_DENOISERS}"
-        denoiser_config_path = DEFAULT_DENOISER_CONFIG_DIR / f"{denoiser_type}.yaml"
+        denoiser_config = DEFAULT_DENOISER_CONFIG_DIR / f"{denoiser_type}.yaml"
+        with open(denoiser_config) as f:
+            denoiser_config = yaml.safe_load(f)
+    elif type(denoiser_config) is str:
+        # path to denoiser config
+        denoiser_config_path = Path(denoiser_config).expanduser().resolve()
+        assert (
+            denoiser_config_path.is_file()
+        ), f"denoiser_config path '{denoiser_config_path}' does not exist or is not a file."
+        with open(denoiser_config_path) as f:
+            denoiser_config = yaml.safe_load(f)
+    else:
+        assert type(denoiser_config) in [
+            dict,
+            DictConfig,
+        ], f"denoiser_config must be a path to a YAML file or a dict, but got {type(denoiser_config)}"
 
-    with open(denoiser_config_path) as f:
-        denoiser_config = yaml.safe_load(f)
     denoiser = hydra.utils.instantiate(denoiser_config)
 
     logger.info(
         f"Sampling {num_samples} structures for sequence of length {len(sequence)} residues..."
     )
+    # Adjust batch size by sequence length since longer sequence require quadratically more memory
     batch_size = int(batch_size_100 * (100 / len(sequence)) ** 2)
-    if batch_size == 0:
-        logger.warning(f"Sequence {sequence} may be too long. Attempting with batch_size = 1.")
-        batch_size = 1
+
+    batch_size = min(batch_size, num_samples)
     logger.info(f"Using batch size {min(batch_size, num_samples)}")
 
     existing_num_samples = count_samples_in_output_dir(output_dir)
@@ -173,7 +250,8 @@ def main(
         npz_path = output_dir / format_npz_samples_filename(start_idx, n)
         if npz_path.exists():
             raise ValueError(
-                f"Not sure why {npz_path} already exists when so far only {existing_num_samples} samples have been generated."
+                f"Not sure why {npz_path} already exists when so far only "
+                f"{existing_num_samples} samples have been generated."
             )
         seed = base_seed + start_idx
         logger.info(f"Sampling with {seed=} ({base_seed=})")
@@ -187,7 +265,10 @@ def main(
             cache_embeds_dir=cache_embeds_dir,
             msa_file=msa_file,
             msa_host_url=msa_host_url,
+            fk_potentials=potentials,
+            steering_config=steering_config_dict,
         )
+
         batch = {k: v.cpu().numpy() for k, v in batch.items()}
         np.savez(npz_path, **batch, sequence=sequence)
 
@@ -200,6 +281,7 @@ def main(
     node_orientations = torch.tensor(
         np.concatenate([np.load(f)["node_orientations"] for f in samples_files])
     )
+    log_physicality(positions, node_orientations, sequence)
     save_pdb_and_xtc(
         pos_nm=positions,
         node_orientations=node_orientations,
@@ -208,6 +290,7 @@ def main(
         sequence=sequence,
         filter_samples=filter_samples,
     )
+
     logger.info(f"Completed. Your samples are in {output_dir}.")
 
 
@@ -267,6 +350,8 @@ def generate_batch(
     cache_embeds_dir: str | Path | None,
     msa_file: str | Path | None = None,
     msa_host_url: str | None = None,
+    fk_potentials: list[Callable] | None = None,
+    steering_config: dict | None = None,
 ) -> dict[str, torch.Tensor]:
     """Generate one batch of samples, using GPU if available.
 
@@ -289,19 +374,24 @@ def generate_batch(
         msa_file=msa_file,
         msa_host_url=msa_host_url,
     )
-    context_batch = Batch.from_data_list([context_chemgraph] * batch_size)
 
+    context_batch = Batch.from_data_list([context_chemgraph] * batch_size)
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+
     sampled_chemgraph_batch = denoiser(
         sdes=sdes,
         device=device,
         batch=context_batch,
         score_model=score_model,
+        fk_potentials=fk_potentials,
+        steering_config=steering_config,
     )
     assert isinstance(sampled_chemgraph_batch, Batch)
     sampled_chemgraphs = sampled_chemgraph_batch.to_data_list()
-    pos = torch.stack([x.pos for x in sampled_chemgraphs]).to("cpu")
-    node_orientations = torch.stack([x.node_orientations for x in sampled_chemgraphs]).to("cpu")
+    pos = torch.stack([x.pos for x in sampled_chemgraphs]).to("cpu")  # [BS, L, 3]
+    node_orientations = torch.stack([x.node_orientations for x in sampled_chemgraphs]).to(
+        "cpu"
+    )  # [BS, L, 3, 3]
 
     return {"pos": pos, "node_orientations": node_orientations}
 

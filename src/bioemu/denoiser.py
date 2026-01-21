@@ -1,16 +1,20 @@
 # Copyright (c) Microsoft Corporation.
 # Licensed under the MIT License.
+import logging
+from collections.abc import Callable
 from typing import cast
 
 import numpy as np
 import torch
 from torch_geometric.data.batch import Batch
+from tqdm.auto import tqdm
 
-from .chemgraph import ChemGraph
-from .sde_lib import SDE, CosineVPSDE
-from .so3_sde import SO3SDE, apply_rotvec_to_rotmat
+from bioemu.chemgraph import ChemGraph
+from bioemu.sde_lib import SDE, CosineVPSDE
+from bioemu.so3_sde import SO3SDE, apply_rotvec_to_rotmat
+from bioemu.steering import get_pos0_rot0, resample_batch
 
-TwoBatches = tuple[Batch, Batch]
+logger = logging.getLogger(__name__)
 
 
 class EulerMaruyamaPredictor:
@@ -53,7 +57,7 @@ class EulerMaruyamaPredictor:
         dt: torch.Tensor,
         drift: torch.Tensor,
         diffusion: torch.Tensor,
-    ) -> TwoBatches:
+    ) -> tuple[torch.Tensor, torch.Tensor]:
         z = torch.randn_like(drift)
 
         # Update to next step using either special update for SDEs on SO(3) or standard update.
@@ -77,7 +81,7 @@ class EulerMaruyamaPredictor:
         dt: torch.Tensor,
         batch_idx: torch.LongTensor,
         score: torch.Tensor,
-    ) -> TwoBatches:
+    ) -> tuple[torch.Tensor, torch.Tensor]:
 
         # Set up different coefficients and terms.
         drift, diffusion = self.reverse_drift_and_diffusion(
@@ -98,7 +102,7 @@ class EulerMaruyamaPredictor:
         t: torch.Tensor,
         dt: torch.Tensor,
         batch_idx: torch.LongTensor,
-    ) -> TwoBatches:
+    ) -> tuple[torch.Tensor, torch.Tensor]:
         """Update to next step using either special update for SDEs on SO(3) or standard update.
         Handles both SO(3) and Euclidean updates."""
 
@@ -152,6 +156,11 @@ def heun_denoiser(
     noise: float,
 ) -> ChemGraph:
     """Sample from prior and then denoise."""
+
+    """
+    Get x0(x_t) from score
+    Create batch of samples with the same information
+    """
 
     batch = batch.to(device)
     if isinstance(score_model, torch.nn.Module):
@@ -213,12 +222,12 @@ def heun_denoiser(
             )
 
         for field in fields:
-            batch[field] = predictors[field].update_given_drift_and_diffusion(
+            batch[field], _ = predictors[field].update_given_drift_and_diffusion(
                 x=batch_hat[field],
                 dt=(t_next - t_hat)[0],
                 drift=drift_hat[field],
                 diffusion=0.0,
-            )[0]
+            )
 
         # Apply 2nd order correction.
         if t_next[0] > 0.0:
@@ -233,15 +242,13 @@ def heun_denoiser(
 
                 avg_drift[field] = (drifts[field] + drift_hat[field]) / 2
             for field in fields:
-                batch[field] = (
-                    0.0
-                    + predictors[field].update_given_drift_and_diffusion(
-                        x=batch_hat[field],
-                        dt=(t_next - t_hat)[0],
-                        drift=avg_drift[field],
-                        diffusion=0.0,
-                    )[0]
+                sample, _ = predictors[field].update_given_drift_and_diffusion(
+                    x=batch_hat[field],
+                    dt=(t_next - t_hat)[0],
+                    drift=avg_drift[field],
+                    diffusion=1.0,
                 )
+                batch[field] = sample
 
     return batch
 
@@ -266,18 +273,27 @@ def dpm_solver(
     device: torch.device,
     record_grad_steps: set[int] = set(),
     noise: float = 0.0,
-) -> ChemGraph:
-
+    fk_potentials: list[Callable] | None = None,
+    steering_config: dict | None = None,
+) -> Batch:
     """
     Implements the DPM solver for the VPSDE, with the Cosine noise schedule.
     Following this paper: https://arxiv.org/abs/2206.00927 Algorithm 1 DPM-Solver-2.
     DPM solver is used only for positions, not node orientations.
+
+    Args:
+        steering_config: Configuration dictionary for steering. Can include:
+            - guidance_strength: Controls the strength of guidance steering (default: 3.0)
+            - Other steering parameters (start, end, num_particles, etc.)
     """
     grad_is_enabled = torch.is_grad_enabled()
-    assert isinstance(batch, ChemGraph)
+    assert isinstance(batch, Batch)
     assert max_t < 1.0
+    if steering_config is not None:
+        assert noise > 0, "Steering requires noise > 0 for stochastic sampling"
 
     batch = batch.to(device)
+
     if isinstance(score_model, torch.nn.Module):
         # permits unit-testing with dummy model
         score_model = score_model.to(device)
@@ -296,7 +312,7 @@ def dpm_solver(
     assert isinstance(so3_sde, SO3SDE)
     so3_sde.to(device)
 
-    timesteps = torch.linspace(max_t, eps_t, N, device=device)
+    timesteps = torch.linspace(max_t, eps_t, N, device=device)  # 1 -> 0
     dt = -torch.tensor((max_t - eps_t) / (N - 1)).to(device)
     ts_min = 0.0
     ts_max = 1.0
@@ -307,7 +323,12 @@ def dpm_solver(
         )
         for name, sde in sdes.items()
     }
-    for i in range(N - 1):
+    previous_energy = None
+
+    # Initialize log_weights for importance weight tracking (for gradient guidance)
+    log_weights = torch.zeros(batch.num_graphs, device=device)
+
+    for i in tqdm(range(N - 1), position=1, desc="Denoising: ", ncols=0, leave=False):
         t = torch.full((batch.num_graphs,), timesteps[i], device=device)
         t_hat = t - noise * dt if (i > 0 and t[0] > ts_min and t[0] < ts_max) else t
 
@@ -354,9 +375,6 @@ def dpm_solver(
 
         # Update positions to the intermediate timestep t_lambda
         batch_u = batch.replace(pos=u)
-
-        # Get node orientation at t_lambda
-
         # Denoise from t to t_lambda
         assert score["node_orientations"].shape == (u.shape[0], 3)
         assert batch.node_orientations.shape == (u.shape[0], 3, 3)
@@ -413,5 +431,50 @@ def dpm_solver(
             dt=dt_hat[0],
         )  # dt is negative, diffusion is 0
         batch = batch_next.replace(node_orientations=sample)
+
+        if (
+            steering_config is not None and fk_potentials is not None
+        ):  # steering enabled when steering_config is provided
+            # Compute predicted x0 and R0 from current state and score
+            # x0_t: predicted positions, shape (batch_size, seq_length, 3), differs from batch.pos which is (batch_size * seq_length, 3)
+            # R0_t: predicted rotations, shape (batch_size, seq_length, 3, 3)
+            denoised_x0_t, denoised_R0_t = get_pos0_rot0(
+                sdes=sdes, batch=batch, t=t, score=score
+            )  # batch -> x0_t:(batch_size, seq_length, 3), R0_t:(batch_size, seq_length, 3, 3)
+
+            energies = []
+            for potential_ in fk_potentials:
+                energies += [potential_(10 * denoised_x0_t, i=i, N=N)]
+            total_energy = torch.stack(energies, dim=-1).sum(-1)  # [BS]
+
+            if steering_config["num_particles"] > 1:
+                # Resample between particles ...
+                if (
+                    steering_config["start"] >= timesteps[i] >= steering_config["end"]
+                    and i % steering_config["resampling_interval"] == 0
+                    and i < N - 2
+                ):
+                    batch, total_energy, log_weights = resample_batch(
+                        batch=batch,
+                        num_particles=steering_config["num_particles"],
+                        energy=total_energy,
+                        previous_energy=previous_energy,
+                        log_weights=log_weights,
+                    )
+                    previous_energy = total_energy
+
+                # ... or a single final sample
+                elif i >= N - 2:  # The last step is N-2
+                    logger.info(
+                        "Final Resampling [BS, FK_particles] back to BS, with real x0 instead of pred x0."
+                    )
+                    batch, total_energy, log_weights = resample_batch(
+                        batch=batch,
+                        num_particles=steering_config["num_particles"],
+                        energy=total_energy,
+                        previous_energy=previous_energy,
+                        log_weights=log_weights,
+                    )
+                    previous_energy = total_energy
 
     return batch

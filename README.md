@@ -20,6 +20,7 @@ This repository contains inference code and model weights.
 ## Table of Contents
 - [Installation](#installation)
 - [Sampling structures](#sampling-structures)
+- [Steering to avoid chain breaks and clashes](#steering-to-avoid-chain-breaks-and-clashes)
 - [Azure AI Foundry](#azure-ai-foundry)
 - [Training data](#training-data)
 - [Get in touch](#get-in-touch)
@@ -66,6 +67,56 @@ By default, unphysical structures (steric clashes or chain discontinuities) will
 
 This code only supports sampling structures of monomers. You can try to sample multimers using the [linker trick](https://x.com/ag_smith/status/1417063635000598528), but in our limited experiments, this has not worked well.
 
+## Steering to avoid chain breaks and clashes
+
+BioEmu includes a [steering system](https://arxiv.org/abs/2501.06848) that uses [Sequential Monte Carlo (SMC)](https://www.stats.ox.ac.uk/~doucet/doucet_defreitas_gordon_smcbookintro.pdf) to guide the diffusion process toward more physically plausible protein structures.
+Empirically, using three (or up to 10) steering particles per output sample greatly reduces the number of unphysical samples (steric clashes or chain breaks) produced by the model.
+Steering applies potential energy functions during denoising to favor conformations that satisfy physical constraints. 
+Algorithmically, steering simulates multiple *candidate samples* per desired output sample and resamples between these particles according to the favorability of the provided potentials. 
+
+### Quick start with steering
+
+Enable steering with physical constraints using the CLI:
+
+```bash
+python -m bioemu.sample \
+    --sequence GYDPETGTWG \
+    --num_samples 100 \
+    --output_dir ~/steered-samples \
+    --steering_config src/bioemu/config/steering/physical_steering.yaml \
+    --denoiser_config src/bioemu/config/denoiser/stochastic_dpm.yaml
+```
+
+Or using the Python API:
+
+```python
+from bioemu.sample import main as sample
+
+sample(
+    sequence='GYDPETGTWG',
+    num_samples=100,
+    output_dir='~/steered-samples',
+    denoiser_config="../src/bioemu/config/denoiser/stochastic_dpm.yaml",  # Use stochastic DPM
+    steering_config="../src/bioemu/config/steering/physicality_steering.yaml",  # Use physicality steering
+)
+```
+
+### Key steering parameters
+
+- `num_steering_particles`: Number of particles per sample (1 = no steering, >1 enables steering)
+- `steering_start_time`: When to start steering (0.0-1.0, default: 0.1) with reverse sampling 1 -> 0
+- `steering_end_time`: When to stop steering (0.0-1.0, default: 0.) with reverse sampling 1 -> 0
+- `resampling_interval`: How often to resample particles (default: 1)
+- `steering_config`: Path to potentials configuration file (required for steering)
+
+### Available potentials
+
+The [`physical_steering.yaml`](./src/bioemu/config/steering/physical_steering.yaml) configuration provides potentials for physical realism:
+- **ChainBreak**: Prevents backbone discontinuities
+- **ChainClash**: Avoids steric clashes between non-neighboring residues
+- **DisulfideBridge**: Encourages disulfide bond formation between specified cysteine pairs
+
+You can create a custom `steering_config.yaml` YAML file instantiating your own potential to steer the system with your own potentials.
 
 ## Azure AI Foundry
 BioEmu is also available on [Azure AI Foundry](https://ai.azure.com/). See [How to run BioEmu on Azure AI Foundry](AZURE_AI_FOUNDRY.md) for more details.

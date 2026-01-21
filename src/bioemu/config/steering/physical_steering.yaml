@@ -1,0 +1,18 @@
+num_particles: 5
+start: 0.1
+end: 0.0
+resampling_interval: 5
+potentials:
+  chainbreak:
+    _target_: bioemu.steering.ChainBreakPotential
+    flatbottom: 1.
+    slope: 1.
+    order: 1
+    linear_from: 1.
+    weight: 1.0
+  chainclash:
+    _target_: bioemu.steering.ChainClashPotential
+    flatbottom: 0.
+    dist: 4.1
+    slope: 3.
+    weight: 1.0

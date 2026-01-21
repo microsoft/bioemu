@@ -4,6 +4,8 @@
 #vs code
 .vscode
 .vscode/
+.github/copilot-instructions.md
+outputs/
 
 # Jetbrains
 .idea
@@ -131,4 +133,15 @@ cython_debug/
 # Checkpoint files
 *.pth
 *.pt
+
+# wandb & various
+wandb
+wandb/
+.amltconfig
+*/wandb/*
+*.npz
+*.pkl
+*amlt*
+*outputs*
+*cache*
 

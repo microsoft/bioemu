@@ -1,0 +1,14 @@
+num_particles: 5
+start: 0.1
+end: 0.0
+resampling_interval: 5
+potentials:
+  disulfide_bridge:
+    _target_: bioemu.steering.DisulfideBridgePotential
+    specified_pairs:
+      - [3, 40]
+      - [4, 32]
+      - [16, 26]
+    flatbottom: 1.
+    slope: 2.
+    weight: 1.0

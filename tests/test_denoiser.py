@@ -73,14 +73,9 @@ def test_reverse_sampling(solver, denoiser_kwargs):
         **denoiser_kwargs,
     )
 
-    print(samples.pos.mean(), x0_mean)
-    print(samples.pos.std().mean(), x0_std)
     assert torch.isclose(samples.pos.mean(), x0_mean, rtol=1e-1, atol=1e-1)
     assert torch.isclose(samples.pos.std().mean(), x0_std, rtol=1e-1, atol=1e-1)
 
-    print("node orientations")
-    print(samples.node_orientations.mean(dim=0))
-    print(samples.node_orientations.std(dim=0))
     assert torch.allclose(samples.node_orientations.mean(dim=0), torch.eye(3), atol=1e-1)
     assert torch.allclose(samples.node_orientations.std(dim=0), torch.zeros(3, 3), atol=1e-1)
 
