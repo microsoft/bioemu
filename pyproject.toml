@@ -37,7 +37,7 @@
     "pytest-cov",
     "pre-commit",
   ]
-  md = ["openmm[cuda12]==8.2.0"]
+  md = ["openmm[cuda12]==8.4.0"]
 
 [tool.black]
   line-length = 100
