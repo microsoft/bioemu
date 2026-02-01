@@ -1,4 +1,13 @@
-487a488
->                 np.save(files.get("single_repr_evo", "npy"), result["representations_evo"]["single"])
-489a491
->                 np.save(files.get("pair_repr_evo", "npy"), result["representations_evo"]["pair"])
+--- colabfold/batch.py	2026-02-01 16:37:58.665434920 +0000
++++ colabfold/batch.py	2026-02-01 16:38:09.640747260 +0000
+@@ -470,8 +470,10 @@
+                     pickle.dump(result, handle)
+             if save_single_representations:
+                 np.save(files.get("single_repr","npy"),result["representations"]["single"])
++                np.save(files.get("single_repr_evo", "npy"), result["representations_evo"]["single"])
+             if save_pair_representations:
+                 np.save(files.get("pair_repr","npy"),result["representations"]["pair"])
++                np.save(files.get("pair_repr_evo", "npy"), result["representations_evo"]["pair"])
+ 
+             # write an easy-to-use format (pAE and pLDDT)
+             with files.get("scores","json").open("w") as handle:

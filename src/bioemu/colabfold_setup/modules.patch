@@ -1,14 +1,11 @@
-146c146
-<     ret = {'representations':representations}
----
->     ret = {'representations':representations, 'representations_evo': representations}
-173d172
-< 
-181d179
-< 
-216d213
-< 
-317d313
-< 
-2092d2087
-< 
+--- alphafold/model/modules.py	2026-02-01 16:33:40.892311392 +0000
++++ alphafold/model/modules.py	2026-02-01 16:33:40.894440639 +0000
+@@ -143,7 +143,7 @@
+       if not head_config.weight: continue
+       heads[name] = head_factory[name](head_config, self.global_config)
+     
+-    ret = {'representations':representations}
++    ret = {'representations':representations, 'representations_evo': representations}
+     for name, head in heads.items():
+       if name in ('predicted_lddt', 'predicted_aligned_error'):
+         continue

@@ -25,9 +25,9 @@ ${BASE_PYTHON} -m uv pip install --python ${VENV_FOLDER}/bin/python --force-rein
 # Patch colabfold install
 echo "Patching colabfold installation..."
 SCRIPT_DIR=$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )
-SITE_PACKAGES_DIR=${VENV_FOLDER}/lib/python3.*/site-packages
-patch ${SITE_PACKAGES_DIR}/alphafold/model/modules.py ${SCRIPT_DIR}/modules.patch
-patch ${SITE_PACKAGES_DIR}/colabfold/batch.py ${SCRIPT_DIR}/batch.patch
+SITE_PACKAGES_DIR=$(echo ${VENV_FOLDER}/lib/python3.*/site-packages)
+patch -p0 -d ${SITE_PACKAGES_DIR} < ${SCRIPT_DIR}/modules.patch
+patch -p0 -d ${SITE_PACKAGES_DIR} < ${SCRIPT_DIR}/batch.patch
 
 touch ${VENV_FOLDER}/.COLABFOLD_PATCHED
 echo "Colabfold installation complete!"
