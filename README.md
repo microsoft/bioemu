@@ -114,7 +114,6 @@ sample(
 The [`physical_steering.yaml`](./src/bioemu/config/steering/physical_steering.yaml) configuration provides potentials for physical realism:
 - **ChainBreak**: Prevents backbone discontinuities
 - **ChainClash**: Avoids steric clashes between non-neighboring residues
-- **DisulfideBridge**: Encourages disulfide bond formation between specified cysteine pairs
 
 You can create a custom `steering_config.yaml` YAML file instantiating your own potential to steer the system with your own potentials.
 
