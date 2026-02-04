@@ -9,7 +9,6 @@ import logging
 import torch
 from torch_geometric.data import Batch
 
-from bioemu.convert_chemgraph import batch_frames_to_atom37
 from bioemu.openfold.np.residue_constants import ca_ca
 from bioemu.sde_lib import SDE
 
@@ -99,8 +98,8 @@ def log_physicality(pos: torch.Tensor, rot: torch.Tensor, sequence: str):
 
     Args:
         pos: Position tensor in nanometers
-        rot: Rotation tensor
-        sequence: Amino acid sequence string
+        rot: Rotation tensor (unused, kept for API compatibility)
+        sequence: Amino acid sequence string (unused, kept for API compatibility)
     """
     pos = 10 * pos  # convert to Angstrom
     n_residues = pos.shape[1]
@@ -114,24 +113,15 @@ def log_physicality(pos: torch.Tensor, rot: torch.Tensor, sequence: str):
     mask = mask.triu(diagonal=4)
     clash_distances = clash_distances[:, mask]
 
-    # C-N distances
-    atom37, _, _ = batch_frames_to_atom37(pos, rot, sequence)
-    C_pos = atom37[..., :-1, 2, :]
-    N_pos_next = atom37[..., 1:, 0, :]
-    cn_dist = torch.linalg.vector_norm(C_pos - N_pos_next, dim=-1)
-
     # Compute physicality violations
     ca_break = (ca_ca_dist > 4.5).float()
     ca_clash = (clash_distances < 3.4).float()
-    cn_break = (cn_dist > 2.0).float()
 
     # Print physicality metrics
     logger.info(f"physicality/ca_break_mean: {ca_break.sum().item()}")
     logger.info(f"physicality/ca_clash_mean: {ca_clash.sum().item()}")
-    logger.info(f"physicality/cn_break_mean: {cn_break.sum().item()}")
     logger.info(f"physicality/ca_ca_dist_mean: {ca_ca_dist.mean().item()}")
     logger.info(f"physicality/clash_distances_mean: {clash_distances.mean().item()}")
-    logger.info(f"physicality/cn_dist_mean: {cn_dist.mean().item()}")
 
 
 def potential_loss_fn(
