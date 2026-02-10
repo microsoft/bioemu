@@ -162,7 +162,8 @@ class CosineVPSDE(BaseVPSDE):
 
     def beta(self, t) -> torch.Tensor:
         # Derived from _marginal_mean_coeff using equation (29) in Song et al.
-        return torch.tan((t + self.s) / (1 + self.s) * np.pi / 2) * np.pi / (1 + self.s)
+        t_clamp = torch.clamp(t, max=1.0 - 1e-6) # clips t to avoid tan(π/2) singularity at t=1.0
+        return torch.tan((t_clamp + self.s) / (1 + self.s) * np.pi / 2) * np.pi / (1 + self.s)
 
     def _marginal_mean_coeff(self, t: torch.Tensor) -> torch.Tensor:
         mean_coeff = torch.cos((t + self.s) / (1 + self.s) * np.pi / 2) / self.c
