@@ -5,6 +5,7 @@ import math
 
 import numpy as np
 import torch
+from huggingface_hub import PyTorchModelHubMixin
 from torch import nn
 from torch_geometric.utils import to_dense_adj, to_dense_batch
 
@@ -326,7 +327,13 @@ class DistributionalGraphormer(nn.Module):
         return super().__str__() + f"\nTrainable parameters: {params}"
 
 
-class DiGConditionalScoreModel(torch.nn.Module):
+class DiGConditionalScoreModel(
+    torch.nn.Module,
+    PyTorchModelHubMixin,
+    library_name="bioemu",
+    repo_url="https://github.com/microsoft/bioemu",
+    tags=["protein-structure", "diffusion", "molecular-dynamics"],
+):
     """Wrapper to convert the DiG nn.Module neural network that operates directly on position
     and rotation tensors into a ScoreModel that operates on ChemGraph objects.
     """

@@ -1,5 +1,6 @@
 # Copyright (c) Microsoft Corporation.
 # Licensed under the MIT License.
+import logging
 import os
 from pathlib import Path
 
@@ -11,6 +12,8 @@ from requests.exceptions import HTTPError
 
 from bioemu.models import DiGConditionalScoreModel
 from bioemu.sde_lib import SDE
+
+logger = logging.getLogger(__name__)
 
 
 def maybe_download_checkpoint(
@@ -54,8 +57,26 @@ def maybe_download_checkpoint(
     return str(ckpt_path), str(model_config_path)
 
 
+def _is_pretrained_dir(path: str | Path) -> bool:
+    """Check if a path is a directory saved with save_pretrained (has config.json)."""
+    p = Path(path)
+    return p.is_dir() and (p / "config.json").is_file()
+
+
 def load_model(ckpt_path: str | Path, model_config_path: str | Path) -> DiGConditionalScoreModel:
-    """Load score model from checkpoint and config."""
+    """Load score model from checkpoint and config.
+
+    Supports two formats:
+        1. New format: ckpt_path is a directory saved with ``save_pretrained``
+           (contains ``config.json`` + ``model.safetensors``). In this case
+           ``model_config_path`` is only used by ``load_sdes`` and is not needed here.
+        2. Legacy format: ckpt_path is a ``.ckpt`` file and model_config_path is
+           a YAML file with Hydra ``_target_`` entries.
+    """
+    if _is_pretrained_dir(ckpt_path):
+        logger.info("Loading model from pretrained directory: %s", ckpt_path)
+        return DiGConditionalScoreModel.from_pretrained(str(ckpt_path))
+
     assert os.path.isfile(ckpt_path), f"Checkpoint {ckpt_path} not found"
     assert os.path.isfile(model_config_path), f"Model config {model_config_path} not found"
 
