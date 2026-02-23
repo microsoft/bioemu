@@ -72,7 +72,7 @@ def load_model(ckpt_path: str | Path, model_config_path: str | Path) -> DiGCondi
         2. Pretrained format: ckpt_path is anything that
            ``DiGConditionalScoreModel.from_pretrained`` accepts — a local
            directory (with ``config.json`` + ``model.safetensors``) **or** a
-           Hub repo ID (e.g. ``"kashif/bioemu-finetuned"``).  Resolution of
+           Hub repo ID (e.g. ``"your-org/your-bioemu-model"``).  Resolution of
            local-vs-Hub is handled by ``huggingface_hub`` itself.
 
     In case 2, ``model_config_path`` is only used by ``load_sdes``
