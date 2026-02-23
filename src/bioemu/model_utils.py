@@ -57,36 +57,43 @@ def maybe_download_checkpoint(
     return str(ckpt_path), str(model_config_path)
 
 
-def _is_pretrained_dir(path: str | Path) -> bool:
-    """Check if a path is a directory saved with save_pretrained (has config.json)."""
+def _is_legacy_checkpoint(path: str | Path) -> bool:
+    """Check if *path* points to a legacy ``.ckpt`` weight file."""
     p = Path(path)
-    return p.is_dir() and (p / "config.json").is_file()
+    return p.is_file() and p.suffix == ".ckpt"
 
 
 def load_model(ckpt_path: str | Path, model_config_path: str | Path) -> DiGConditionalScoreModel:
     """Load score model from checkpoint and config.
 
     Supports two formats:
-        1. New format: ckpt_path is a directory saved with ``save_pretrained``
-           (contains ``config.json`` + ``model.safetensors``). In this case
-           ``model_config_path`` is only used by ``load_sdes`` and is not needed here.
-        2. Legacy format: ckpt_path is a ``.ckpt`` file and model_config_path is
+        1. Legacy format: ckpt_path is a ``.ckpt`` file and model_config_path is
            a YAML file with Hydra ``_target_`` entries.
+        2. Pretrained format: ckpt_path is anything that
+           ``DiGConditionalScoreModel.from_pretrained`` accepts — a local
+           directory (with ``config.json`` + ``model.safetensors``) **or** a
+           Hub repo ID (e.g. ``"kashif/bioemu-finetuned"``).  Resolution of
+           local-vs-Hub is handled by ``huggingface_hub`` itself.
+
+    In case 2, ``model_config_path`` is only used by ``load_sdes``
+    and is not needed for loading the model itself.
     """
-    if _is_pretrained_dir(ckpt_path):
-        logger.info("Loading model from pretrained directory: %s", ckpt_path)
-        return DiGConditionalScoreModel.from_pretrained(str(ckpt_path))
+    if _is_legacy_checkpoint(ckpt_path):
+        logger.info("Loading model from legacy checkpoint: %s", ckpt_path)
+        assert os.path.isfile(model_config_path), f"Model config {model_config_path} not found"
 
-    assert os.path.isfile(ckpt_path), f"Checkpoint {ckpt_path} not found"
-    assert os.path.isfile(model_config_path), f"Model config {model_config_path} not found"
+        with open(model_config_path) as f:
+            model_config = yaml.safe_load(f)
 
-    with open(model_config_path) as f:
-        model_config = yaml.safe_load(f)
+        model_state = torch.load(ckpt_path, map_location="cpu", weights_only=True)
+        score_model: DiGConditionalScoreModel = hydra.utils.instantiate(
+            model_config["score_model"]
+        )
+        score_model.load_state_dict(model_state)
+        return score_model
 
-    model_state = torch.load(ckpt_path, map_location="cpu", weights_only=True)
-    score_model: DiGConditionalScoreModel = hydra.utils.instantiate(model_config["score_model"])
-    score_model.load_state_dict(model_state)
-    return score_model
+    logger.info("Loading model via from_pretrained: %s", ckpt_path)
+    return DiGConditionalScoreModel.from_pretrained(str(ckpt_path))
 
 
 def load_sdes(
