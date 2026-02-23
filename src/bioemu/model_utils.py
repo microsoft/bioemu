@@ -58,9 +58,9 @@ def maybe_download_checkpoint(
 
 
 def _is_legacy_checkpoint(path: str | Path) -> bool:
-    """Check if *path* points to a legacy ``.ckpt`` weight file."""
+    """Check if *path* points to a legacy weight file (not a ``from_pretrained`` directory)."""
     p = Path(path)
-    return p.is_file() and p.suffix == ".ckpt"
+    return p.is_file()
 
 
 def load_model(ckpt_path: str | Path, model_config_path: str | Path) -> DiGConditionalScoreModel:
