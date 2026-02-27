@@ -1,0 +1,25 @@
+# FKC (Feynman-Kac Control) Steering Configuration
+# Self-contained denoiser config — pass as denoiser_config to sample().
+_target_: bioemu.steering.dpm_fkc.dpm_solver_fkc
+_partial_: true
+eps_t: 0.001
+max_t: 0.99
+N: 100
+noise: 1.0
+use_x0_for_reward: true
+fk_potentials:
+  - _target_: bioemu.steering.LinearPotential
+    target: 0.5
+    slope: -7.4
+    order: 1
+    weight: 1.0
+    clip_min: -0.5
+    clip_max: 0.7
+    cv:
+      _target_: bioemu.steering.RMSD
+      reference_pdb: null
+steering_config:
+  num_particles: 100
+  ess_threshold: 0.7
+  start: 1.0
+  end: 0.0

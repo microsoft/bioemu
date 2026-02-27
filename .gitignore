@@ -145,3 +145,4 @@ wandb/
 *outputs*
 *cache*
 
+tests/cross_repo/
