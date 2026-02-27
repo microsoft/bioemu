@@ -1,6 +1,6 @@
 # Physical steering: chain break + chain clash potentials
 # Self-contained denoiser config — pass as denoiser_config to sample().
-_target_: bioemu.steering.dpm_fkc.dpm_solver_fkc
+_target_: bioemu.steering.dpm_smc.dpm_solver_smc
 _partial_: true
 eps_t: 0.001
 max_t: 0.99

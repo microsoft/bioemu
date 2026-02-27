@@ -231,7 +231,7 @@ def dpm_solver_smc(
         in_window = steer_start >= current_t >= steer_end
         step_steering = enable_steering and in_window
 
-        batch, _, log_weights, _, reward = dpm_solver_sde_smc_step(
+        batch, _, step_log_weights, _, reward = dpm_solver_sde_smc_step(
             batch=batch,
             t=t,
             t_next=t_next,
@@ -247,6 +247,8 @@ def dpm_solver_smc(
             noise_scale=noise,
         )
 
+        if step_steering:
+            log_weights = step_log_weights
         previous_reward = reward.detach()
 
     if enable_steering:
