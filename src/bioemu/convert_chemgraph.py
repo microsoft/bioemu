@@ -7,11 +7,10 @@ from tempfile import NamedTemporaryFile
 import mdtraj
 import numpy as np
 import torch
+from openfold.np import residue_constants
+from openfold.np.protein import Protein, to_pdb
+from openfold.utils.rigid_utils import Rigid, Rotation
 from scipy.spatial import KDTree
-
-from .openfold.np import residue_constants
-from .openfold.np.protein import Protein, to_pdb
-from .openfold.utils.rigid_utils import Rigid, Rotation
 
 logger = logging.getLogger(__name__)
 

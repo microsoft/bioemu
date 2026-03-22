@@ -23,6 +23,13 @@
     "uv",
     "einops",
     "matplotlib>=3.10.7",
+    "requests",
+    "tqdm",
+    "dm-haiku>=0.0.12",
+    "ml-collections",
+    "absl-py",
+    "tensorflow-cpu>=2.12.0",
+    "jax==0.4.35",
   ]
   readme = "README.md"
 
@@ -38,6 +45,10 @@
     "pre-commit",
   ]
   md = ["openmm[cuda12]==8.4.0"]
+  cuda = [
+    "jax[cuda12]==0.4.35",
+    "nvidia-cuda-nvcc-cu12==12.8.93",
+  ]
 
 [tool.black]
   line-length = 100
@@ -53,7 +64,7 @@
   | buck-out
   | build
   | dist
-  | bioemu/openfold
+  | src/_vendor
 )/
 '''
 
@@ -64,6 +75,11 @@
 
 [tool.mypy]
   verbosity = 0
+  exclude = ["src/_vendor"]
+
+[[tool.mypy.overrides]]
+  module = ["alphafold.*"]
+  follow_imports = "skip"
 
 [[tool.mypy.overrides]]
   module = [
@@ -82,6 +98,7 @@
     "pandas.*",
     "pdbfixer.*",
     "pytest.*",
+    "requests.*",
     "omegaconf.*",
     "scipy.*",
     "sklearn.*",
@@ -91,6 +108,7 @@
 
 [tool.ruff]
   line-length = 100
+  exclude = ["_vendor"]
 
 [tool.ruff.lint]
   # Check https://beta.ruff.rs/docs/rules/ for full list of rules
@@ -156,7 +174,6 @@
     "E741",
   ]
   extend-safe-fixes = ["UP"]
-  exclude = ["openfold"]
 
 [tool.setuptools]
   include-package-data = true
@@ -165,4 +182,4 @@
   where = ["src"]
 
 [tool.setuptools.package-data]
-  "*" = ["*.patch", "*.sh", "*.md"]
+  "*" = ["*.md"]

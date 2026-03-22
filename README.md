@@ -27,14 +27,20 @@ This repository contains inference code and model weights.
 - [Citation](#citation)
 
 ## Installation
-bioemu is provided as a Linux-only pip-installable package. We currently only support Python versions from 3.10 to 3.12:
+bioemu is provided as a Linux-only pip-installable package. We support Python 3.10 and above:
 
 ```bash
 pip install bioemu
 ```
 
+To install with CUDA support:
+
+```bash
+pip install bioemu[cuda]
+```
+
 > [!NOTE]
-> The first time `bioemu` is used to sample structures, it will also setup [Colabfold](https://github.com/sokrypton/ColabFold) on a separate virtual environment for MSA and embedding generation. By default this setup uses the `~/.bioemu_colabfold` directory, but if you wish to have this changed please manually set the `BIOEMU_COLABFOLD_DIR` environment variable accordingly before sampling for the first time.
+> BioEmu uses an inlined version of [ColabFold](https://github.com/sokrypton/ColabFold) and [AlphaFold2](https://github.com/google-deepmind/alphafold) for MSA retrieval and embedding generation. These are bundled with the package — no separate environment or installation is needed. On first use, AlphaFold2 model weights (~3.5 GB) will be automatically downloaded to `~/.cache/colabfold/`.
 
 
 ## Sampling structures
@@ -63,7 +69,7 @@ By default, unphysical structures (steric clashes or chain discontinuities) will
 
 
 > [!NOTE]
-> If you wish to use your own generated MSA instead of the ones retrieved via Colabfold, you can pass an A3M file containing the query sequence as the first row to the `sequence` argument. Additionally, the `msa_host_url` argument can be used to override the default Colabfold MSA query server. See [sample.py](./src/bioemu/sample.py) for more options.
+> If you wish to use your own generated MSA instead of the ones retrieved via the ColabFold MMseqs2 server, you can pass an A3M file containing the query sequence as the first row to the `sequence` argument. Additionally, the `msa_host_url` argument can be used to override the default MSA query server. See [sample.py](./src/bioemu/sample.py) for more options.
 
 This code only supports sampling structures of monomers. You can try to sample multimers using the [linker trick](https://x.com/ag_smith/status/1417063635000598528), but in our limited experiments, this has not worked well.
 
@@ -144,7 +150,7 @@ To use a specific checkpoint, you can specify the `model_name` in the `bioemu.sa
 BioEmu outputs structures in backbone frame representation. To reconstruct the side-chains, several tools are available. As an example, we interface with [HPacker](https://github.com/gvisani/hpacker) to conduct side-chain reconstruction, and also provide basic tooling for running a short molecular dynamics (MD) equilibration.
 
 > [!WARNING]
-> This code is experimental and relies on a [conda-based package manager](https://docs.conda.io/projects/conda/en/latest/user-guide/install/index.html) due to `hpacker` having `conda` as a dependency. Make sure that `conda` is in your `PATH` and that you have CUDA12-compatible drivers before running the following code.
+> Side-chain reconstruction relies on [HPacker](https://github.com/gvisani/hpacker) which requires a [conda-based package manager](https://docs.conda.io/projects/conda/en/latest/user-guide/install/index.html). Make sure that `conda` is in your `PATH` and that you have CUDA12-compatible drivers before running the following code. Note that `conda` is **not** required for BioEmu's core sampling functionality.
 
 Install optional dependencies:
 
@@ -174,7 +180,9 @@ To see the full list of options, call `python -m bioemu.sidechain_relax --help`.
 The script saves reconstructed all-heavy-atom structures in `samples_sidechain_rec.{pdb,xtc}` and MD-equilibrated structures in `samples_md_equil.{pdb,xtc}` (filename to be altered with `--outname other_name`).
 
 ## Third-party code
-The code in the `openfold` subdirectory is copied from [openfold](https://github.com/aqlaboratory/openfold) with minor modifications. The modifications are described in the relevant source files.
+- The code in `src/bioemu/openfold/` is copied from [OpenFold](https://github.com/aqlaboratory/openfold) (Apache 2.0) with minor modifications described in the relevant source files.
+- The code in `src/_vendor/alphafold/` is a vendored, patched subset of [AlphaFold2](https://github.com/google-deepmind/alphafold) v2.3.2 (Apache 2.0). See [src/_vendor/alphafold/README.md](src/_vendor/alphafold/README.md) for details on the modifications.
+- The code in `src/bioemu/colabfold_inline/` contains functions derived from [ColabFold](https://github.com/sokrypton/ColabFold) v1.5.4 (MIT). See the license headers in each file for details.
 ## Get in touch
 If you have any questions not covered here, please create an issue or contact the BioEmu team by writing to the corresponding author on our [paper].
 

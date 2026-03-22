@@ -7,9 +7,9 @@ towards physically realistic conformations by penalizing chain breaks and clashe
 import logging
 
 import torch
+from openfold.np.residue_constants import ca_ca
 from torch_geometric.data import Batch
 
-from bioemu.openfold.np.residue_constants import ca_ca
 from bioemu.sde_lib import SDE
 
 from .so3_sde import apply_rotvec_to_rotmat
