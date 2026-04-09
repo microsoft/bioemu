@@ -96,17 +96,14 @@ class GMMScoreWrapper(nn.Module):
 
 
 class QuadraticPotential:
-    """Quadratic potential U(x) = k/2 * (x - center)².
-
-    Divides by 10 to convert from Å (steering convention) to GMM units.
-    """
+    """Quadratic potential U(x) = k/2 * (x - center)²."""
 
     def __init__(self, k: float = POTENTIAL_K, center: float = POTENTIAL_CENTER):
         self.k = k
         self.center = center
 
-    def __call__(self, Ca_pos: torch.Tensor, *, t=None, sequence=None) -> torch.Tensor:
-        x = Ca_pos.reshape(Ca_pos.shape[0], -1)[:, 0] / 10.0
+    def __call__(self, ca_pos_nm: torch.Tensor, *, t=None, sequence=None) -> torch.Tensor:
+        x = ca_pos_nm.reshape(ca_pos_nm.shape[0], -1)[:, 0]
         return 0.5 * self.k * (x - self.center) ** 2
 
 

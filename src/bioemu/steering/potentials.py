@@ -18,8 +18,8 @@ class Potential(ABC):
     """
 
     @abstractmethod
-    def __call__(self, Ca_pos: torch.Tensor, *, t=None, sequence=None) -> torch.Tensor:
-        """Compute potential energy from Cα positions (in Å)."""
+    def __call__(self, ca_pos_nm: torch.Tensor, *, t=None, sequence=None) -> torch.Tensor:
+        """Compute potential energy from Cα positions (in nm)."""
 
     @staticmethod
     @abstractmethod
@@ -95,9 +95,9 @@ class UmbrellaPotential(Potential):
             base = base.sum(dim=tuple(range(1, base.ndim)))
         return self.weight * base
 
-    def __call__(self, Ca_pos: torch.Tensor, *, t=None, sequence=None):
+    def __call__(self, ca_pos_nm: torch.Tensor, *, t=None, sequence=None):
         assert self.cv is not None, "UmbrellaPotential requires a cv to be set."
-        cv_values = self.cv.compute_batch(Ca_pos, sequence)
+        cv_values = self.cv.compute_batch(ca_pos_nm, sequence)
         return self.energy_from_cv(cv_values, t=t)
 
 
@@ -146,7 +146,7 @@ class LinearPotential(Potential):
             base = base.sum(dim=tuple(range(1, base.ndim)))
         return self.weight * base
 
-    def __call__(self, Ca_pos: torch.Tensor, *, t=None, sequence=None):
+    def __call__(self, ca_pos_nm: torch.Tensor, *, t=None, sequence=None):
         assert self.cv is not None, "LinearPotential requires a cv to be set."
-        cv_values = self.cv.compute_batch(Ca_pos, sequence)
+        cv_values = self.cv.compute_batch(ca_pos_nm, sequence)
         return self.energy_from_cv(cv_values, t=t)

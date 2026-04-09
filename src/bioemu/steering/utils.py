@@ -115,37 +115,6 @@ def get_pos0_rot0(sdes, batch, t, score):
     return x0_t, R0_t
 
 
-def log_physicality(pos: torch.Tensor, rot: torch.Tensor, sequence: str):
-    """
-    Log physicality metrics for the generated structures.
-
-    Args:
-        pos: Position tensor in nanometers
-        rot: Rotation tensor (unused, kept for API compatibility)
-        sequence: Amino acid sequence string (unused, kept for API compatibility)
-    """
-    pos = 10 * pos  # convert to Angstrom
-    n_residues = pos.shape[1]
-
-    # Ca-Ca distances
-    ca_ca_dist = (pos[..., :-1, :] - pos[..., 1:, :]).pow(2).sum(dim=-1).pow(0.5)
-
-    # Clash distances
-    clash_distances = torch.cdist(pos, pos)  # shape: (batch, L, L)
-    mask = torch.ones(n_residues, n_residues, dtype=torch.bool, device=pos.device)
-    mask = mask.triu(diagonal=4)
-    clash_distances = clash_distances[:, mask]
-
-    # Compute physicality violations
-    ca_break = (ca_ca_dist > 4.5).float()
-    ca_clash = (clash_distances < 3.4).float()
-
-    logger.info("physicality/ca_break_mean: %s", ca_break.sum().item())
-    logger.info("physicality/ca_clash_mean: %s", ca_clash.sum().item())
-    logger.info("physicality/ca_ca_dist_mean: %s", ca_ca_dist.mean().item())
-    logger.info("physicality/clash_distances_mean: %s", clash_distances.mean().item())
-
-
 def compute_sequence_alignment(ref_sequence: str, sample_sequence: str) -> dict[int, int]:
     """Compute sequence alignment and return mapping from reference to sample indices.
 
@@ -322,8 +291,7 @@ def compute_reward_and_grad(
         t: Diffusion time tensor of shape [batch_size,].
         score_model: Score network.
         potentials: List of FK potentials. Each is called as
-            potential_(None, 10 * coords, None, None,
-                       t=step_index, N=num_steps, sequence=batch.sequence[0]).
+            potential_(coords, t=step_index, N=num_steps, sequence=batch.sequence[0]).
         use_x0_for_reward: If True, evaluate potentials on estimated x0; otherwise on x_t.
         enable_grad: Whether to enable gradient computation.
 
@@ -386,7 +354,7 @@ def compute_reward_and_grad(
                 else:
                     sequence = None  # for 1D toy example
                 reward = reward - potential(
-                    10.0 * coords,  # nm -> Angstrom
+                    coords,
                     t=t_var[0],
                     sequence=sequence,
                 )

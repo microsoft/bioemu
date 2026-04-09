@@ -95,17 +95,15 @@ POTENTIAL_CENTER = 2.0
 class QuadraticPotential:
     """Quadratic potential U(x) = k/2 * (x - center)².
 
-    Receives Cα positions in Å (the steering code multiplies by 10), so
-    divides by 10 to recover the GMM-scale coordinate before computing U.
+    Receives Cα positions in nm directly from the steering code.
     """
 
     def __init__(self, k: float = POTENTIAL_K, center: float = POTENTIAL_CENTER):
         self.k = k
         self.center = center
 
-    def __call__(self, Ca_pos: torch.Tensor, *, t=None, sequence=None) -> torch.Tensor:
-        # Ca_pos: [batch_size, seq_length, 3] in Å
-        x = Ca_pos.reshape(Ca_pos.shape[0], -1)[:, 0] / 10.0  # back to GMM units
+    def __call__(self, ca_pos_nm: torch.Tensor, *, t=None, sequence=None) -> torch.Tensor:
+        x = ca_pos_nm.reshape(ca_pos_nm.shape[0], -1)[:, 0]
         return 0.5 * self.k * (x - self.center) ** 2
 
 

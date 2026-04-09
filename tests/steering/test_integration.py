@@ -52,7 +52,7 @@ class TestPotentialForwardBackward:
         from bioemu.steering.collective_variables import CaCaDistance
         from bioemu.steering.potentials import UmbrellaPotential
 
-        pot = UmbrellaPotential(cv=CaCaDistance(), target=3.8, slope=1.0, weight=1.0)
+        pot = UmbrellaPotential(cv=CaCaDistance(), target=0.38, slope=10.0, weight=1.0)
         ca_pos = torch.randn(2, 10, 3, requires_grad=True)
         energy = pot(ca_pos)
         energy.sum().backward()
@@ -64,7 +64,7 @@ class TestPotentialForwardBackward:
         from bioemu.steering.potentials import UmbrellaPotential
 
         pot = UmbrellaPotential(
-            cv=PairwiseClash(min_dist=4.0, offset=3), target=0.0, slope=1.0, weight=1.0
+            cv=PairwiseClash(min_dist=0.4, offset=3), target=0.0, slope=10.0, weight=1.0
         )
         ca_pos = torch.randn(2, 10, 3, requires_grad=True)
         energy = pot(ca_pos)
@@ -140,7 +140,7 @@ class TestFkcSteeringIntegration:
         model = self._make_score_model(n_res * bs)
         t = torch.full((bs,), 0.5)
 
-        pot = UmbrellaPotential(cv=CaCaDistance(), target=3.8, slope=1.0, weight=1.0)
+        pot = UmbrellaPotential(cv=CaCaDistance(), target=0.38, slope=10.0, weight=1.0)
 
         reward, grad_x, grad_rot, grad_t, raw_score, info = compute_reward_and_grad(
             sdes=sdes,
@@ -171,7 +171,7 @@ class TestFkcSteeringIntegration:
         model = self._make_score_model(n_res * bs)
         t = torch.full((bs,), 0.5)
 
-        pot = UmbrellaPotential(cv=CaCaDistance(), target=3.8, slope=1.0, weight=1.0)
+        pot = UmbrellaPotential(cv=CaCaDistance(), target=0.38, slope=10.0, weight=1.0)
 
         guided = _get_fkc_guided_score(
             sdes=sdes,
@@ -258,7 +258,7 @@ class TestFkcSteeringIntegration:
         sdes = self._make_sdes()
         model = self._make_score_model(n_res * bs)
         batch = self._make_batch(n_res, bs)
-        pot = UmbrellaPotential(cv=CaCaDistance(), target=3.8, slope=1.0, weight=1.0)
+        pot = UmbrellaPotential(cv=CaCaDistance(), target=0.38, slope=10.0, weight=1.0)
 
         torch.manual_seed(42)
         result_batch, batch_log_weights = dpm_solver_fkc(
@@ -370,7 +370,7 @@ class TestSmcSteeringIntegration:
         sdes = self._make_sdes()
         model = self._make_score_model(n_res * bs)
         batch = self._make_batch(n_res, bs)
-        pot = UmbrellaPotential(cv=CaCaDistance(), target=3.8, slope=1.0, weight=1.0)
+        pot = UmbrellaPotential(cv=CaCaDistance(), target=0.38, slope=10.0, weight=1.0)
 
         torch.manual_seed(42)
         result_batch, log_weights = dpm_solver_smc(
@@ -799,7 +799,7 @@ class TestGenerateBatchWithSteering:
         sdes = {"node_orientations": DiGSO3SDE(), "pos": CosineVPSDE()}
 
         # Build SMC denoiser config as a dict (instead of YAML)
-        pot = UmbrellaPotential(cv=CaCaDistance(), target=3.8, slope=1.0, weight=1.0)
+        pot = UmbrellaPotential(cv=CaCaDistance(), target=0.38, slope=10.0, weight=1.0)
         smc_config = {
             "_target_": "bioemu.steering.dpm_smc.dpm_solver_smc",
             "_partial_": True,

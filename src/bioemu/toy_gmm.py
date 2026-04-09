@@ -201,15 +201,13 @@ class TimeDependentGMM1D(nn.Module):
 
 
 class ToyPosCV(CollectiveVariable):
-    """Minimal CV that extracts the first coordinate (scaled) from a ChemGraph.
+    """Minimal CV that extracts the first coordinate from a ChemGraph.
 
-    The bioemu steering stack expects CVs to operate on `ChemGraph` objects; for the
-    1D toy we simply read the first scalar position. The positional inputs arrive as
-    Angstrom in the steering code (they are multiplied by 10 prior to the call),
-    so we divide by 10 to recover the original nm-scale variable used in sampling.
+    The bioemu steering stack passes Cα positions in nm directly, so no
+    unit conversion is needed.
     """
 
-    def compute_batch(self, pos: torch.Tensor, sequence: str) -> torch.Tensor:
-        # pos shape: [batch_size, L, D]; toy uses L=1, D=1
-        vals = pos.reshape(pos.shape[0], -1)[:, 0]  # scale back to nm
+    def compute_batch(self, ca_pos_nm: torch.Tensor, sequence: str) -> torch.Tensor:
+        # ca_pos_nm shape: [batch_size, L, D]; toy uses L=1, D=1
+        vals = ca_pos_nm.reshape(ca_pos_nm.shape[0], -1)[:, 0]
         return vals

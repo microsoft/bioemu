@@ -23,7 +23,6 @@ from bioemu.get_embeds import get_colabfold_embeds
 from bioemu.model_utils import load_model, load_sdes, maybe_download_checkpoint
 from bioemu.sde_lib import SDE
 from bioemu.seq_io import check_protein_valid, parse_sequence, write_fasta
-from bioemu.steering import log_physicality
 from bioemu.utils import (
     count_samples_in_output_dir,
     format_npz_samples_filename,
@@ -220,7 +219,6 @@ def main(
     node_orientations = torch.tensor(
         np.concatenate([np.load(f)["node_orientations"] for f in samples_files])
     )
-    log_physicality(positions, node_orientations, sequence)
     save_pdb_and_xtc(
         pos_nm=positions,
         node_orientations=node_orientations,

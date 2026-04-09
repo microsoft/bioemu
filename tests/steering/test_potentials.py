@@ -88,14 +88,14 @@ class TestChainBreakAsUmbrella:
     @staticmethod
     def _make_pot(**kwargs):
         defaults = dict(
-            target=3.80209737096, flatbottom=0.0, slope=1.0, order=2, linear_from=1.0, weight=1.0
+            target=0.380209737096, flatbottom=0.0, slope=10.0, order=2, linear_from=0.1, weight=1.0
         )
         defaults.update(kwargs)
         return UmbrellaPotential(cv=CaCaDistance(), **defaults)
 
     def test_ideal_spacing_low_energy(self):
         pot = self._make_pot()
-        ca_ca_dist = 3.80209737096
+        ca_ca_dist = 0.380209737096
         n = 10
         Ca_pos = torch.zeros(2, n, 3)
         for i in range(n):
@@ -108,17 +108,17 @@ class TestChainBreakAsUmbrella:
         pot = self._make_pot()
         Ca_pos = torch.zeros(1, 5, 3)
         for i in range(5):
-            Ca_pos[0, i, 0] = i * 20.0
+            Ca_pos[0, i, 0] = i * 2.0
         energy = pot(Ca_pos)
         assert energy.item() > 0
 
     def test_flatbottom_zero_in_range(self):
-        pot = self._make_pot(flatbottom=0.5)
-        ca_ca_dist = 3.80209737096
+        pot = self._make_pot(flatbottom=0.05)
+        ca_ca_dist = 0.380209737096
         n = 10
         Ca_pos = torch.zeros(1, n, 3)
         for i in range(n):
-            Ca_pos[0, i, 0] = i * (ca_ca_dist + 0.3)
+            Ca_pos[0, i, 0] = i * (ca_ca_dist + 0.03)
         energy = pot(Ca_pos)
         torch.testing.assert_close(energy, torch.zeros(1), atol=1e-4, rtol=1e-4)
 
@@ -127,7 +127,7 @@ class TestChainClashAsUmbrella:
     """ChainClashPotential replaced by UmbrellaPotential + PairwiseClash."""
 
     @staticmethod
-    def _make_pot(min_dist=4.2, offset=3, slope=1.0, weight=1.0):
+    def _make_pot(min_dist=0.42, offset=3, slope=10.0, weight=1.0):
         return UmbrellaPotential(
             cv=PairwiseClash(min_dist=min_dist, offset=offset),
             target=0.0,
@@ -143,7 +143,7 @@ class TestChainClashAsUmbrella:
         n = 10
         Ca_pos = torch.zeros(2, n, 3)
         for i in range(n):
-            Ca_pos[:, i, 0] = i * 10.0
+            Ca_pos[:, i, 0] = float(i)
         energy = pot(Ca_pos)
         assert energy.shape == (2,)
         torch.testing.assert_close(energy, torch.zeros(2), atol=1e-6, rtol=1e-6)
