@@ -182,4 +182,4 @@
   where = ["src"]
 
 [tool.setuptools.package-data]
-  "*" = ["*.md"]
+  "*" = ["*.md", "*.sh"]
