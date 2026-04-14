@@ -165,7 +165,7 @@ python -m bioemu.sidechain_relax --pdb-path path/to/topology.pdb --xtc-path path
 
 
 > [!NOTE]
-> The first time this module is invoked, it will attempt to install `hpacker` and its dependencies into a separate `hpacker` conda environment using a bundled setup script. If the automatic setup fails, you can install hpacker manually by following the instructions at [hpacker's repository](https://github.com/gvisani/hpacker) and creating a conda environment named `hpacker` (or a custom name set via the `HPACKER_ENV_NAME` environment variable).
+> The first time this module is invoked, it will attempt to install `hpacker` and its dependencies into a separate virtualenv using a bundled setup script. If the automatic setup fails, you can install hpacker manually by following the instructions at [hpacker's repository](https://github.com/gvisani/hpacker) and setting the `HPACKER_PYTHONBIN` environment variable to the path of the python executable where hpacker is installed.
 
 By default, side-chain reconstruction and local energy minimization are performed (no full MD integration for efficiency reasons).
 Note that the runtime of this code scales with the size of the system.
