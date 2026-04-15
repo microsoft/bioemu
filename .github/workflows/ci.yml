@@ -13,7 +13,7 @@ on:
 
 jobs:
   linux:
-    runs-on: [self-hosted, 1ES.Pool=1ES-GHA-Pool-Small, 'JobId=ai4s-${{ github.run_id }}-${{ github.run_number }}-${{ github.run_attempt }}']
+    runs-on: ubuntu-latest
     permissions:
       contents: read
       pull-requests: write
