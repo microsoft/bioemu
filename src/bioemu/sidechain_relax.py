@@ -15,8 +15,8 @@ import typer
 from tqdm.auto import tqdm
 
 from bioemu.hpacker_setup.setup_hpacker import (
-    HPACKER_DEFAULT_ENVNAME,
     HPACKER_DEFAULT_REPO_DIR,
+    HPACKER_DEFAULT_VENV_DIR,
     ensure_hpacker_install,
 )
 from bioemu.md_utils import (
@@ -27,12 +27,11 @@ from bioemu.md_utils import (
     _run_and_write,
     _switch_off_constraints,
 )
-from bioemu.utils import get_conda_prefix
 
 logger = logging.getLogger(__name__)
 typer_app = typer.Typer(pretty_exceptions_enable=False)
 
-HPACKER_ENVNAME = os.getenv("HPACKER_ENV_NAME", HPACKER_DEFAULT_ENVNAME)
+HPACKER_VENV_DIR = os.getenv("HPACKER_VENV_DIR", HPACKER_DEFAULT_VENV_DIR)
 HPACKER_REPO_DIR = os.getenv("HPACKER_REPO_DIR", HPACKER_DEFAULT_REPO_DIR)
 
 
@@ -43,17 +42,19 @@ class MDProtocol(str, Enum):
 
 def _run_hpacker(protein_pdb_in: str, protein_pdb_out: str) -> None:
     """run hpacker in its environment."""
-    # make sure that hpacker env is set up
-    ensure_hpacker_install(envname=HPACKER_ENVNAME, repo_dir=HPACKER_REPO_DIR)
 
-    _default_hpacker_pythonbin = os.path.join(
-        get_conda_prefix(),
-        "envs",
-        HPACKER_ENVNAME,
-        "bin",
-        "python",
-    )
-    hpacker_pythonbin = os.getenv("HPACKER_PYTHONBIN", _default_hpacker_pythonbin)
+    env_hpacker_pythonbin = os.environ.get("HPACKER_PYTHONBIN")
+    if env_hpacker_pythonbin is not None:
+        logger.info(f"Using HPACKER_PYTHONBIN from environment: {env_hpacker_pythonbin}")
+        hpacker_pythonbin = env_hpacker_pythonbin
+    else:
+        ensure_hpacker_install(venv_dir=HPACKER_VENV_DIR, repo_dir=HPACKER_REPO_DIR)
+
+        hpacker_pythonbin = os.path.join(
+            HPACKER_VENV_DIR,
+            "bin",
+            "python",
+        )
 
     result = subprocess.run(
         [

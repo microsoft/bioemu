@@ -44,7 +44,7 @@
     "pytest-cov",
     "pre-commit",
   ]
-  md = ["openmm[cuda12]==8.4.0"]
+  md = ["openmm==8.4.0", "openmm-cuda-12==8.4.0"]
   cuda = [
     "jax[cuda12]==0.4.35",
     "nvidia-cuda-nvcc-cu12==12.8.93",
@@ -182,4 +182,4 @@
   where = ["src"]
 
 [tool.setuptools.package-data]
-  "*" = ["*.md"]
+  "*" = ["*.md", "*.sh"]
