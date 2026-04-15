@@ -1,4 +1,4 @@
-__version__ = "1.3.1a2"
+__version__ = "1.3.1a3"
 
 # Register the vendored-package import hook so that ``import alphafold`` and
 # ``import openfold`` resolve to src/_vendor/{alphafold,openfold}/.
