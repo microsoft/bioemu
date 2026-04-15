@@ -14,14 +14,15 @@ jobs:
     environment: publish-to-pypi
 
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v4
 
       # Make sure tags are fetched, so we can get a version.
+      # Use --force to handle cases where a tag already exists locally from checkout.
       - run: |
-          git fetch --prune --unshallow --tags
+          git fetch --prune --unshallow --tags --force
 
       - name: Set up Python
-        uses: actions/setup-python@v2
+        uses: actions/setup-python@v5
         with:
           python-version: "3.10"
 
