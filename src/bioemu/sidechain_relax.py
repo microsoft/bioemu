@@ -42,15 +42,19 @@ class MDProtocol(str, Enum):
 
 def _run_hpacker(protein_pdb_in: str, protein_pdb_out: str) -> None:
     """run hpacker in its environment."""
-    # make sure that hpacker env is set up
-    ensure_hpacker_install(venv_dir=HPACKER_VENV_DIR, repo_dir=HPACKER_REPO_DIR)
 
-    _default_hpacker_pythonbin = os.path.join(
-        HPACKER_VENV_DIR,
-        "bin",
-        "python",
-    )
-    hpacker_pythonbin = os.getenv("HPACKER_PYTHONBIN", _default_hpacker_pythonbin)
+    env_hpacker_pythonbin = os.environ.get("HPACKER_PYTHONBIN")
+    if env_hpacker_pythonbin is not None:
+        logger.info(f"Using HPACKER_PYTHONBIN from environment: {env_hpacker_pythonbin}")
+        hpacker_pythonbin = env_hpacker_pythonbin
+    else:
+        ensure_hpacker_install(venv_dir=HPACKER_VENV_DIR, repo_dir=HPACKER_REPO_DIR)
+
+        hpacker_pythonbin = os.path.join(
+            HPACKER_VENV_DIR,
+            "bin",
+            "python",
+        )
 
     result = subprocess.run(
         [
