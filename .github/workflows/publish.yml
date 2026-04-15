@@ -15,10 +15,8 @@ jobs:
 
     steps:
       - uses: actions/checkout@v2
-
-      # Make sure tags are fetched, so we can get a version.
-      - run: |
-          git fetch --prune --unshallow --tags
+        with:
+          fetch-depth: 0 # fetch full history
 
       - name: Set up Python
         uses: actions/setup-python@v2
