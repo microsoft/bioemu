@@ -7,8 +7,11 @@ import numpy as np
 import torch
 
 from ..chemgraph import ChemGraph
-from ..openfold.np.residue_constants import restype_3to1
-from ..training.foldedness import CONTACT_BETA, CONTACT_DELTA, CONTACT_LAMBDA, compute_contacts
+from openfold.np.residue_constants import restype_3to1
+from ..training.foldedness import (
+    _compute_contact_score,
+    compute_contacts,
+)
 from .utils import compute_sequence_alignment, kabsch_align
 
 
@@ -97,32 +100,6 @@ class FractionNativeContacts(CollectiveVariable):
         )
         self._cached_sequence = sequence
 
-    def _compute_contact_score(
-        self,
-        sample_contact_distances: torch.Tensor,
-        reference_contact_distances: torch.Tensor,
-    ) -> torch.Tensor:
-        """
-        Compute contact scores for all pairs of contacts.
-
-        Args:
-            sample_contact_distances: Distances computed for contacts in batch
-                structures, in angstrom.
-            reference_contact_distances: Reference contact distances in angstrom.
-
-        Returns:
-            torch.Tensor: Contact scores for all pairwise interactions, same shape as the input tensors.
-        """
-        q_ij = torch.special.expit(
-            -CONTACT_BETA
-            * (
-                sample_contact_distances
-                - CONTACT_LAMBDA * (reference_contact_distances + CONTACT_DELTA)
-            )
-        )
-
-        return q_ij
-
     def compute_batch(self, ca_pos_nm: torch.Tensor, sequence: str | None = None) -> torch.Tensor:
         """Compute FNC for a batch of structures.
 
@@ -157,10 +134,10 @@ class FractionNativeContacts(CollectiveVariable):
         )  # (batch_size, n_contacts)
         contact_distances_angstrom = contact_distances_nm * 10.0
 
-        # Compute contact scores using sigmoid function
-        contact_scores = self._compute_contact_score(
-            contact_distances_angstrom,
-            self._cached_ref_contact_distances,
+        # Compute contact scores using the shared foldedness helper
+        contact_scores = _compute_contact_score(
+            sample_contact_distances=contact_distances_angstrom,
+            reference_contact_distances=self._cached_ref_contact_distances,
         )  # (batch_size, n_contacts)
 
         # Average contact scores over contacts for each sample

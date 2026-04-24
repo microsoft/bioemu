@@ -3,7 +3,6 @@
 """Script for sampling from a trained model."""
 
 import logging
-import os
 import time
 import typing
 from collections.abc import Callable
@@ -77,7 +76,7 @@ def main(
     ckpt_path: str | Path | None = None,
     model_config_path: str | Path | None = None,
     denoiser_type: SupportedDenoisersLiteral | None = "dpm",
-    denoiser_config: str | os.PathLike | dict | None = None,
+    denoiser_config: str | Path | dict | None = None,
     cache_embeds_dir: str | Path | None = None,
     cache_so3_dir: str | Path | None = None,
     msa_host_url: str | None = None,
@@ -157,7 +156,7 @@ def main(
         denoiser_config = DEFAULT_DENOISER_CONFIG_DIR / f"{denoiser_type}.yaml"
         with open(denoiser_config) as f:
             denoiser_config = yaml.safe_load(f)
-    elif isinstance(denoiser_config, str | os.PathLike):
+    elif isinstance(denoiser_config, str | Path):
         # path to denoiser config
         denoiser_config_path = Path(denoiser_config).expanduser().resolve()
         assert (

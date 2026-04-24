@@ -4,12 +4,39 @@ These tests verify that yaml configs parse correctly and produce valid
 potential objects, without requiring model weights or GPU.
 """
 
+from contextlib import contextmanager
 from pathlib import Path
+from unittest.mock import MagicMock, patch
 
 import torch
 import yaml
 
 STEERING_CONFIG_DIR = Path(__file__).parent.parent.parent / "src" / "bioemu" / "config" / "steering"
+
+
+@contextmanager
+def _mock_colabfold_embeds(seq: str):
+    """Patch the colabfold_inline stack so get_colabfold_embeds returns mocked arrays."""
+    import numpy as np
+
+    from tests.test_embeds import _make_mock_run_model
+
+    L = len(seq)
+    with (
+        patch(
+            "bioemu.colabfold_inline.model_runner._run_model",
+            side_effect=_make_mock_run_model(L),
+        ),
+        patch(
+            "bioemu.colabfold_inline.model_runner._load_model_and_params",
+            return_value=(MagicMock(), {}),
+        ),
+        patch("bioemu.colabfold_inline.model_runner.download_alphafold_params"),
+        patch("bioemu.get_embeds._get_a3m_string", return_value=f">q\n{seq}\n"),
+    ):
+        # Touch np to keep import side-effect ordering stable across reloads.
+        _ = np.zeros(1)
+        yield
 
 
 class TestPhysicalSteeringConfig:
@@ -744,13 +771,12 @@ class TestGenerateBatchWithSteering:
     def test_generate_batch_with_fkc_denoiser(self):
         """generate_batch with dpm_solver_fkc denoiser produces valid output."""
         import os
-        from unittest.mock import patch
 
         import hydra
 
         from bioemu.sample import generate_batch
         from bioemu.shortcuts import CosineVPSDE, DiGSO3SDE
-        from tests.test_embeds import TEST_SEQ, mock_run_colabfold
+        from tests.test_embeds import TEST_SEQ
 
         sdes = {"node_orientations": DiGSO3SDE(), "pos": CosineVPSDE()}
 
@@ -766,9 +792,7 @@ class TestGenerateBatchWithSteering:
 
         denoiser = hydra.utils.instantiate(denoiser_config)
 
-        with patch("bioemu.get_embeds.run_colabfold", side_effect=mock_run_colabfold), patch(
-            "bioemu.get_embeds.ensure_colabfold_install"
-        ):
+        with _mock_colabfold_embeds(TEST_SEQ):
             batch = generate_batch(
                 score_model=self._mock_score_model,
                 sequence=TEST_SEQ,
@@ -786,15 +810,13 @@ class TestGenerateBatchWithSteering:
 
     def test_generate_batch_with_smc_denoiser(self):
         """generate_batch with dpm_solver_smc denoiser produces valid output."""
-        from unittest.mock import patch
-
         import hydra
 
         from bioemu.sample import generate_batch
         from bioemu.shortcuts import CosineVPSDE, DiGSO3SDE
         from bioemu.steering.collective_variables import CaCaDistance
         from bioemu.steering.potentials import UmbrellaPotential
-        from tests.test_embeds import TEST_SEQ, mock_run_colabfold
+        from tests.test_embeds import TEST_SEQ
 
         sdes = {"node_orientations": DiGSO3SDE(), "pos": CosineVPSDE()}
 
@@ -812,9 +834,7 @@ class TestGenerateBatchWithSteering:
         }
         denoiser = hydra.utils.instantiate(smc_config)
 
-        with patch("bioemu.get_embeds.run_colabfold", side_effect=mock_run_colabfold), patch(
-            "bioemu.get_embeds.ensure_colabfold_install"
-        ):
+        with _mock_colabfold_embeds(TEST_SEQ):
             batch = generate_batch(
                 score_model=self._mock_score_model,
                 sequence=TEST_SEQ,
@@ -832,13 +852,12 @@ class TestGenerateBatchWithSteering:
     def test_generate_batch_unsteered_dpm(self):
         """generate_batch with standard dpm denoiser (no steering) still works."""
         import os
-        from unittest.mock import patch
 
         import hydra
 
         from bioemu.sample import generate_batch
         from bioemu.shortcuts import CosineVPSDE, DiGSO3SDE
-        from tests.test_embeds import TEST_SEQ, mock_run_colabfold
+        from tests.test_embeds import TEST_SEQ
 
         sdes = {"node_orientations": DiGSO3SDE(), "pos": CosineVPSDE()}
 
@@ -851,9 +870,7 @@ class TestGenerateBatchWithSteering:
             denoiser_config = yaml.safe_load(f)
         denoiser = hydra.utils.instantiate(denoiser_config)
 
-        with patch("bioemu.get_embeds.run_colabfold", side_effect=mock_run_colabfold), patch(
-            "bioemu.get_embeds.ensure_colabfold_install"
-        ):
+        with _mock_colabfold_embeds(TEST_SEQ):
             batch = generate_batch(
                 score_model=self._mock_score_model,
                 sequence=TEST_SEQ,

@@ -188,6 +188,13 @@ def resample_based_on_log_weights(
 
     # Handle case where batch_size < n_particles: treat entire batch as one group
     if n_samples < n_particles:
+        logger.warning(
+            "n_samples (%s) < n_particles (%s); treating entire batch as one "
+            "resampling group with effective_n_particles=%s.",
+            n_samples,
+            n_particles,
+            n_samples,
+        )
         effective_n_particles = n_samples
         n_groups = 1
     else:
