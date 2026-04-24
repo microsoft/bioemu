@@ -55,16 +55,18 @@ class GMMScoreWrapper(nn.Module):
         super().__init__()
         self.gmm = gmm
         self.pos_sde = pos_sde
-        # Dummy parameter so .to(device) works
-        self.dummy = nn.Parameter(torch.zeros(1))
 
     def forward(self, batch, t):
         # Extract 1D positions (first coordinate of each node)
         x = batch.pos[:, 0:1]  # [total_nodes, 1]
         t_per_node = t[batch.batch]
 
-        # Analytical score from GMM
-        score_1d = self.gmm.score(x, t_per_node)  # [total_nodes, 1]
+        # Analytical score from GMM. Pass create_graph=True when batch.pos
+        # requires grad so that downstream autograd through x0 (when
+        # use_x0_for_reward=True) sees the score's dependence on x_t (the
+        # Hessian of log p_t). Without this, d(x0)/d(x_t) is incorrectly
+        # treated as just 1/alpha_t, producing biased steered samples.
+        score_1d = self.gmm.score(x, t_per_node, create_graph=batch.pos.requires_grad)
 
         # get_score divides by std — pre-multiply to cancel
         _, pos_std = self.pos_sde.marginal_prob(
@@ -72,13 +74,14 @@ class GMMScoreWrapper(nn.Module):
         )
 
         # Embed 1D score into 3D: [score × std, 0, 0]
-        pos_output = torch.zeros_like(batch.pos) + self.dummy * 0
-        pos_output[:, 0:1] = score_1d * pos_std[:, 0:1]
+        zero_yz = torch.zeros(
+            batch.pos.shape[0], 2, device=batch.pos.device, dtype=batch.pos.dtype
+        )
+        pos_output = torch.cat([score_1d * pos_std[:, 0:1], zero_yz], dim=1)
 
         return {
             "pos": pos_output,
-            "node_orientations": torch.zeros(batch.pos.shape[0], 3, device=batch.pos.device)
-            + self.dummy * 0,
+            "node_orientations": torch.zeros(batch.pos.shape[0], 3, device=batch.pos.device),
         }
 
 
@@ -185,7 +188,7 @@ result_batch, log_weights = dpm_solver_fkc(
     fk_potentials=[potential],
     steering_config={"num_particles": 100, "ess_threshold": 0.8, "start": 1.0, "end": 0.0},
     noise=NOISE_SCALE,
-    use_x0_for_reward=False,
+    use_x0_for_reward=True,
 )
 
 steered_samples = result_batch.pos[:, 0].detach().cpu()
