@@ -3,6 +3,7 @@
 """Script for sampling from a trained model."""
 
 import logging
+import os
 import time
 import typing
 from collections.abc import Callable
@@ -76,7 +77,7 @@ def main(
     ckpt_path: str | Path | None = None,
     model_config_path: str | Path | None = None,
     denoiser_type: SupportedDenoisersLiteral | None = "dpm",
-    denoiser_config: str | Path | dict | None = None,
+    denoiser_config: str | os.PathLike | dict | None = None,
     cache_embeds_dir: str | Path | None = None,
     cache_so3_dir: str | Path | None = None,
     msa_host_url: str | None = None,
@@ -102,7 +103,7 @@ def main(
         model_config_path: Path to the model config, defining score model architecture and the corruption process the model was trained with.
            Only required if `ckpt_path` is set.
         denoiser_type: Denoiser to use for sampling, if `denoiser_config` not specified. Comes in with default parameter configuration. Must be one of ['dpm', 'heun']
-        denoiser_config: Path to a denoiser config YAML, or a dict. For steered sampling (FKC/SMC),
+        denoiser_config: Path (str or :class:`os.PathLike`) to a denoiser config YAML, or a dict. For steered sampling (FKC/SMC),
             pass a steering config (e.g., config/steering/physical_steering.yaml) which includes
             the denoiser target, potentials, and steering parameters in one file.
         cache_embeds_dir: Directory to store MSA embeddings. If not set, this defaults to `COLABFOLD_DIR/embeds_cache`.
@@ -156,7 +157,7 @@ def main(
         denoiser_config = DEFAULT_DENOISER_CONFIG_DIR / f"{denoiser_type}.yaml"
         with open(denoiser_config) as f:
             denoiser_config = yaml.safe_load(f)
-    elif type(denoiser_config) is str:
+    elif isinstance(denoiser_config, str | os.PathLike):
         # path to denoiser config
         denoiser_config_path = Path(denoiser_config).expanduser().resolve()
         assert (

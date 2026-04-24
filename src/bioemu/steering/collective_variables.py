@@ -8,8 +8,8 @@ import torch
 
 from ..chemgraph import ChemGraph
 from ..openfold.np.residue_constants import restype_3to1
-from ..training.foldedness import compute_contacts
-from .utils import compute_sequence_alignment
+from ..training.foldedness import CONTACT_BETA, CONTACT_DELTA, CONTACT_LAMBDA, compute_contacts
+from .utils import compute_sequence_alignment, kabsch_align
 
 
 def load_reference_traj(reference_pdb: str) -> mdtraj.Trajectory:
@@ -54,11 +54,6 @@ class CollectiveVariable(ABC):
 
 class FractionNativeContacts(CollectiveVariable):
     """Fraction of Native Contacts CV."""
-
-    # Import constants from foldedness module
-    CONTACT_BETA: float = 5.0
-    CONTACT_DELTA: float = 0.0
-    CONTACT_LAMBDA: float = 1.2
 
     def __init__(self, reference_pdb: str, **kwargs):
         # Accept but ignore extra kwargs (e.g., alignment_resid_ranges, metric_resid_ranges)
@@ -119,10 +114,10 @@ class FractionNativeContacts(CollectiveVariable):
             torch.Tensor: Contact scores for all pairwise interactions, same shape as the input tensors.
         """
         q_ij = torch.special.expit(
-            -self.CONTACT_BETA
+            -CONTACT_BETA
             * (
                 sample_contact_distances
-                - self.CONTACT_LAMBDA * (reference_contact_distances + self.CONTACT_DELTA)
+                - CONTACT_LAMBDA * (reference_contact_distances + CONTACT_DELTA)
             )
         )
 
@@ -235,7 +230,6 @@ class RMSD(CollectiveVariable):
             RMSD values in nm, shape ``(batch,)``.
         """
         device = ca_pos_nm.device
-        batch_size = ca_pos_nm.shape[0]
 
         # Setup / refresh alignment cache
         assert sequence is not None, "RMSD requires a sequence"
@@ -256,23 +250,8 @@ class RMSD(CollectiveVariable):
         ref_centered = ref_aligned - ref_aligned.mean(dim=0, keepdim=True)
         samples_centered = samples_aligned - samples_aligned.mean(dim=1, keepdim=True)
 
-        # Kabsch: covariance matrix H = P^T * Q
-        H = torch.einsum("bni,nj->bij", samples_centered, ref_centered)
-
-        # SVD decomposition
-        U, S, Vh = torch.linalg.svd(H)
-
-        # Optimal rotation (handle reflection)
-        d = torch.det(torch.bmm(Vh.transpose(-2, -1), U.transpose(-2, -1)))
-        sign_matrix = torch.ones(batch_size, 3, device=device)
-        sign_matrix[:, -1] = d.sign()
-        R = torch.bmm(Vh.transpose(-2, -1) * sign_matrix.unsqueeze(-1), U.transpose(-2, -1))
-
-        # Detach R so gradients don't flow through SVD (numerically unstable)
-        R = R.detach()
-
-        # Apply rotation
-        samples_rotated = torch.einsum("bij,bnj->bni", R, samples_centered)
+        # Kabsch alignment: rotate samples onto reference
+        samples_rotated = kabsch_align(samples_centered, ref_centered)
 
         # RMSD over aligned atoms
         diff = samples_rotated - ref_centered.unsqueeze(0)

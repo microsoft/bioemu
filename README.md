@@ -74,7 +74,7 @@ Steering applies potential energy functions during denoising to favor conformati
 Two steering algorithms are available:
 
 - **SMC (Sequential Monte Carlo)**: Simulates multiple *candidate samples* (particles) per desired output sample and resamples between them according to the favorability of the provided potentials. This is the default for physical steering.
-- **FKC (Feynman–Kac Control)**: Applies importance weighting without resampling; useful when targeting a specific collective variable value (e.g., RMSD to a reference).
+- **FKC (Feynman–Kac Control)**: Uses importance weighting and may perform ESS-based resampling between particles; useful when targeting a specific collective variable value (e.g., RMSD to a reference).
 
 Empirically, using three (or up to 10) steering particles per output sample greatly reduces the number of unphysical samples (steric clashes or chain breaks) produced by the model.
 

@@ -270,7 +270,7 @@ class TestFkcSteeringIntegration:
             eps_t=0.01,
             device=torch.device("cpu"),
             fk_potentials=[pot],
-            steering_config={"num_particles": 4, "ess_threshold": 0.5},
+            steering_config={"num_particles": 4, "ess_threshold": 0.5, "start": 1.0, "end": 0.0},
             noise=0.5,
         )
 
@@ -353,7 +353,7 @@ class TestSmcSteeringIntegration:
             device=torch.device("cpu"),
             noise=0.3,
             fk_potentials=[],
-            steering_config={"num_particles": 2, "ess_threshold": 0.5},
+            steering_config={"num_particles": 2, "ess_threshold": 0.5, "start": 1.0, "end": 0.0},
         )
 
         assert result_batch.pos.shape == (n_res * bs, 3)
@@ -383,7 +383,7 @@ class TestSmcSteeringIntegration:
             device=torch.device("cpu"),
             noise=0.5,
             fk_potentials=[pot],
-            steering_config={"num_particles": 4, "ess_threshold": 0.5},
+            steering_config={"num_particles": 4, "ess_threshold": 0.5, "start": 1.0, "end": 0.0},
         )
 
         assert result_batch.pos.shape[1] == 3
@@ -808,7 +808,7 @@ class TestGenerateBatchWithSteering:
             "N": 5,
             "noise": 0.5,
             "fk_potentials": [pot],
-            "steering_config": {"num_particles": 2, "ess_threshold": 0.5},
+            "steering_config": {"num_particles": 2, "ess_threshold": 0.5, "start": 1.0, "end": 0.0},
         }
         denoiser = hydra.utils.instantiate(smc_config)
 

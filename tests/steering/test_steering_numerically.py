@@ -88,9 +88,7 @@ class GMMScoreWrapper(nn.Module):
 
         return {
             "pos": pos_output,
-            "node_orientations": torch.zeros(
-                batch.pos.shape[0], 3, device=batch.pos.device
-            )
+            "node_orientations": torch.zeros(batch.pos.shape[0], 3, device=batch.pos.device)
             + self.dummy * 0,
         }
 
@@ -193,7 +191,7 @@ def test_dpm_fkc():
         eps_t=EPS_T,
         device=torch.device("cpu"),
         fk_potentials=[potential],
-        steering_config={"num_particles": 128, "ess_threshold": 0.5},
+        steering_config={"num_particles": 128, "ess_threshold": 0.5, "start": 1.0, "end": 0.0},
         noise=NOISE_SCALE,
         use_x0_for_reward=False,
     )
@@ -224,7 +222,7 @@ def test_dpm_smc():
         eps_t=EPS_T,
         device=torch.device("cpu"),
         fk_potentials=[potential],
-        steering_config={"num_particles": 128, "ess_threshold": 0.5},
+        steering_config={"num_particles": 128, "ess_threshold": 0.5, "start": 1.0, "end": 0.0},
         noise=NOISE_SCALE,
     )
 

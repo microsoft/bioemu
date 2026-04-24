@@ -77,9 +77,7 @@ class GMMScoreWrapper(nn.Module):
 
         return {
             "pos": pos_output,
-            "node_orientations": torch.zeros(
-                batch.pos.shape[0], 3, device=batch.pos.device
-            )
+            "node_orientations": torch.zeros(batch.pos.shape[0], 3, device=batch.pos.device)
             + self.dummy * 0,
         }
 
@@ -151,10 +149,12 @@ with torch.no_grad():
     gmm_unnorm = torch.exp(log_gmm - log_gmm.max())
     gmm_pdf = gmm_unnorm / (gmm_unnorm.sum() * dx)
 
-assert torch.isclose(biased_pdf.sum() * dx, torch.tensor(1.0), atol=1e-3), \
-    f"Biased PDF does not integrate to 1: {(biased_pdf.sum() * dx).item():.6f}"
-assert torch.isclose(gmm_pdf.sum() * dx, torch.tensor(1.0), atol=1e-3), \
-    f"GMM PDF does not integrate to 1: {(gmm_pdf.sum() * dx).item():.6f}"
+assert torch.isclose(
+    biased_pdf.sum() * dx, torch.tensor(1.0), atol=1e-3
+), f"Biased PDF does not integrate to 1: {(biased_pdf.sum() * dx).item():.6f}"
+assert torch.isclose(
+    gmm_pdf.sum() * dx, torch.tensor(1.0), atol=1e-3
+), f"GMM PDF does not integrate to 1: {(gmm_pdf.sum() * dx).item():.6f}"
 
 # ============================================================
 # 6. Run dpm_solver_fkc and plot
@@ -183,7 +183,7 @@ result_batch, log_weights = dpm_solver_fkc(
     eps_t=0.01,
     device=torch.device("cpu"),
     fk_potentials=[potential],
-    steering_config={"num_particles": 100, "ess_threshold": 0.8},
+    steering_config={"num_particles": 100, "ess_threshold": 0.8, "start": 1.0, "end": 0.0},
     noise=NOISE_SCALE,
     use_x0_for_reward=False,
 )
@@ -203,17 +203,29 @@ print(f"MAE between steered density and ground truth: {mae:.4f}")
 
 # --- Plot ---
 fig, ax = plt.subplots(figsize=(10, 6))
-ax.hist(steered_samples.numpy(), bins=30, density=True, alpha=0.5, color="steelblue",
-        label="FKC Steered Samples")
+ax.hist(
+    steered_samples.numpy(),
+    bins=30,
+    density=True,
+    alpha=0.5,
+    color="steelblue",
+    label="FKC Steered Samples",
+)
 ax.plot(x_grid.numpy(), gmm_pdf.numpy(), "b--", linewidth=2, label="Unbiased GMM")
-ax.plot(x_grid.numpy(), biased_pdf.numpy(), "r-", linewidth=2,
-        label=r"Ground Truth: GMM$(x) \times \exp(-U(x))$")
+ax.plot(
+    x_grid.numpy(),
+    biased_pdf.numpy(),
+    "r-",
+    linewidth=2,
+    label=r"Ground Truth: GMM$(x) \times \exp(-U(x))$",
+)
 
 # Potential on secondary y-axis
 ax2 = ax.twinx()
 U = 0.5 * POTENTIAL_K * (x_grid - POTENTIAL_CENTER) ** 2
-ax2.plot(x_grid.numpy(), U.numpy(), "g-.", linewidth=1.5, alpha=0.7,
-         label=r"$U(x)=\frac{k}{2}(x-c)^2$")
+ax2.plot(
+    x_grid.numpy(), U.numpy(), "g-.", linewidth=1.5, alpha=0.7, label=r"$U(x)=\frac{k}{2}(x-c)^2$"
+)
 ax2.set_ylabel("Potential U(x)", color="green")
 ax2.set_ylim(0, 50)
 ax2.tick_params(axis="y", labelcolor="green")

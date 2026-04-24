@@ -7,78 +7,72 @@ from bioemu.steering.potentials import LinearPotential, UmbrellaPotential
 
 
 class TestUmbrellaPotentialLossFn:
-    """Tests for UmbrellaPotential.loss_fn (static method)."""
+    """Tests for UmbrellaPotential.loss_fn (instance method)."""
 
     def test_at_target_zero(self):
         x = torch.tensor([5.0])
-        loss = UmbrellaPotential.loss_fn(
-            x, target=5.0, flatbottom=0.5, slope=2.0, order=2, linear_from=1.0
-        )
+        pot = UmbrellaPotential(target=5.0, flatbottom=0.5, slope=2.0, order=2, linear_from=1.0)
+        loss = pot.loss_fn(x)
         torch.testing.assert_close(loss, torch.tensor([0.0]))
 
     def test_power_law(self):
         x = torch.tensor([7.0])
-        loss = UmbrellaPotential.loss_fn(
-            x, target=5.0, flatbottom=0.0, slope=2.0, order=2, linear_from=10.0
-        )
+        pot = UmbrellaPotential(target=5.0, flatbottom=0.0, slope=2.0, order=2, linear_from=10.0)
+        loss = pot.loss_fn(x)
         torch.testing.assert_close(loss, torch.tensor([16.0]))
 
     def test_flatbottom_zero_inside(self):
         x = torch.tensor([5.3])
-        loss = UmbrellaPotential.loss_fn(
-            x, target=5.0, flatbottom=0.5, slope=2.0, order=2, linear_from=1.0
-        )
+        pot = UmbrellaPotential(target=5.0, flatbottom=0.5, slope=2.0, order=2, linear_from=1.0)
+        loss = pot.loss_fn(x)
         torch.testing.assert_close(loss, torch.tensor([0.0]))
 
     def test_flatbottom_nonzero_outside(self):
         x = torch.tensor([6.0])
-        loss = UmbrellaPotential.loss_fn(
-            x, target=5.0, flatbottom=0.2, slope=1.0, order=2, linear_from=10.0
-        )
+        pot = UmbrellaPotential(target=5.0, flatbottom=0.2, slope=1.0, order=2, linear_from=10.0)
+        loss = pot.loss_fn(x)
         torch.testing.assert_close(loss, torch.tensor([0.64]))
 
     def test_linear_from_transition(self):
-        loss_at = UmbrellaPotential.loss_fn(
-            torch.tensor([7.0]), target=5.0, flatbottom=0.0, slope=1.0, order=2, linear_from=2.0
-        )
+        pot = UmbrellaPotential(target=5.0, flatbottom=0.0, slope=1.0, order=2, linear_from=2.0)
+        loss_at = pot.loss_fn(torch.tensor([7.0]))
         torch.testing.assert_close(loss_at, torch.tensor([4.0]))
 
-        loss_beyond = UmbrellaPotential.loss_fn(
-            torch.tensor([8.0]), target=5.0, flatbottom=0.0, slope=1.0, order=2, linear_from=2.0
-        )
+        loss_beyond = pot.loss_fn(torch.tensor([8.0]))
         torch.testing.assert_close(loss_beyond, torch.tensor([5.0]))
 
     def test_symmetric(self):
-        loss_above = UmbrellaPotential.loss_fn(
-            torch.tensor([6.0]), target=5.0, flatbottom=0.0, slope=1.0, order=2, linear_from=10.0
-        )
-        loss_below = UmbrellaPotential.loss_fn(
-            torch.tensor([4.0]), target=5.0, flatbottom=0.0, slope=1.0, order=2, linear_from=10.0
-        )
+        pot = UmbrellaPotential(target=5.0, flatbottom=0.0, slope=1.0, order=2, linear_from=10.0)
+        loss_above = pot.loss_fn(torch.tensor([6.0]))
+        loss_below = pot.loss_fn(torch.tensor([4.0]))
         torch.testing.assert_close(loss_above, loss_below)
 
 
 class TestLinearPotentialLossFn:
-    """Tests for LinearPotential.loss_fn (static method)."""
+    """Tests for LinearPotential.loss_fn (instance method)."""
 
     def test_basic(self):
         x = torch.tensor([3.0])
-        result = LinearPotential.loss_fn(x, target=1.0, slope=2.0)
+        pot = LinearPotential(target=1.0, slope=2.0)
+        result = pot.loss_fn(x)
         torch.testing.assert_close(result, torch.tensor([4.0]))
 
     def test_no_clip(self):
         x = torch.tensor([10.0])
-        result = LinearPotential.loss_fn(x, target=0.0, slope=1.0)
+        pot = LinearPotential(target=0.0, slope=1.0)
+        result = pot.loss_fn(x)
         torch.testing.assert_close(result, torch.tensor([10.0]))
 
     def test_clip_max(self):
         x = torch.tensor([10.0])
-        result = LinearPotential.loss_fn(x, target=0.0, slope=1.0, clip_max=5.0)
+        pot = LinearPotential(target=0.0, slope=1.0, clip_max=5.0)
+        result = pot.loss_fn(x)
         torch.testing.assert_close(result, torch.tensor([5.0]))
 
     def test_clip_min(self):
         x = torch.tensor([-10.0])
-        result = LinearPotential.loss_fn(x, target=0.0, slope=1.0, clip_min=-3.0)
+        pot = LinearPotential(target=0.0, slope=1.0, clip_min=-3.0)
+        result = pot.loss_fn(x)
         torch.testing.assert_close(result, torch.tensor([-3.0]))
 
 
@@ -220,7 +214,5 @@ class TestUmbrellaPotentialWithCV:
         Ca_pos = torch.randn(1, 10, 3)
         energy = pot(Ca_pos, t=0.5, sequence="A" * 10)
         cv_val = torch.tensor([3.0])
-        expected = 3.0 * UmbrellaPotential.loss_fn(
-            cv_val, target=1.0, flatbottom=0.0, slope=2.0, order=2, linear_from=10.0
-        )
+        expected = 3.0 * pot.loss_fn(cv_val)
         torch.testing.assert_close(energy, expected, atol=1e-5, rtol=1e-5)

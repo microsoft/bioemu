@@ -17,7 +17,8 @@ fk_potentials:
     clip_max: 0.7
     cv:
       _target_: bioemu.steering.RMSD
-      reference_pdb: null
+      # Path to the reference PDB file; must be provided by the user (override via CLI).
+      reference_pdb: ???
 steering_config:
   num_particles: 100
   ess_threshold: 0.7

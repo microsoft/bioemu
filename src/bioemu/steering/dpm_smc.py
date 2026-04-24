@@ -29,7 +29,7 @@ def dpm_solver_sde_smc_step(
     max_t,
     potentials,
     step_idx,
-    use_x0_for_reward: bool = False,
+    use_x0_for_reward: bool = True,
     previous_reward: torch.Tensor | None = None,
     log_weights: torch.Tensor | None = None,
     steering_config: dict | None = None,
@@ -46,7 +46,10 @@ def dpm_solver_sde_smc_step(
         max_t: Maximum diffusion time.
         potentials: List of potential functions for steering.
         step_idx: Current step index.
-        use_x0_for_reward: Whether to evaluate potentials on x0 estimate (vs x_t).
+        use_x0_for_reward: Whether to evaluate potentials on the x0 estimate
+            (``t=0`` denoised prediction) rather than on x_t. SMC is strictly
+            defined at ``t=0``; set ``use_x0_for_reward=False`` only for debug
+            or toy use cases.
         previous_reward: Reward from the previous step [batch_size], used for TDS weight.
         log_weights: Current log importance weights [batch_size].
         steering_config: Steering configuration dictionary.
@@ -226,8 +229,8 @@ def dpm_solver_smc(
 
         # Check time window for resampling
         current_t = timesteps[i].item()
-        steer_start = steering_config.get("start", 1.0) if steering_config else 1.0
-        steer_end = steering_config.get("end", 0.0) if steering_config else 0.0
+        steer_start = steering_config["start"] if steering_config else 1.0
+        steer_end = steering_config["end"] if steering_config else 0.0
         in_window = steer_start >= current_t >= steer_end
         step_steering = enable_steering and in_window
 
@@ -240,7 +243,7 @@ def dpm_solver_smc(
             max_t=max_t,
             potentials=(fk_potentials or []) if step_steering else [],
             step_idx=i,
-            use_x0_for_reward=False,
+            use_x0_for_reward=True,
             previous_reward=previous_reward if step_steering else None,
             log_weights=log_weights if step_steering else None,
             steering_config=steering_config if step_steering else None,
@@ -261,7 +264,7 @@ def dpm_solver_smc(
             t=t_next,
             score_model=score_model,
             potentials=fk_potentials,
-            use_x0_for_reward=False,
+            use_x0_for_reward=True,
             eval_score=False,
             enable_grad=False,
         )

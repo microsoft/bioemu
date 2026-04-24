@@ -26,6 +26,7 @@ from .utils import (
     compute_reward_and_grad,
     compute_sequence_alignment,
     get_pos0_rot0,
+    kabsch_align,
     resample_based_on_log_weights,
     reward_grad_rotmat_to_rotvec,
     stratified_resample,

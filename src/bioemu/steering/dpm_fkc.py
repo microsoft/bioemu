@@ -364,8 +364,8 @@ def dpm_solver_fkc(
         if enable_steering:
             assert steering_config is not None
             current_t = timesteps[i].item()
-            steer_start = steering_config.get("start", 1.0)
-            steer_end = steering_config.get("end", 0.0)
+            steer_start = steering_config["start"]
+            steer_end = steering_config["end"]
             in_window = steer_start >= current_t >= steer_end
 
             if in_window:

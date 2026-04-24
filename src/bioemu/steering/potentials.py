@@ -21,10 +21,9 @@ class Potential(ABC):
     def __call__(self, ca_pos_nm: torch.Tensor, *, t=None, sequence=None) -> torch.Tensor:
         """Compute potential energy from Cα positions (in nm)."""
 
-    @staticmethod
     @abstractmethod
-    def loss_fn(*args, **kwargs) -> torch.Tensor:
-        """Per-element loss function. Subclasses define the specific signature."""
+    def loss_fn(self, x: torch.Tensor) -> torch.Tensor:
+        """Per-element loss function using instance attributes."""
 
     @abstractmethod
     def energy_from_cv(self, cv_values: torch.Tensor, t: float | None = None) -> torch.Tensor:
@@ -66,30 +65,22 @@ class UmbrellaPotential(Potential):
         self.guidance_steering = guidance_steering
         self.cv = cv
 
-    @staticmethod
-    def loss_fn(
-        x: torch.Tensor,
-        target: float | torch.Tensor,
-        flatbottom: float,
-        slope: float,
-        order: float,
-        linear_from: float,
-    ) -> torch.Tensor:
+    def loss_fn(self, x: torch.Tensor) -> torch.Tensor:
         """Flat-bottom + piecewise-linear umbrella loss.
 
         Returns the per-element loss (same shape as *x*).
         """
-        diff = torch.abs(x - target)
-        diff_tol = torch.relu(diff - flatbottom)
-        power_loss = (slope * diff_tol) ** order
-        linear_loss = (slope * linear_from) ** order + slope * (diff_tol - linear_from)
-        return torch.where(diff_tol <= linear_from, power_loss, linear_loss)
+        diff = torch.abs(x - self.target)
+        diff_tol = torch.relu(diff - self.flatbottom)
+        power_loss = (self.slope * diff_tol) ** self.order
+        linear_loss = (self.slope * self.linear_from) ** self.order + self.slope * (
+            diff_tol - self.linear_from
+        )
+        return torch.where(diff_tol <= self.linear_from, power_loss, linear_loss)
 
     def energy_from_cv(self, cv_values: torch.Tensor, t: float | None = None) -> torch.Tensor:
         """Compute energy from precomputed CV values."""
-        base = self.loss_fn(
-            cv_values, self.target, self.flatbottom, self.slope, self.order, self.linear_from
-        )
+        base = self.loss_fn(cv_values)
         # Sum over all non-batch dims (handles both scalar and per-element CVs)
         if base.ndim > 1:
             base = base.sum(dim=tuple(range(1, base.ndim)))
@@ -126,22 +117,15 @@ class LinearPotential(Potential):
         self.guidance_steering = guidance_steering
         self.cv = cv
 
-    @staticmethod
-    def loss_fn(
-        x: torch.Tensor,
-        target: float | torch.Tensor,
-        slope: float,
-        clip_min: float | None = None,
-        clip_max: float | None = None,
-    ) -> torch.Tensor:
+    def loss_fn(self, x: torch.Tensor) -> torch.Tensor:
         """(Optionally clamped) linear loss. Returns per-element values."""
-        diff = x - target
-        if clip_min is not None or clip_max is not None:
-            diff = torch.clamp(diff, min=clip_min, max=clip_max)
-        return slope * diff
+        diff = x - self.target
+        if self.clip_min is not None or self.clip_max is not None:
+            diff = torch.clamp(diff, min=self.clip_min, max=self.clip_max)
+        return self.slope * diff
 
     def energy_from_cv(self, cv_values: torch.Tensor, t: float | None = None) -> torch.Tensor:
-        base = self.loss_fn(cv_values, self.target, self.slope, self.clip_min, self.clip_max)
+        base = self.loss_fn(cv_values)
         if base.ndim > 1:
             base = base.sum(dim=tuple(range(1, base.ndim)))
         return self.weight * base

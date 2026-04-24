@@ -18,19 +18,25 @@ def validate_steering_config(steering_config: dict | None) -> None:
     """Validate steering config parameters.
 
     Args:
-        steering_config: Steering configuration dict. May contain:
+        steering_config: Steering configuration dict. Must contain (when not None):
             - num_particles: Number of particles (>1 for steering)
             - ess_threshold: ESS threshold for resampling
-            - start: Start time for steering (0.0-1.0), default 1.0
-            - end: End time for steering (0.0-1.0), default 0.0
+            - start: Start time for steering (0.0-1.0)
+            - end: End time for steering (0.0-1.0)
 
     Raises:
-        ValueError: If start/end times are invalid.
+        ValueError: If required keys are missing or start/end times are invalid.
     """
     if steering_config is None:
         return
-    start = steering_config.get("start", 1.0)
-    end = steering_config.get("end", 0.0)
+    for key in ("start", "end", "num_particles", "ess_threshold"):
+        if key not in steering_config:
+            raise ValueError(
+                f"steering_config is missing required key '{key}'. "
+                "All of 'start', 'end', 'num_particles', 'ess_threshold' must be specified."
+            )
+    start = steering_config["start"]
+    end = steering_config["end"]
     if not (0.0 <= end <= start <= 1.0):
         raise ValueError(
             f"Steering time window invalid: need 0.0 <= end ({end}) <= start ({start}) <= 1.0"
@@ -83,6 +89,8 @@ def stratified_resample(weights: torch.Tensor) -> torch.Tensor:
 
     # 1. Compute cumulative sums (CDF) for each batch
     cdf = torch.cumsum(weights, dim=-1)  # (B, N)
+    # Normalize to ensure cdf[..., -1] == 1.0 exactly (guards against FP error)
+    cdf = cdf / cdf[..., -1:].clamp(min=1e-12)
 
     # 2. Stratified positions: one per interval
     # shape (B, N): each row gets N stratified uniforms
@@ -90,6 +98,7 @@ def stratified_resample(weights: torch.Tensor) -> torch.Tensor:
 
     # 3. Inverse-CDF search: for each u, find smallest j s.t. cdf[b, j] >= u[b, i]
     idx = torch.searchsorted(cdf, u, right=True)
+    idx.clamp_(0, N - 1)  # Guard against FP edge case where u > cdf[..., -1]
 
     return idx  # shape (B, N)
 
@@ -152,7 +161,7 @@ def resample_based_on_log_weights(
     ess_threshold: float,
     step: int,
     t: float,
-) -> tuple[ChemGraph, torch.Tensor, float, torch.Tensor]:
+) -> tuple[ChemGraph, torch.Tensor, torch.Tensor, torch.Tensor]:
     """Resample particles based on importance weights.
 
     When batch_size < n_particles (due to memory constraints), the entire batch is
@@ -170,7 +179,9 @@ def resample_based_on_log_weights(
         t: Current diffusion time (for logging).
 
     Returns:
-        Tuple of (resampled_batch, reset_log_weights, resampled_indices, ess).
+        Tuple of (resampled_batch, reset_log_weights, indices, ess) where
+        both ``indices`` (LongTensor of selected particle indices) and
+        ``ess`` (normalized effective sample size, scalar tensor) are tensors.
     """
     # Compute ESS from log_weights for particles in a group
     n_samples = log_weight.shape[0]
@@ -236,6 +247,40 @@ def resample_based_on_log_weights(
 # =============================================================================
 
 
+def kabsch_align(samples_centered: torch.Tensor, ref_centered: torch.Tensor) -> torch.Tensor:
+    """Optimal rigid alignment of ``samples_centered`` onto ``ref_centered`` (Kabsch algorithm).
+
+    Both inputs must already be mean-centred.  Gradients do not flow through the
+    SVD (``R`` is detached) for numerical stability.
+
+    Args:
+        samples_centered: ``(batch, n_atoms, 3)`` — mean-centred sample coordinates.
+        ref_centered: ``(n_atoms, 3)`` — mean-centred reference coordinates.
+
+    Returns:
+        Rotated samples with the same shape as ``samples_centered``.
+    """
+    batch_size = samples_centered.shape[0]
+    device = samples_centered.device
+
+    # Covariance matrix H = P^T * Q
+    H = torch.einsum("bni,nj->bij", samples_centered, ref_centered)
+
+    # SVD decomposition
+    U, _S, Vh = torch.linalg.svd(H)
+
+    # Optimal rotation (handle improper rotation / reflection)
+    d = torch.det(torch.bmm(Vh.transpose(-2, -1), U.transpose(-2, -1)))
+    sign_matrix = torch.ones(batch_size, 3, device=device)
+    sign_matrix[:, -1] = d.sign()
+    R = torch.bmm(Vh.transpose(-2, -1) * sign_matrix.unsqueeze(-1), U.transpose(-2, -1))
+
+    # Detach R so gradients don't flow through SVD (numerically unstable)
+    R = R.detach()
+
+    return torch.einsum("bij,bnj->bni", R, samples_centered)
+
+
 def compute_ess_from_log_weights(
     log_weight: torch.Tensor, n_particles: int
 ) -> tuple[torch.Tensor, torch.Tensor]:
@@ -258,8 +303,17 @@ def reward_grad_rotmat_to_rotvec(R: torch.Tensor, dJ_dR: torch.Tensor) -> torch.
     """
     Map ambient gradient dJ/dR (..,3,3) to a right-trivialized tangent vector (..,3)
     consistent with updates R <- R @ Exp(omega^).
-    The factor of 2.0 is because <a_hat, b_hat>_F = tr(a_hat^T b_hat) = 2 <vee(a), vee(b)>_R3
-    for a, b in so(3) where a_hat is the skew-symmetric matrix representation of vector a.
+
+    The factor of 2.0 arises from the relationship between the Frobenius inner product
+    and the R^3 inner product on so(3).  For skew-symmetric matrices a_hat, b_hat with
+    vee-vectors a, b in R^3, each off-diagonal entry a_k of a_hat appears once as +a_k
+    at position (i,j) and once as -a_k at position (j,i), so:
+
+        <a_hat, b_hat>_F = tr(a_hat^T b_hat) = 2 (a_1 b_1 + a_2 b_2 + a_3 b_3)
+                         = 2 <vee(a_hat), vee(b_hat)>_R3.
+
+    The skew-symmetric projection A = 0.5*(R^T G - G^T R) already introduces a 0.5
+    factor, so multiplying by 2.0 recovers the correct vee-vector gradient.
     """
     RtG = R.transpose(-2, -1) @ dJ_dR  # (...,3,3)
     A = 0.5 * (RtG - RtG.transpose(-2, -1))  # skew(...) in so(3)
@@ -291,7 +345,8 @@ def compute_reward_and_grad(
         t: Diffusion time tensor of shape [batch_size,].
         score_model: Score network.
         potentials: List of FK potentials. Each is called as
-            potential_(coords, t=step_index, N=num_steps, sequence=batch.sequence[0]).
+            ``potential(coords, t=t_var[0], sequence=batch.sequence[0])``
+            where ``coords`` is in nanometres (no factor-of-10 scaling is applied).
         use_x0_for_reward: If True, evaluate potentials on estimated x0; otherwise on x_t.
         enable_grad: Whether to enable gradient computation.
 
@@ -323,7 +378,7 @@ def compute_reward_and_grad(
 
         if use_x0_for_reward or eval_score:
             # Lazy import to avoid circular dependency (denoiser.py imports from steering)
-            from ..denoiser import get_score
+            from bioemu.denoiser import get_score
 
             # Score at (x_t, t)
             score = get_score(batch=batch_for_grad, t=t_var, score_model=score_model, sdes=sdes)
