@@ -10,6 +10,24 @@
                "commitHash": "a1192c8d3a0f3004b1284aaf6437681e6b558c10" 
                }
              }
+          },
+        {
+            "component": {
+             "type": "git",
+             "git": {
+               "repositoryUrl": "https://github.com/sokrypton/ColabFold",
+               "commitHash": "c490e54afe67adffecf6be244cc4cd7d6e5a7523"
+               }
+             }
+          },
+        {
+            "component": {
+             "type": "git",
+             "git": {
+               "repositoryUrl": "https://github.com/google-deepmind/alphafold",
+               "commitHash": "3f31725591b0c6b0b6d63214235d3abe6b81742c"
+               }
+             }
           }
     ]
 }

@@ -1,2 +1,5 @@
 include src/bioemu/config/**/*.yaml
 include src/bioemu/config/**/*.yml
+include src/bioemu/colabfold_inline/LICENSES/COLABFOLD-MIT
+include src/_vendor/alphafold/LICENSE
+include src/_vendor/alphafold/README.md

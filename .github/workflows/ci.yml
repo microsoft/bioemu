@@ -19,43 +19,42 @@ jobs:
       pull-requests: write
     strategy:
       matrix:
-        python-version: ['3.10']
-    defaults:
-      run:
-        shell: bash -l {0}
+        python-version: ['3.10', '3.11', '3.12', '3.13']
     name: Linux py ${{ matrix.python-version }} tests
     steps:
-    - uses: actions/checkout@v2
+    - uses: actions/checkout@v4
+    - name: Install uv
+      uses: astral-sh/setup-uv@v4
+    - name: Set up Python ${{ matrix.python-version }}
+      run: uv python install ${{ matrix.python-version }}
     - uses: actions/setup-dotnet@v4
       with:
         dotnet-version: '8.x'
-    - name: Set environment
+    - name: Install dependencies
       run: |
-        set -e
-        wget -O "${HOME}/mambaforge.sh" "https://github.com/conda-forge/miniforge/releases/latest/download/Miniforge3-$(uname)-$(uname -m).sh"
-        bash "${HOME}/mambaforge.sh" -b -p "${HOME}/conda"
-        source "${HOME}/conda/etc/profile.d/conda.sh"
-        conda create -n bioemu python=${{ matrix.python-version }} uv
-        conda activate bioemu
-        uv pip install -e ".[dev,md]"
+        uv sync --python ${{ matrix.python-version }} --extra dev
+        # openmm (md extra) only supports up to Python 3.12
+        if uv run python -c "import sys; sys.exit(0 if sys.version_info < (3, 13) else 1)"; then
+          uv sync --extra dev --extra md
+        fi
     - name: Check style
-      run: |
-        set -e
-        source "${HOME}/conda/etc/profile.d/conda.sh"
-        conda activate bioemu
-        pre-commit run --all-files
+      run: uv run pre-commit run --all-files
     - name: Run tests
+      env:
+        JAX_PLATFORMS: cpu
       run: |
-        set -e
-        source "${HOME}/conda/etc/profile.d/conda.sh"
-        conda activate bioemu
-        coverage run --source=bioemu -m pytest tests/ --durations=20
-        coverage xml  # produces coverage.xml file
-        coverage html # produces htmlcov directory
+        IGNORE_FLAGS="--ignore=tests/test_colabfold_inline/test_regression.py"
+        # openmm not available on Python 3.13+
+        if ! uv run python -c "import openmm" 2>/dev/null; then
+          IGNORE_FLAGS="$IGNORE_FLAGS --ignore=tests/test_mdrelax.py"
+        fi
+        uv run coverage run --source=bioemu -m pytest tests/ --durations=20 $IGNORE_FLAGS
+        uv run coverage xml
+        uv run coverage html
     - name: Upload code coverage report
       uses: actions/upload-artifact@v4
       with:
-        name: code-coverage-html
+        name: code-coverage-html-py${{ matrix.python-version }}
         path: htmlcov
     - name: Create code coverage markdown report
       run: |
@@ -63,10 +62,10 @@ jobs:
         reportgenerator -reports:coverage.xml -targetdir:coveragereport -reporttypes:'MarkdownSummaryGithub'
     - name: Write to job summary
       run: cat coveragereport/SummaryGithub.md >> $GITHUB_STEP_SUMMARY
-    - name: Add comment to PR # Only applicable if 'MarkdownSummaryGithub' or one of the other Markdown report types is generated
-      if: github.event_name == 'pull_request'
+    - name: Add comment to PR
+      if: github.event_name == 'pull_request' && matrix.python-version == '3.12'
       run: gh pr comment $PR_NUMBER --body-file coveragereport/SummaryGithub.md
       env:
         GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         PR_NUMBER: ${{ github.event.number }}
-      continue-on-error: true # workflow triggered by PRs from external forks cannot comment
+      continue-on-error: true

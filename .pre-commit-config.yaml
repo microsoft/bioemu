@@ -11,12 +11,14 @@ repos:
   - id: black
     name: black
     files: .*\.py
+    exclude: src/_vendor/
     args: [--config=pyproject.toml]
 - repo: https://github.com/pycqa/isort
   rev: 5.12.0
   hooks:
   - id: isort
     name: isort
+    exclude: src/_vendor/
     args: [--settings=pyproject.toml, --config-root=., --resolve-all-configs]
 - repo: https://github.com/pre-commit/mirrors-mypy
   rev: v1.1.1
@@ -41,11 +43,13 @@ repos:
     - --no-namespace-packages
     - --enable-incomplete-feature=Unpack
     - --python-version=3.10
+    - --exclude=_vendor
     entry: mypy
-    exclude: src/bioemu/openfold/
+    exclude: src/_vendor/
 - repo: https://github.com/charliermarsh/ruff-pre-commit
   rev: v0.7.0
   hooks:
   - id: ruff
     args: [--fix]
+    exclude: src/_vendor/
     files: .*\.py
