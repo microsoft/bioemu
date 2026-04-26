@@ -138,3 +138,26 @@ class TestUmbrellaPotentialWithCV:
         cv_val = torch.tensor([3.0])
         expected = 3.0 * pot.loss_fn(cv_val)
         torch.testing.assert_close(energy, expected, atol=1e-5, rtol=1e-5)
+
+
+class TestPotentialForwardBackward:
+    """Test that potentials support autograd (gradient-based steering)."""
+
+    def test_umbrella_with_caca_cv_gradients(self):
+        pot = UmbrellaPotential(cv=CaCaDistance(), target=0.38, slope=10.0, weight=1.0)
+        ca_pos = torch.randn(2, 10, 3, requires_grad=True)
+        energy = pot(ca_pos)
+        energy.sum().backward()
+        assert ca_pos.grad is not None
+        assert ca_pos.grad.shape == ca_pos.shape
+        assert ca_pos.grad.abs().max() > 1e-6, "Gradients should be non-trivial"
+
+    def test_umbrella_with_pairwise_clash_cv_gradients(self):
+        pot = UmbrellaPotential(
+            cv=PairwiseClash(min_dist=0.4, offset=3), target=0.0, slope=10.0, weight=1.0
+        )
+        # Use positions at origin so clashes exist and gradients are non-trivial
+        ca_pos = torch.zeros(2, 10, 3, requires_grad=True)
+        energy = pot(ca_pos)
+        energy.sum().backward()
+        assert ca_pos.grad is not None
