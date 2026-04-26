@@ -4,22 +4,28 @@ These tests verify that the SMC denoiser loop runs correctly with and without
 steering potentials, without requiring model weights or GPU.
 """
 
+import os
 from contextlib import contextmanager
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
+import hydra
+import numpy as np
 import pytest
 import torch
+import yaml
 from torch_geometric.data import Batch, Data
 
 from bioemu.chemgraph import ChemGraph
 from bioemu.denoiser import dpm_solver
+from bioemu.sample import generate_batch
 from bioemu.sde_lib import CosineVPSDE
 from bioemu.so3_sde import DiGSO3SDE
 from bioemu.steering.collective_variables import CaCaDistance
 from bioemu.steering.dpm_smc import dpm_solver_smc
 from bioemu.steering.potentials import UmbrellaPotential
 from bioemu.steering.utils import resample_based_on_log_weights
+from tests.test_embeds import TEST_SEQ, _make_mock_run_model
 
 STEERING_CONFIG_DIR = Path(__file__).parent.parent.parent / "src" / "bioemu" / "config" / "steering"
 
@@ -30,10 +36,6 @@ BATCH_SIZE = 4
 @contextmanager
 def _mock_colabfold_embeds(seq: str):
     """Patch the colabfold_inline stack so get_colabfold_embeds returns mocked arrays."""
-    import numpy as np
-
-    from tests.test_embeds import _make_mock_run_model
-
     L = len(seq)
     with (
         patch(
@@ -151,7 +153,7 @@ class TestSmcDpmEquivalence:
     """Verify SMC and DPM solvers produce comparable results."""
 
     def test_unsteered_smc_matches_dpm_solver(self, sdes, batch, score_model):
-        """Unsteered SMC and DPM solver both produce finite output of the same shape."""
+        """With noise=0 (deterministic), unsteered SMC and DPM solver should match."""
         N = 5
         device = torch.device("cpu")
 
@@ -164,7 +166,7 @@ class TestSmcDpmEquivalence:
             max_t=0.99,
             eps_t=0.01,
             device=device,
-            noise=0.3,
+            noise=0.0,
             fk_potentials=[],
             steering_config={"num_particles": BATCH_SIZE, "ess_threshold": 0.5, "start": 1.0, "end": 0.0},
         )
@@ -178,40 +180,56 @@ class TestSmcDpmEquivalence:
             max_t=0.99,
             eps_t=0.01,
             device=device,
-            noise=0.3,
+            noise=0.0,
         )
 
-        # Both produce finite output
-        assert torch.isfinite(smc_result.pos).all()
-        assert torch.isfinite(dpm_result.pos).all()
-        # Same shape
-        assert smc_result.pos.shape == dpm_result.pos.shape
-        # Results are in the same ballpark (different formulas: SMC uses DPM-Solver++
-        # with 0.5*score scaling, while dpm_solver uses original DPM-Solver with 1.0*score)
-        rel_diff = (smc_result.pos - dpm_result.pos).norm() / dpm_result.pos.norm()
-        assert rel_diff < 0.5, f"Relative difference too large: {rel_diff:.3f}"
+        # With noise=0 both are deterministic second-order solvers for the same PF-ODE
+        torch.testing.assert_close(smc_result.pos, dpm_result.pos, atol=1e-4, rtol=1e-4)
 
-    def test_steered_smc_with_ess_threshold_zero(self, sdes, batch, score_model):
-        """SMC with ess_threshold=0 (never resample mid-loop) produces finite output."""
+    def test_steered_ess_zero_matches_unsteered(self, sdes, batch, score_model):
+        """With ess_threshold=0, no mid-loop resampling occurs so each steered
+        particle trajectory is identical to the unsteered one.  Final resampling
+        may duplicate/drop particles, so we check set-level matching."""
         pot = UmbrellaPotential(cv=CaCaDistance(), target=0.38, slope=10.0, weight=1.0)
 
         torch.manual_seed(42)
-        result_batch, log_weights = dpm_solver_smc(
+        unsteered, _ = dpm_solver_smc(
             sdes=sdes,
-            batch=batch,
+            batch=batch.clone(),
             N=5,
             score_model=score_model,
             max_t=0.99,
             eps_t=0.01,
             device=torch.device("cpu"),
-            noise=0.5,
+            noise=0.3,
+            fk_potentials=[],
+            steering_config={"num_particles": BATCH_SIZE, "ess_threshold": 0.5, "start": 1.0, "end": 0.0},
+        )
+
+        torch.manual_seed(42)
+        steered, _ = dpm_solver_smc(
+            sdes=sdes,
+            batch=batch.clone(),
+            N=5,
+            score_model=score_model,
+            max_t=0.99,
+            eps_t=0.01,
+            device=torch.device("cpu"),
+            noise=0.3,
             fk_potentials=[pot],
             steering_config={"num_particles": BATCH_SIZE, "ess_threshold": 0.0, "start": 1.0, "end": 0.0},
         )
 
-        assert torch.isfinite(result_batch.pos).all()
-        assert result_batch.pos.shape == (N_RES * BATCH_SIZE, 3)
-        assert log_weights.shape == (BATCH_SIZE,)
+        # Each steered particle should exactly match an unsteered particle
+        # (final resampling only permutes/duplicates from the same set)
+        un_pos = unsteered.pos.view(BATCH_SIZE, N_RES, 3)
+        st_pos = steered.pos.view(BATCH_SIZE, N_RES, 3)
+        for i in range(BATCH_SIZE):
+            diffs = [(st_pos[i] - un_pos[j]).abs().max().item() for j in range(BATCH_SIZE)]
+            best_match = min(diffs)
+            assert best_match < 1e-5, (
+                f"Steered particle {i} doesn't match any unsteered particle (min diff={best_match:.2e})"
+            )
 
 
 class TestResampleCorrectness:
@@ -270,12 +288,6 @@ class TestGenerateBatchWithSteering:
 
     def test_generate_batch_with_smc_denoiser(self):
         """generate_batch with dpm_solver_smc denoiser produces valid output."""
-        import hydra
-
-        from bioemu.sample import generate_batch
-        from bioemu.shortcuts import CosineVPSDE, DiGSO3SDE
-        from tests.test_embeds import TEST_SEQ
-
         sdes = {"node_orientations": DiGSO3SDE(), "pos": CosineVPSDE()}
 
         # Build SMC denoiser config as a dict (instead of YAML)
@@ -309,15 +321,6 @@ class TestGenerateBatchWithSteering:
 
     def test_generate_batch_unsteered_dpm(self):
         """generate_batch with standard dpm denoiser (no steering) still works."""
-        import os
-
-        import hydra
-        import yaml
-
-        from bioemu.sample import generate_batch
-        from bioemu.shortcuts import CosineVPSDE, DiGSO3SDE
-        from tests.test_embeds import TEST_SEQ
-
         sdes = {"node_orientations": DiGSO3SDE(), "pos": CosineVPSDE()}
 
         config_path = os.path.join(
