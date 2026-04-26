@@ -1,18 +1,32 @@
-num_particles: 5
-start: 0.1
-end: 0.0
-resampling_interval: 5
-potentials:
-  chainbreak:
-    _target_: bioemu.steering.ChainBreakPotential
-    flatbottom: 1.
-    slope: 1.
+# Physical steering: chain break + chain clash potentials
+# Self-contained denoiser config — pass as denoiser_config to sample().
+_target_: bioemu.steering.dpm_smc.dpm_solver_smc
+_partial_: true
+eps_t: 0.001
+max_t: 0.99
+N: 100
+noise: 0.5
+fk_potentials:
+  - _target_: bioemu.steering.UmbrellaPotential
+    cv:
+      _target_: bioemu.steering.CaCaDistance
+    target: 0.38
+    flatbottom: 0.1
+    slope: 10.0
     order: 1
-    linear_from: 1.
+    linear_from: 0.1
     weight: 1.0
-  chainclash:
-    _target_: bioemu.steering.ChainClashPotential
-    flatbottom: 0.
-    dist: 4.1
-    slope: 3.
+  - _target_: bioemu.steering.UmbrellaPotential
+    cv:
+      _target_: bioemu.steering.PairwiseClash
+      min_dist: 0.41
+      offset: 3
+    target: 0.0
+    flatbottom: 0.0
+    slope: 30.0
     weight: 1.0
+steering_config:
+  num_particles: 5
+  ess_threshold: 0.5
+  start: 0.1
+  end: 0.0

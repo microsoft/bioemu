@@ -75,12 +75,15 @@ This code only supports sampling structures of monomers. You can try to sample m
 
 ## Steering to avoid chain breaks and clashes
 
-BioEmu includes a [steering system](https://arxiv.org/abs/2501.06848) that uses [Sequential Monte Carlo (SMC)](https://www.stats.ox.ac.uk/~doucet/doucet_defreitas_gordon_smcbookintro.pdf) to guide the diffusion process toward more physically plausible protein structures.
+BioEmu includes a [steering system](https://arxiv.org/abs/2501.06848) that guides the diffusion process toward more physically plausible protein structures.
+Steering applies potential energy functions during denoising to favor conformations that satisfy physical constraints.
+It uses **SMC (Sequential Monte Carlo)** sampling, which simulates multiple *candidate samples* (particles) per desired output sample and resamples between them according to the favorability of the provided potentials.
+
 Empirically, using three (or up to 10) steering particles per output sample greatly reduces the number of unphysical samples (steric clashes or chain breaks) produced by the model.
-Steering applies potential energy functions during denoising to favor conformations that satisfy physical constraints. 
-Algorithmically, steering simulates multiple *candidate samples* per desired output sample and resamples between these particles according to the favorability of the provided potentials. 
 
 ### Quick start with steering
+
+Steering is configured via a single YAML file passed as `denoiser_config`. This file specifies the denoiser, potentials, and steering parameters together.
 
 Enable steering with physical constraints using the CLI:
 
@@ -89,8 +92,7 @@ python -m bioemu.sample \
     --sequence GYDPETGTWG \
     --num_samples 100 \
     --output_dir ~/steered-samples \
-    --steering_config src/bioemu/config/steering/physical_steering.yaml \
-    --denoiser_config src/bioemu/config/denoiser/stochastic_dpm.yaml
+    --denoiser_config src/bioemu/config/steering/physical_steering.yaml
 ```
 
 Or using the Python API:
@@ -102,26 +104,25 @@ sample(
     sequence='GYDPETGTWG',
     num_samples=100,
     output_dir='~/steered-samples',
-    denoiser_config="../src/bioemu/config/denoiser/stochastic_dpm.yaml",  # Use stochastic DPM
-    steering_config="../src/bioemu/config/steering/physicality_steering.yaml",  # Use physicality steering
+    denoiser_config="src/bioemu/config/steering/physical_steering.yaml",
 )
 ```
 
 ### Key steering parameters
 
-- `num_steering_particles`: Number of particles per sample (1 = no steering, >1 enables steering)
-- `steering_start_time`: When to start steering (0.0-1.0, default: 0.1) with reverse sampling 1 -> 0
-- `steering_end_time`: When to stop steering (0.0-1.0, default: 0.) with reverse sampling 1 -> 0
-- `resampling_interval`: How often to resample particles (default: 1)
-- `steering_config`: Path to potentials configuration file (required for steering)
+Inside the steering YAML config (e.g., [`physical_steering.yaml`](./src/bioemu/config/steering/physical_steering.yaml)):
+
+- `num_particles`: Number of particles per sample (higher = stronger steering, more compute)
+- `ess_threshold`: Effective sample size threshold for resampling (0.0–1.0)
+- `start`: Diffusion time to start steering (0.0–1.0, default: 0.1; reverse process goes 1→0)
+- `end`: Diffusion time to stop steering (0.0–1.0, default: 0.0)
+- `fk_potentials`: List of potential energy functions to apply (Hydra-instantiated)
 
 ### Available potentials
 
 The [`physical_steering.yaml`](./src/bioemu/config/steering/physical_steering.yaml) configuration provides potentials for physical realism:
-- **ChainBreak**: Prevents backbone discontinuities
-- **ChainClash**: Avoids steric clashes between non-neighboring residues
-
-You can create a custom `steering_config.yaml` YAML file instantiating your own potential to steer the system with your own potentials.
+- **CaCaDistance** + **UmbrellaPotential**: Prevents backbone discontinuities by penalizing large Cα–Cα distances
+- **PairwiseClash** + **UmbrellaPotential**: Avoids steric clashes between non-neighboring residues
 
 ## Azure AI Foundry
 BioEmu is also available on [Azure AI Foundry](https://ai.azure.com/). See [How to run BioEmu on Azure AI Foundry](AZURE_AI_FOUNDRY.md) for more details.
