@@ -1,5 +1,6 @@
 """Tests for bioemu.steering.potentials — potential energy functions."""
 
+import pytest
 import torch
 
 from bioemu.steering.collective_variables import CaCaDistance, PairwiseClash
@@ -9,29 +10,22 @@ from bioemu.steering.potentials import UmbrellaPotential
 class TestUmbrellaPotentialLossFn:
     """Tests for UmbrellaPotential.loss_fn (instance method)."""
 
-    def test_at_target_zero(self):
-        x = torch.tensor([5.0])
-        pot = UmbrellaPotential(target=5.0, flatbottom=0.5, slope=2.0, order=2, linear_from=1.0)
-        loss = pot.loss_fn(x)
-        torch.testing.assert_close(loss, torch.tensor([0.0]))
-
-    def test_power_law(self):
-        x = torch.tensor([7.0])
-        pot = UmbrellaPotential(target=5.0, flatbottom=0.0, slope=2.0, order=2, linear_from=10.0)
-        loss = pot.loss_fn(x)
-        torch.testing.assert_close(loss, torch.tensor([16.0]))
-
-    def test_flatbottom_zero_inside(self):
-        x = torch.tensor([5.3])
-        pot = UmbrellaPotential(target=5.0, flatbottom=0.5, slope=2.0, order=2, linear_from=1.0)
-        loss = pot.loss_fn(x)
-        torch.testing.assert_close(loss, torch.tensor([0.0]))
-
-    def test_flatbottom_nonzero_outside(self):
-        x = torch.tensor([6.0])
-        pot = UmbrellaPotential(target=5.0, flatbottom=0.2, slope=1.0, order=2, linear_from=10.0)
-        loss = pot.loss_fn(x)
-        torch.testing.assert_close(loss, torch.tensor([0.64]))
+    @pytest.mark.parametrize(
+        "x, target, flatbottom, slope, order, linear_from, expected",
+        [
+            (5.0, 5.0, 0.5, 2.0, 2, 1.0, 0.0),       # at target
+            (7.0, 5.0, 0.0, 2.0, 2, 10.0, 16.0),      # power law: slope*(7-5)^2 = 2*4
+            (5.3, 5.0, 0.5, 2.0, 2, 1.0, 0.0),        # inside flatbottom
+            (6.0, 5.0, 0.2, 1.0, 2, 10.0, 0.64),      # outside flatbottom
+        ],
+        ids=["at_target", "power_law", "flatbottom_inside", "flatbottom_outside"],
+    )
+    def test_loss_value(self, x, target, flatbottom, slope, order, linear_from, expected):
+        pot = UmbrellaPotential(
+            target=target, flatbottom=flatbottom, slope=slope, order=order, linear_from=linear_from
+        )
+        loss = pot.loss_fn(torch.tensor([x]))
+        torch.testing.assert_close(loss, torch.tensor([expected]))
 
     def test_linear_from_transition(self):
         pot = UmbrellaPotential(target=5.0, flatbottom=0.0, slope=1.0, order=2, linear_from=2.0)
@@ -68,7 +62,7 @@ class TestChainBreakAsUmbrella:
             Ca_pos[:, i, 0] = i * ca_ca_dist
         energy = pot(Ca_pos)
         assert energy.shape == (2,)
-        torch.testing.assert_close(energy, torch.zeros(2), atol=1e-4, rtol=1e-4)
+        torch.testing.assert_close(energy, torch.zeros(2), atol=1e-6, rtol=1e-6)
 
     def test_large_spacing_high_energy(self):
         pot = self._make_pot()
@@ -86,7 +80,7 @@ class TestChainBreakAsUmbrella:
         for i in range(n):
             Ca_pos[0, i, 0] = i * (ca_ca_dist + 0.03)
         energy = pot(Ca_pos)
-        torch.testing.assert_close(energy, torch.zeros(1), atol=1e-4, rtol=1e-4)
+        torch.testing.assert_close(energy, torch.zeros(1), atol=1e-6, rtol=1e-6)
 
 
 class TestChainClashAsUmbrella:

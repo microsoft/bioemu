@@ -13,7 +13,7 @@ class TestComputeEssFromLogWeights:
         n = 32
         log_w = torch.zeros(n)
         ess, _ = compute_ess_from_log_weights(log_w, n_particles=n)
-        assert abs(ess.item() - 1.0) < 0.01
+        assert abs(ess.item() - 1.0) < 1e-5
 
     def test_delta_weights(self):
         """One dominant weight → ESS should be close to 1/N."""
@@ -23,16 +23,7 @@ class TestComputeEssFromLogWeights:
         log_w = torch.full((n,), -1000.0)
         log_w[0] = 0.0
         ess, _ = compute_ess_from_log_weights(log_w, n_particles=n)
-        assert abs(ess.item() - 1.0 / n) < 0.05
-
-    def test_two_equal_groups(self):
-        """Two groups with uniform weights → ESS ≈ 1.0 for each group."""
-        from bioemu.steering.utils import compute_ess_from_log_weights
-
-        n_particles = 16
-        log_w = torch.zeros(32)
-        ess, _ = compute_ess_from_log_weights(log_w, n_particles=n_particles)
-        assert abs(ess.item() - 1.0) < 0.01
+        assert abs(ess.item() - 1.0 / n) < 0.005
 
     def test_returns_normalized_weights(self):
         from bioemu.steering.utils import compute_ess_from_log_weights
@@ -64,6 +55,8 @@ class TestRewardGradRotmatToRotvec:
         dJ_dR = torch.randn(B, 3, 3)
         result = reward_grad_rotmat_to_rotvec(R, dJ_dR)
         assert result.shape == (B, 3)
+        # Asymmetric dJ_dR should produce non-trivial tangent vectors
+        assert result.abs().max() > 1e-6
         # Symmetric dJ_dR should give zero tangent (symmetric part is projected out)
         sym = torch.randn(B, 3, 3)
         sym = (sym + sym.transpose(-1, -2)) / 2

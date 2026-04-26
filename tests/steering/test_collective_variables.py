@@ -34,6 +34,7 @@ class TestCaCaDistance:
         result.sum().backward()
         assert ca_pos.grad is not None
         assert ca_pos.grad.shape == ca_pos.shape
+        assert ca_pos.grad.abs().max() > 1e-6, "Gradients should be non-trivial"
 
 
 class TestPairwiseClash:

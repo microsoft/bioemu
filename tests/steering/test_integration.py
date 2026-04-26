@@ -74,6 +74,7 @@ class TestPotentialForwardBackward:
         energy.sum().backward()
         assert ca_pos.grad is not None
         assert ca_pos.grad.shape == ca_pos.shape
+        assert ca_pos.grad.abs().max() > 1e-6, "Gradients should be non-trivial"
 
     def test_umbrella_with_pairwise_clash_cv_gradients(self):
         from bioemu.steering.collective_variables import PairwiseClash
@@ -82,7 +83,8 @@ class TestPotentialForwardBackward:
         pot = UmbrellaPotential(
             cv=PairwiseClash(min_dist=0.4, offset=3), target=0.0, slope=10.0, weight=1.0
         )
-        ca_pos = torch.randn(2, 10, 3, requires_grad=True)
+        # Use positions at origin so clashes exist and gradients are non-trivial
+        ca_pos = torch.zeros(2, 10, 3, requires_grad=True)
         energy = pot(ca_pos)
         energy.sum().backward()
         assert ca_pos.grad is not None
@@ -166,7 +168,8 @@ class TestSmcSteeringIntegration:
 
         assert result_batch.pos.shape == (n_res * bs, 3)
         assert torch.isfinite(result_batch.pos).all()
-        assert torch.allclose(log_weights, torch.zeros_like(log_weights))
+        # With no potentials, log weights should be exactly zero
+        torch.testing.assert_close(log_weights, torch.zeros_like(log_weights))
 
     def test_smc_loop_steered(self):
         """SMC loop with potentials should produce finite output with non-zero log weights."""
@@ -196,6 +199,8 @@ class TestSmcSteeringIntegration:
 
         assert result_batch.pos.shape[1] == 3
         assert torch.isfinite(result_batch.pos).all()
+        # After final-step resampling, log_weights are reset to zero — verify shape
+        assert log_weights.shape == (bs,)
 
 
 class TestResampleCorrectness:

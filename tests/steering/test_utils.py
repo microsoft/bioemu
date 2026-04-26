@@ -17,7 +17,7 @@ class TestStratifiedResample:
         idx = stratified_resample(weights)
         assert idx.shape == (B, N)
         unique = idx[0].unique()
-        assert unique.numel() >= N - 5
+        assert unique.numel() >= N - 2
 
     def test_delta_distribution(self):
         """All weight on particle k → all indices should be k."""
