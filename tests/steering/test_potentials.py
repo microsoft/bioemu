@@ -13,10 +13,10 @@ class TestUmbrellaPotentialLossFn:
     @pytest.mark.parametrize(
         "x, target, flatbottom, slope, order, linear_from, expected",
         [
-            (5.0, 5.0, 0.5, 2.0, 2, 1.0, 0.0),       # at target
-            (7.0, 5.0, 0.0, 2.0, 2, 10.0, 16.0),      # power law: slope*(7-5)^2 = 2*4
-            (5.3, 5.0, 0.5, 2.0, 2, 1.0, 0.0),        # inside flatbottom
-            (6.0, 5.0, 0.2, 1.0, 2, 10.0, 0.64),      # outside flatbottom
+            (5.0, 5.0, 0.5, 2.0, 2, 1.0, 0.0),  # at target
+            (7.0, 5.0, 0.0, 2.0, 2, 10.0, 16.0),  # power law: slope*(7-5)^2 = 2*4
+            (5.3, 5.0, 0.5, 2.0, 2, 1.0, 0.0),  # inside flatbottom
+            (6.0, 5.0, 0.2, 1.0, 2, 10.0, 0.64),  # outside flatbottom
         ],
         ids=["at_target", "power_law", "flatbottom_inside", "flatbottom_outside"],
     )

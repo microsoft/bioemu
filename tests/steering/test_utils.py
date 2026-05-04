@@ -58,30 +58,48 @@ class TestResampleBasedOnLogWeights:
         "n, log_w_fn, is_last, ess_threshold, n_particles_override, check",
         [
             pytest.param(
-                16, lambda n: torch.zeros(n), False, 0.5, None,
+                16,
+                lambda n: torch.zeros(n),
+                False,
+                0.5,
+                None,
                 lambda ess, lw, idx, n: ess > 0.9 and torch.equal(idx, torch.arange(n)),
                 id="equal_weights_no_resample",
             ),
             pytest.param(
                 16,
-                lambda n: torch.where(torch.arange(n) == 3, torch.tensor(0.0), torch.tensor(-100.0)),
-                False, 0.5, None,
+                lambda n: torch.where(
+                    torch.arange(n) == 3, torch.tensor(0.0), torch.tensor(-100.0)
+                ),
+                False,
+                0.5,
+                None,
                 lambda ess, lw, idx, n: ess < 0.2 and torch.allclose(lw, torch.zeros(n)),
                 id="dominant_weight_resamples",
             ),
             pytest.param(
-                8, lambda n: torch.zeros(n), True, 0.5, None,
+                8,
+                lambda n: torch.zeros(n),
+                True,
+                0.5,
+                None,
                 lambda ess, lw, idx, n: torch.allclose(lw, torch.zeros(n)),
                 id="last_step_always_resamples",
             ),
             pytest.param(
-                4, lambda n: torch.zeros(n), False, 0.5, 100,
+                4,
+                lambda n: torch.zeros(n),
+                False,
+                0.5,
+                100,
                 lambda ess, lw, idx, n: ess > 0.9,
                 id="small_batch_single_group",
             ),
         ],
     )
-    def test_resample_scenarios(self, make_batch, n, log_w_fn, is_last, ess_threshold, n_particles_override, check):
+    def test_resample_scenarios(
+        self, make_batch, n, log_w_fn, is_last, ess_threshold, n_particles_override, check
+    ):
         batch = make_batch(n)
         log_w = log_w_fn(n)
         _, new_lw, indices, ess = resample_based_on_log_weights(

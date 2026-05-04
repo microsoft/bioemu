@@ -90,6 +90,3 @@ class UmbrellaPotential(Potential):
         assert self.cv is not None, "UmbrellaPotential requires a cv to be set."
         cv_values = self.cv.compute_batch(ca_pos_nm, sequence)
         return self.energy_from_cv(cv_values, t=t)
-
-
-

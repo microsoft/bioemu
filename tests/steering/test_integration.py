@@ -117,7 +117,12 @@ class TestSmcSteeringIntegration:
             device=torch.device("cpu"),
             noise=0.3,
             fk_potentials=[],
-            steering_config={"num_particles": BATCH_SIZE, "ess_threshold": 0.5, "start": 1.0, "end": 0.0},
+            steering_config={
+                "num_particles": BATCH_SIZE,
+                "ess_threshold": 0.5,
+                "start": 1.0,
+                "end": 0.0,
+            },
         )
 
         assert result_batch.pos.shape == (N_RES * BATCH_SIZE, 3)
@@ -168,7 +173,12 @@ class TestSmcDpmEquivalence:
             device=device,
             noise=0.0,
             fk_potentials=[],
-            steering_config={"num_particles": BATCH_SIZE, "ess_threshold": 0.5, "start": 1.0, "end": 0.0},
+            steering_config={
+                "num_particles": BATCH_SIZE,
+                "ess_threshold": 0.5,
+                "start": 1.0,
+                "end": 0.0,
+            },
         )
 
         torch.manual_seed(42)
@@ -203,7 +213,12 @@ class TestSmcDpmEquivalence:
             device=torch.device("cpu"),
             noise=0.3,
             fk_potentials=[],
-            steering_config={"num_particles": BATCH_SIZE, "ess_threshold": 0.5, "start": 1.0, "end": 0.0},
+            steering_config={
+                "num_particles": BATCH_SIZE,
+                "ess_threshold": 0.5,
+                "start": 1.0,
+                "end": 0.0,
+            },
         )
 
         torch.manual_seed(42)
@@ -217,7 +232,12 @@ class TestSmcDpmEquivalence:
             device=torch.device("cpu"),
             noise=0.3,
             fk_potentials=[pot],
-            steering_config={"num_particles": BATCH_SIZE, "ess_threshold": 0.0, "start": 1.0, "end": 0.0},
+            steering_config={
+                "num_particles": BATCH_SIZE,
+                "ess_threshold": 0.0,
+                "start": 1.0,
+                "end": 0.0,
+            },
         )
 
         # Each steered particle should exactly match an unsteered particle
@@ -227,9 +247,9 @@ class TestSmcDpmEquivalence:
         for i in range(BATCH_SIZE):
             diffs = [(st_pos[i] - un_pos[j]).abs().max().item() for j in range(BATCH_SIZE)]
             best_match = min(diffs)
-            assert best_match < 1e-5, (
-                f"Steered particle {i} doesn't match any unsteered particle (min diff={best_match:.2e})"
-            )
+            assert (
+                best_match < 1e-5
+            ), f"Steered particle {i} doesn't match any unsteered particle (min diff={best_match:.2e})"
 
 
 class TestResampleCorrectness:
