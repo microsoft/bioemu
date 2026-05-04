@@ -45,42 +45,28 @@ def test_steering_with_config_path(chignolin_sequence, base_test_config, tmp_pat
     )
 
 
-def test_steering_with_config_dict(chignolin_sequence, base_test_config, tmp_path):
-    """Test steering by passing the config as a dict."""
-    sample(
-        sequence=chignolin_sequence,
-        num_samples=base_test_config["num_samples"],
-        batch_size_100=base_test_config["batch_size_100"],
-        output_dir=str(tmp_path / "config_dict"),
-        denoiser_config=load_steering_config(),
-    )
-
-
-def test_steering_modified_num_particles(chignolin_sequence, base_test_config, tmp_path):
-    """Test steering with modified number of particles."""
+@pytest.mark.parametrize(
+    "config_overrides, test_id",
+    [
+        ({}, "default_config"),
+        ({"steering_config": {"num_particles": 5}}, "modified_particles"),
+        ({"steering_config": {"start": 0.7, "end": 0.3}}, "modified_time_window"),
+    ],
+    ids=["default_config", "modified_particles", "modified_time_window"],
+)
+def test_steering_with_config_dict(
+    chignolin_sequence, base_test_config, tmp_path, config_overrides, test_id
+):
+    """Test steering by passing the config as a dict, with optional overrides."""
     config = load_steering_config()
-    config["steering_config"]["num_particles"] = 5
+    for section, overrides in config_overrides.items():
+        config.setdefault(section, {}).update(overrides)
 
     sample(
         sequence=chignolin_sequence,
         num_samples=base_test_config["num_samples"],
         batch_size_100=base_test_config["batch_size_100"],
-        output_dir=str(tmp_path / "modified_particles"),
-        denoiser_config=config,
-    )
-
-
-def test_steering_modified_time_window(chignolin_sequence, base_test_config, tmp_path):
-    """Test steering with modified start/end time window."""
-    config = load_steering_config()
-    config["steering_config"]["start"] = 0.7
-    config["steering_config"]["end"] = 0.3
-
-    sample(
-        sequence=chignolin_sequence,
-        num_samples=base_test_config["num_samples"],
-        batch_size_100=base_test_config["batch_size_100"],
-        output_dir=str(tmp_path / "modified_time"),
+        output_dir=str(tmp_path / test_id),
         denoiser_config=config,
     )
 

@@ -7,7 +7,6 @@ import torch
 from torch_geometric.data import Batch
 from torch_geometric.data.batch import Batch as BatchType
 
-from ..chemgraph import ChemGraph
 from ..sde_lib import SDE
 from ..so3_sde import SO3SDE, apply_rotvec_to_rotmat, skew_matrix_to_vector
 
@@ -35,8 +34,17 @@ def validate_steering_config(steering_config: dict | None) -> None:
                 f"steering_config is missing required key '{key}'. "
                 "All of 'start', 'end', 'num_particles', 'ess_threshold' must be specified."
             )
+    # Validate value types and ranges
+    num_particles = steering_config["num_particles"]
+    if not isinstance(num_particles, int) or num_particles < 1:
+        raise ValueError(f"num_particles must be an integer >= 1, got {num_particles!r}")
+    ess_threshold = steering_config["ess_threshold"]
+    if not isinstance(ess_threshold, (int, float)) or not (0.0 <= ess_threshold <= 1.0):
+        raise ValueError(f"ess_threshold must be a float in [0.0, 1.0], got {ess_threshold!r}")
     start = steering_config["start"]
     end = steering_config["end"]
+    if not isinstance(start, (int, float)) or not isinstance(end, (int, float)):
+        raise ValueError(f"start and end must be floats, got start={start!r}, end={end!r}")
     if not (0.0 <= end <= start <= 1.0):
         raise ValueError(
             f"Steering time window invalid: need 0.0 <= end ({end}) <= start ({start}) <= 1.0"
@@ -125,14 +133,14 @@ def get_pos0_rot0(sdes, batch, t, score):
 
 
 def resample_based_on_log_weights(
-    batch: ChemGraph,
+    batch: BatchType,
     log_weight: torch.Tensor,
     n_particles: int,
     is_last_step: bool,
     ess_threshold: float,
     step: int,
     t: float,
-) -> tuple[ChemGraph, torch.Tensor, torch.Tensor, torch.Tensor]:
+) -> tuple[BatchType, torch.Tensor, torch.Tensor, torch.Tensor]:
     """Resample particles based on importance weights.
 
     When batch_size < n_particles (due to memory constraints), the entire batch is
@@ -209,7 +217,8 @@ def resample_based_on_log_weights(
 
         # Resample samples
         data_list = batch.to_data_list()
-        resampled_data_list = [data_list[i] for i in indices]
+        resampled_indices = indices.cpu().tolist()
+        resampled_data_list = [data_list[i] for i in resampled_indices]
         batch = Batch.from_data_list(
             resampled_data_list
         )  # TODO: there should be a more efficient way
@@ -343,7 +352,7 @@ def compute_reward_and_grad(
         # Choose coordinates for potentials: x_t or x0
         seq_length = batch_pos.shape[0] // batch_size
         assert batch_pos.shape[0] == batch_size * seq_length
-        coords = coords.view(batch_size, seq_length, -1)
+        coords = coords.reshape(batch_size, seq_length, -1)
 
         reward = torch.zeros(batch_size, device=device)
         if len(potentials) > 0:

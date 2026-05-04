@@ -171,7 +171,7 @@ def dpm_solver_smc(
     max_t: float,
     eps_t: float,
     device: torch.device,
-    record_grad_steps: set[int] = set(),
+    record_grad_steps: set[int] | None = None,
     noise: float = 0.0,
     fk_potentials: list[Callable] | None = None,
     steering_config: dict | None = None,
@@ -187,6 +187,7 @@ def dpm_solver_smc(
             - start: Max diffusion time for resampling (default: max_t)
             - end: Min diffusion time for resampling (default: 0.0)
     """
+    record_grad_steps = record_grad_steps or set()
     logger.info("Using DPMSolver SDE SMC %s steps", N)
     assert isinstance(batch, Batch)
     assert max_t < 1.0
