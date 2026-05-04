@@ -10,11 +10,7 @@ This package provides:
 # fmt: off
 # ruff: noqa: F401
 
-from .collective_variables import (
-    CaCaDistance,
-    CollectiveVariable,
-    PairwiseClash,
-)
+from .collective_variables import CaCaDistance, CollectiveVariable, PairwiseClash
 from .potentials import Potential, UmbrellaPotential
 from .utils import (
     _get_R0_given_xt_and_score,

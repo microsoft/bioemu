@@ -39,11 +39,11 @@ def validate_steering_config(steering_config: dict | None) -> None:
     if not isinstance(num_particles, int) or num_particles < 1:
         raise ValueError(f"num_particles must be an integer >= 1, got {num_particles!r}")
     ess_threshold = steering_config["ess_threshold"]
-    if not isinstance(ess_threshold, (int, float)) or not (0.0 <= ess_threshold <= 1.0):
+    if not isinstance(ess_threshold, int | float) or not (0.0 <= ess_threshold <= 1.0):
         raise ValueError(f"ess_threshold must be a float in [0.0, 1.0], got {ess_threshold!r}")
     start = steering_config["start"]
     end = steering_config["end"]
-    if not isinstance(start, (int, float)) or not isinstance(end, (int, float)):
+    if not isinstance(start, int | float) or not isinstance(end, int | float):
         raise ValueError(f"start and end must be floats, got start={start!r}, end={end!r}")
     if not (0.0 <= end <= start <= 1.0):
         raise ValueError(
