@@ -182,3 +182,28 @@ class TestRewardGradRotmatToRotvec:
         sym = (sym + sym.transpose(-1, -2)) / 2
         result_sym = reward_grad_rotmat_to_rotvec(R, sym)
         torch.testing.assert_close(result_sym, torch.zeros(B, 3), atol=1e-5, rtol=1e-5)
+
+
+class TestComputeSequenceAlignment:
+    """Tests for compute_sequence_alignment."""
+
+    def test_identical_sequences(self):
+        from bioemu.steering.utils import compute_sequence_alignment
+
+        mapping = compute_sequence_alignment("ACDEF", "ACDEF")
+        assert mapping == {0: 0, 1: 1, 2: 2, 3: 3, 4: 4}
+
+    def test_subsequence(self):
+        from bioemu.steering.utils import compute_sequence_alignment
+
+        mapping = compute_sequence_alignment("ACE", "ACDEF")
+        assert 0 in mapping  # A
+        assert 1 in mapping  # C
+        assert 2 in mapping  # E
+
+    def test_different_sequences(self):
+        """Completely different sequences should still return a dict."""
+        from bioemu.steering.utils import compute_sequence_alignment
+
+        mapping = compute_sequence_alignment("AAAA", "CCCC")
+        assert isinstance(mapping, dict)
