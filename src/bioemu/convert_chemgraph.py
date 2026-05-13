@@ -489,7 +489,8 @@ def save_pdb_and_xtc(
         filtered_traj = filter_unphysical_traj(traj)
 
         if filtered_traj.n_frames == 0:
-            xtc_path = Path(xtc_path).with_suffix("_unphysical.xtc")
+            xtc_path = Path(xtc_path)
+            xtc_path = xtc_path.parent / Path(xtc_path.stem + "_unphysical.xtc")
             logger.warning(
                 """Ended up with no physical samples after filtering. Here are a few things you can try to solve this:
             1. Increase the number of requested samples.
