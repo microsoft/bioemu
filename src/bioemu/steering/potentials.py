@@ -90,3 +90,47 @@ class UmbrellaPotential(Potential):
         assert self.cv is not None, "UmbrellaPotential requires a cv to be set."
         cv_values = self.cv.compute_batch(ca_pos_nm, sequence)
         return self.energy_from_cv(cv_values, t=t)
+
+
+class LinearPotential(Potential):
+    """(Optionally clamped) linear potential applied to a collective variable.
+
+    Energy = weight × slope × clamp(cv - target, clip_min, clip_max)
+    """
+
+    def __init__(
+        self,
+        target: float = 1.0,
+        slope: float = 1.0,
+        weight: float = 1.0,
+        clip_min: float | None = None,
+        clip_max: float | None = None,
+        guidance_steering: bool = False,
+        cv: CollectiveVariable | None = None,
+        **_: Any,
+    ) -> None:
+        self.target = target
+        self.slope = slope
+        self.weight = weight
+        self.clip_min = clip_min
+        self.clip_max = clip_max
+        self.guidance_steering = guidance_steering
+        self.cv = cv
+
+    def loss_fn(self, x: torch.Tensor) -> torch.Tensor:
+        """(Optionally clamped) linear loss. Returns per-element values."""
+        diff = x - self.target
+        if self.clip_min is not None or self.clip_max is not None:
+            diff = torch.clamp(diff, min=self.clip_min, max=self.clip_max)
+        return self.slope * diff
+
+    def energy_from_cv(self, cv_values: torch.Tensor, t: float | None = None) -> torch.Tensor:
+        base = self.loss_fn(cv_values)
+        if base.ndim > 1:
+            base = base.sum(dim=tuple(range(1, base.ndim)))
+        return self.weight * base
+
+    def __call__(self, ca_pos_nm: torch.Tensor, *, t=None, sequence=None):
+        assert self.cv is not None, "LinearPotential requires a cv to be set."
+        cv_values = self.cv.compute_batch(ca_pos_nm, sequence)
+        return self.energy_from_cv(cv_values, t=t)

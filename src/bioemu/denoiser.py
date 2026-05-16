@@ -281,6 +281,18 @@ class DPMCoefficients:
     t_lambda: torch.Tensor  # midpoint time
 
 
+@dataclass
+class GuidedScore:
+    """Guided score with optional reward information."""
+
+    pos: torch.Tensor
+    so3: torch.Tensor
+    reward: torch.Tensor
+    reward_grad_t: torch.Tensor  # gradient of reward w.r.t. time (for FKC weights)
+    x0: torch.Tensor
+    raw_score: dict[str, torch.Tensor]  # original unguided scores
+
+
 def _get_dpm_coefficients(
     pos_sde: CosineVPSDE,
     batch_pos: torch.Tensor,
@@ -414,7 +426,8 @@ def second_order_step_dpmsolver_plusplus(
     """Second-order DPM-Solver++ update from t to t_next.
 
     Uses scores at both t and t_lambda for higher accuracy.
-    Position scores should be PRE-SCALED by the caller.
+    Position scores should be PRE-SCALED by the caller:
+        - For FKC: use (1 + a^2) / 2 * score + (a^2) / 2 * reward_grad
 
     Args:
         scaled_score_pos_t: Pre-scaled position score at time t.
@@ -532,8 +545,8 @@ def dpm_solver(
     Implements the DPM solver for the VPSDE, with the Cosine noise schedule.
     Following this paper: https://arxiv.org/abs/2206.00927 Algorithm 1 DPM-Solver-2.
 
-    This is the unsteered denoiser. For steered sampling, use
-    dpm_solver_smc from the steering package.
+    This is the unsteered denoiser. For steered sampling (FKC/SMC), use
+    dpm_solver_fkc or dpm_solver_smc from the steering package.
     """
     grad_is_enabled = torch.is_grad_enabled()
     assert isinstance(batch, Batch)

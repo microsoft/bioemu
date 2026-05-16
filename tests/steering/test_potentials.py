@@ -4,7 +4,7 @@ import pytest
 import torch
 
 from bioemu.steering.collective_variables import CaCaDistance, PairwiseClash
-from bioemu.steering.potentials import UmbrellaPotential
+from bioemu.steering.potentials import LinearPotential, UmbrellaPotential
 
 
 class TestUmbrellaPotentialLossFn:
@@ -138,6 +138,78 @@ class TestUmbrellaPotentialWithCV:
         cv_val = torch.tensor([3.0])
         expected = 3.0 * pot.loss_fn(cv_val)
         torch.testing.assert_close(energy, expected, atol=1e-5, rtol=1e-5)
+
+
+class TestLinearPotentialLossFn:
+    """Tests for LinearPotential.loss_fn (instance method)."""
+
+    def test_basic(self):
+        x = torch.tensor([3.0])
+        pot = LinearPotential(target=1.0, slope=2.0)
+        result = pot.loss_fn(x)
+        torch.testing.assert_close(result, torch.tensor([4.0]))
+
+    def test_no_clip(self):
+        x = torch.tensor([10.0])
+        pot = LinearPotential(target=0.0, slope=1.0)
+        result = pot.loss_fn(x)
+        torch.testing.assert_close(result, torch.tensor([10.0]))
+
+    def test_clip_max(self):
+        x = torch.tensor([10.0])
+        pot = LinearPotential(target=0.0, slope=1.0, clip_max=5.0)
+        result = pot.loss_fn(x)
+        torch.testing.assert_close(result, torch.tensor([5.0]))
+
+    def test_clip_min(self):
+        x = torch.tensor([-10.0])
+        pot = LinearPotential(target=0.0, slope=1.0, clip_min=-3.0)
+        result = pot.loss_fn(x)
+        torch.testing.assert_close(result, torch.tensor([-3.0]))
+
+
+class TestLinearPotentialWithCV:
+    """Tests for LinearPotential with a CV."""
+
+    def test_energy_with_mock_cv(self):
+        class MockCV:
+            def compute_batch(self, ca_pos, sequence=None):
+                return ca_pos.pow(2).sum(-1).mean(-1).sqrt()
+
+        cv = MockCV()
+        pot = LinearPotential(target=1.0, slope=2.0, weight=1.0, cv=cv)
+
+        Ca_pos = torch.zeros(1, 10, 3)
+        Ca_pos[0, :, 0] = torch.arange(10, dtype=torch.float32)
+        energy = pot(Ca_pos, t=0.5, sequence="A" * 10)
+        cv_val = cv.compute_batch(Ca_pos)
+        expected = 2.0 * (cv_val - 1.0)
+        torch.testing.assert_close(energy, expected, atol=1e-5, rtol=1e-5)
+
+    def test_clipping(self):
+        class MockCV:
+            def compute_batch(self, ca_pos, sequence=None):
+                return torch.tensor([100.0])
+
+        cv = MockCV()
+        pot = LinearPotential(target=0.0, slope=1.0, weight=1.0, clip_max=0.5, cv=cv)
+        Ca_pos = torch.randn(1, 10, 3)
+        energy = pot(Ca_pos, t=0.5, sequence="A" * 10)
+        torch.testing.assert_close(energy, torch.tensor([0.5]), atol=1e-5, rtol=1e-5)
+
+    def test_differentiable(self):
+        class DiffCV:
+            def compute_batch(self, ca_pos, sequence=None):
+                return ca_pos.pow(2).sum(dim=(1, 2))
+
+        cv = DiffCV()
+        pot = LinearPotential(target=0.0, slope=1.0, weight=1.0, cv=cv)
+        Ca_pos = torch.randn(2, 5, 3, requires_grad=True)
+        energy = pot(Ca_pos, t=0.5, sequence="A" * 5)
+        loss = energy.sum()
+        loss.backward()
+        assert Ca_pos.grad is not None
+        assert Ca_pos.grad.shape == Ca_pos.shape
 
 
 class TestPotentialForwardBackward:
