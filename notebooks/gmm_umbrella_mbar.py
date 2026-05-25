@@ -35,7 +35,7 @@ from bioemu.chemgraph import ChemGraph
 from bioemu.sde_lib import CosineVPSDE
 from bioemu.so3_sde import DiGSO3SDE
 from bioemu.steering.dpm_fkc import dpm_solver_fkc
-from bioemu.toy_gmm import TimeDependentGMM1D
+from toy_gmm import TimeDependentGMM1D
 
 
 # --------------------- GMM / score wrapper --------------------------- #

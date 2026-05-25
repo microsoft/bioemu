@@ -597,81 +597,6 @@ class TestOdeConsistency:
             msg="SO3 mismatch",
         )
 
-    def test_dpm_solver_ode_step_vs_fkc_ode_step_close(self):
-        """Single-step: dpm_solver ODE helper vs FKC ODE step produce different but close results."""
-        from bioemu.denoiser import (
-            _get_dpm_coefficients,
-            _predict_midpoint,
-            get_score,
-            second_order_step_dpmsolver,
-        )
-        from bioemu.so3_sde import SO3SDE
-        from bioemu.steering.dpm_fkc import dpm_solver_sde_fkc_step
-
-        n_res, bs = 8, 2
-        sdes = self._make_sdes()
-        model = self._make_score_model(n_res * bs)
-        pos_sde = sdes["pos"]
-        so3_sde = sdes["node_orientations"]
-        assert isinstance(pos_sde, CosineVPSDE)
-        assert isinstance(so3_sde, SO3SDE)
-
-        torch.manual_seed(42)
-        batch = self._make_batch(n_res, bs)
-        t = torch.full((bs,), 0.8)
-        t_next = torch.full((bs,), 0.6)
-        batch_idx = batch.batch
-
-        # dpm_solver ODE step (manual, using helpers)
-        torch.manual_seed(100)
-        score = get_score(batch=batch, t=t, score_model=model, sdes=sdes)
-        coeffs = _get_dpm_coefficients(pos_sde, batch.pos, t, t_next, batch_idx)
-        batch_lambda = _predict_midpoint(
-            batch=batch,
-            coeffs=coeffs,
-            score_pos=score["pos"],  # unscaled (1.0 × score)
-            score_so3=score["node_orientations"],
-            so3_sde=so3_sde,
-            t=t,
-            batch_idx=batch_idx,
-        )
-        score_lambda = get_score(
-            batch=batch_lambda, t=coeffs.t_lambda, score_model=model, sdes=sdes
-        )
-        dpm_batch = second_order_step_dpmsolver(
-            batch=batch,
-            coeffs=coeffs,
-            score_pos_lambda=score_lambda["pos"],
-            score_so3_t=score["node_orientations"],
-            score_so3_lambda=score_lambda["node_orientations"],
-            so3_sde=so3_sde,
-            t=t,
-            t_next=t_next,
-            batch_idx=batch_idx,
-        )
-
-        # FKC ODE step (noise_scale=0)
-        torch.manual_seed(100)
-        fkc_result = dpm_solver_sde_fkc_step(
-            batch=batch.clone(),
-            t=t,
-            t_next=t_next,
-            sdes=sdes,
-            score_model=model,
-            max_t=0.99,
-            potentials=[],
-            is_last_step=False,
-            enable_grad=False,
-            noise_scale=0.0,
-        )
-
-        # Both should be finite
-        assert torch.isfinite(dpm_batch.pos).all()
-        assert torch.isfinite(fkc_result[0].pos).all()
-
-        pos_diff = (dpm_batch.pos - fkc_result[0].pos).abs().max().item()
-        assert pos_diff < 10.0, f"Results too far apart: diff={pos_diff}"
-
     def test_dpm_solver_loop_ode_vs_fkc_loop_ode_close(self):
         """Multi-step loop: dpm_solver(noise=0) vs dpm_solver_fkc(noise=0) close but not identical."""
         from bioemu.steering.dpm_fkc import dpm_solver_fkc
@@ -713,8 +638,10 @@ class TestOdeConsistency:
         assert torch.isfinite(dpm_result.pos).all()
         assert torch.isfinite(fkc_result.pos).all()
 
+        # DPM-Solver uses 1.0*score, FKC uses 0.5*score — they diverge but
+        # should stay within the same order of magnitude as the input scale (~0.1)
         pos_diff = (dpm_result.pos - fkc_result.pos).abs().max().item()
-        assert pos_diff < 10.0, f"Results too far apart: diff={pos_diff}"
+        assert pos_diff < 1.0, f"Results too far apart: diff={pos_diff}"
 
     def test_dpm_solver_ode_regression(self):
         """dpm_solver(noise=0) must produce deterministic, reproducible output."""

@@ -20,10 +20,6 @@ from .utils import compute_reward_and_grad, resample_based_on_log_weights, valid
 
 logger = logging.getLogger(__name__)
 
-# =============================================================================
-# FKC-Specific Helper Functions
-# =============================================================================
-
 
 def _get_fkc_guided_score(
     *,
@@ -123,11 +119,6 @@ def _compute_fkc_weights(
     dlog_weights = dlog_weights_dt * (t_next - t)
 
     return dlog_weights
-
-
-# =============================================================================
-# Main FKC Step Function
-# =============================================================================
 
 
 def dpm_solver_sde_fkc_step(
@@ -254,11 +245,6 @@ def dpm_solver_sde_fkc_step(
         guided_score_t.x0,
         guided_score_t.reward,
     )
-
-
-# =============================================================================
-# FKC Denoiser Loop
-# =============================================================================
 
 
 def dpm_solver_fkc(

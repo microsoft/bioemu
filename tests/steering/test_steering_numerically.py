@@ -12,17 +12,20 @@ import torch
 import torch.nn as nn
 from torch_geometric.data import Batch
 
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent / "notebooks"))
+
 from bioemu.chemgraph import ChemGraph
 from bioemu.sde_lib import CosineVPSDE
 from bioemu.so3_sde import DiGSO3SDE
-from bioemu.toy_gmm import TimeDependentGMM1D
+from toy_gmm import TimeDependentGMM1D
 
 # Suppress noisy warnings from 1D toy setup
 logging.disable(logging.WARNING)
 
-# ============================================================
 # Shared constants
-# ============================================================
 
 POTENTIAL_K = 1.0
 POTENTIAL_CENTER = 2.0
@@ -34,9 +37,7 @@ EPS_T = 0.01
 MAE_THRESHOLD = 0.05
 
 
-# ============================================================
 # Shared helpers
-# ============================================================
 
 
 def make_gmm_and_sde():
@@ -165,9 +166,7 @@ def compute_mae(samples: torch.Tensor, x_grid: torch.Tensor, target_pdf: torch.T
     return (sample_density - target_pdf).abs().mean().item()
 
 
-# ============================================================
 # Tests
-# ============================================================
 
 
 def test_dpm_fkc():

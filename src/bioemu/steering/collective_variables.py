@@ -7,7 +7,6 @@ import numpy as np
 import torch
 
 from ..chemgraph import ChemGraph
-from openfold.np.residue_constants import restype_3to1
 from ..training.foldedness import (
     _compute_contact_score,
     compute_contacts,
@@ -199,13 +198,7 @@ class RMSD(CollectiveVariable):
         )  # shape: (n_ref_residues, 3)
 
         # Extract reference sequence for alignment
-        self.ref_sequence = ""
-        for r in reference_traj.topology.residues:
-            resname = r.name
-            if resname in restype_3to1:
-                self.ref_sequence += restype_3to1[resname]
-            else:
-                self.ref_sequence += "X"
+        self.ref_sequence = reference_traj.topology.to_fasta()[0]
 
         # Cache for sequence alignment results
         self._cached_sequence: str | None = None

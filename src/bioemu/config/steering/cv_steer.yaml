@@ -1,4 +1,4 @@
-# FKC (Feynman-Kac Control) Steering Configuration
+# FKC (Feynman-Kac Corrector) Steering Configuration
 # Self-contained denoiser config — pass as denoiser_config to sample().
 _target_: bioemu.steering.dpm_fkc.dpm_solver_fkc
 _partial_: true

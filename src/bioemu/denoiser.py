@@ -262,11 +262,6 @@ def _t_from_lambda(sde: CosineVPSDE, lambda_t: torch.Tensor) -> torch.Tensor:
     return t_lambda
 
 
-# =============================================================================
-# DPM-Solver Helper Data Classes and Functions
-# =============================================================================
-
-
 @dataclass
 class DPMCoefficients:
     """Coefficients for DPM-Solver++ step."""

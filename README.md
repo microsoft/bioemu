@@ -79,8 +79,8 @@ BioEmu includes a [steering system](https://arxiv.org/abs/2501.06848) that guide
 Steering applies potential energy functions during denoising to favor conformations that satisfy physical constraints.
 Two steering algorithms are available:
 
-- **SMC (Sequential Monte Carlo)**: Simulates multiple *candidate samples* (particles) per desired output sample and resamples between them according to the favorability of the provided potentials. This is the default for physical steering.
-- **FKC (Feynman–Kac Control)**: Uses importance weighting and may perform ESS-based resampling between particles; useful when targeting a specific collective variable value (e.g., RMSD to a reference).
+- **SMC (Sequential Monte Carlo)**: Simulates multiple *candidate samples* (particles) per desired output sample, where the candidates are denoised in an unbiased way, and resamples between them according to the favorability of the provided potentials. This is the default for physical steering.
+- **FKC (Feynman–Kac Corrector)**: Uses importance weighting and may perform ESS-based resampling between particles; useful when targeting a specific collective variable value (e.g., RMSD to a reference). The samples are denoised with bias from the bias potential (reward).
 
 Empirically, using three (or up to 10) steering particles per output sample greatly reduces the number of unphysical samples (steric clashes or chain breaks) produced by the model.
 
@@ -116,7 +116,7 @@ sample(
 Inside the steering YAML config (e.g., [`physical_steering.yaml`](./src/bioemu/config/steering/physical_steering.yaml)):
 
 - `num_particles`: Number of particles per sample (higher = stronger steering, more compute)
-- `ess_threshold`: Effective sample size threshold for resampling (0.0–1.0; SMC only)
+- `ess_threshold`: Effective sample size threshold for resampling (0.0–1.0)
 - `start`: Diffusion time to start steering (0.0–1.0, default: 0.1; reverse process goes 1→0)
 - `end`: Diffusion time to stop steering (0.0–1.0, default: 0.0)
 - `fk_potentials`: List of potential energy functions to apply (Hydra-instantiated)

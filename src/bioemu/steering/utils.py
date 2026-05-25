@@ -293,11 +293,6 @@ def kabsch_align(samples_centered: torch.Tensor, ref_centered: torch.Tensor) -> 
     return torch.einsum("bij,bnj->bni", R, samples_centered)
 
 
-# =============================================================================
-# Denoiser utility functions (moved from denoisers/utils.py)
-# =============================================================================
-
-
 def compute_ess_from_log_weights(
     log_weight: torch.Tensor, n_particles: int
 ) -> tuple[torch.Tensor, torch.Tensor]:

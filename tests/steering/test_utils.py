@@ -5,7 +5,6 @@ import torch
 from torch_geometric.data import Batch, Data
 
 from bioemu.steering.utils import (
-    _get_x0_given_xt_and_score,
     compute_ess_from_log_weights,
     resample_based_on_log_weights,
     reward_grad_rotmat_to_rotvec,
@@ -112,25 +111,6 @@ class TestResampleBasedOnLogWeights:
             t=0.5,
         )
         assert check(ess, new_lw, indices, n)
-
-
-class TestGetPos0Rot0:
-    """Tests for get_pos0_rot0 helper."""
-
-    def test_identity_score_returns_input(self):
-        """With zero score, x0 prediction should roughly match x_t / alpha_t."""
-        # Simple test: x0 = (x + sigma^2 * score) / alpha
-        x = torch.randn(10, 3)
-        score = torch.zeros_like(x)
-        batch_idx = torch.zeros(10, dtype=torch.long)
-
-        # Mock SDE that returns alpha=1, sigma=0
-        class MockSDE:
-            def mean_coeff_and_std(self, x, t, batch_idx):
-                return torch.ones_like(x), torch.zeros_like(x)
-
-        x0 = _get_x0_given_xt_and_score(MockSDE(), x, torch.tensor([0.5]), batch_idx, score)
-        torch.testing.assert_close(x0, x)
 
 
 class TestComputeEssFromLogWeights:

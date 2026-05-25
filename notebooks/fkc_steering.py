@@ -1,6 +1,6 @@
 """FKC steering toy example using the dpm_solver_fkc sampler.
 
-Demonstrates Feynman-Kac Controlled (FKC) steering on a 1D Gaussian Mixture Model.
+Demonstrates Feynman-Kac Corrector (FKC) steering on a 1D Gaussian Mixture Model.
 A quadratic potential biases the GMM, and we compare steered samples to the
 analytically computed ground truth distribution.
 """
@@ -21,11 +21,9 @@ from bioemu.chemgraph import ChemGraph
 from bioemu.sde_lib import CosineVPSDE
 from bioemu.so3_sde import DiGSO3SDE
 from bioemu.steering.dpm_fkc import dpm_solver_fkc
-from bioemu.toy_gmm import TimeDependentGMM1D
+from toy_gmm import TimeDependentGMM1D
 
-# ============================================================
 # 1. Setup: GMM target distribution + SDE scheduler
-# ============================================================
 
 sde = CosineVPSDE()
 
@@ -39,9 +37,7 @@ gmm = TimeDependentGMM1D(
 )
 
 
-# ============================================================
 # 2. Score model wrapper (makes GMM score compatible with get_score)
-# ============================================================
 
 
 class GMMScoreWrapper(nn.Module):
@@ -85,9 +81,7 @@ class GMMScoreWrapper(nn.Module):
         }
 
 
-# ============================================================
 # 3. Quadratic steering potential
-# ============================================================
 
 POTENTIAL_K = 1.0
 POTENTIAL_CENTER = 2.0
@@ -108,9 +102,7 @@ class QuadraticPotential:
         return 0.5 * self.k * (x - self.center) ** 2
 
 
-# ============================================================
 # 4. Batch creation helper
-# ============================================================
 
 
 def make_toy_batch(n_samples: int) -> Batch:
@@ -131,9 +123,7 @@ def make_toy_batch(n_samples: int) -> Batch:
     return Batch.from_data_list(data_list)
 
 
-# ============================================================
 # 5. Ground truth: biased distribution
-# ============================================================
 
 x_grid = torch.linspace(-6, 8, 1000)
 t_zero = torch.zeros(len(x_grid))
@@ -159,9 +149,7 @@ assert torch.isclose(
     gmm_pdf.sum() * dx, torch.tensor(1.0), atol=1e-3
 ), f"GMM PDF does not integrate to 1: {(gmm_pdf.sum() * dx).item():.6f}"
 
-# ============================================================
 # 6. Run dpm_solver_fkc and plot
-# ============================================================
 
 N_SAMPLES = 20_000
 N_STEPS = 100
