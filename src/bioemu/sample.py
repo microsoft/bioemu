@@ -176,7 +176,8 @@ def main(
         f"Sampling {num_samples} structures for sequence of length {len(sequence)} residues..."
     )
     # Adjust batch size by sequence length since longer sequence require quadratically more memory
-    batch_size = int(batch_size_100 * (100 / len(sequence)) ** 2)
+    # batch size should be at least 1.
+    batch_size = max(1, int(batch_size_100 * (100 / len(sequence)) ** 2))
 
     batch_size = min(batch_size, num_samples)
     logger.info(f"Using batch size {min(batch_size, num_samples)}")
