@@ -7,10 +7,7 @@ import numpy as np
 import torch
 
 from ..chemgraph import ChemGraph
-from ..training.foldedness import (
-    _compute_contact_score,
-    compute_contacts,
-)
+from ..training.foldedness import _compute_contact_score, compute_contacts
 from .utils import compute_sequence_alignment, kabsch_align
 
 

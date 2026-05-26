@@ -207,7 +207,7 @@ class ToyPosCV(CollectiveVariable):
     unit conversion is needed.
     """
 
-    def compute_batch(self, ca_pos_nm: torch.Tensor, sequence: str) -> torch.Tensor:
+    def compute_batch(self, ca_pos_nm: torch.Tensor, sequence: str | None = None) -> torch.Tensor:
         # ca_pos_nm shape: [batch_size, L, D]; toy uses L=1, D=1
         vals = ca_pos_nm.reshape(ca_pos_nm.shape[0], -1)[:, 0]
         return vals
