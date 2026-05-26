@@ -6,21 +6,21 @@ distribution induced by a quadratic potential U(x) = k/2 (x - center)².
 """
 
 import logging
+import sys
+from pathlib import Path
 
 import numpy as np
 import torch
 import torch.nn as nn
 from torch_geometric.data import Batch
 
-import sys
-from pathlib import Path
-
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent / "notebooks"))
+
+from toy_gmm import TimeDependentGMM1D
 
 from bioemu.chemgraph import ChemGraph
 from bioemu.sde_lib import CosineVPSDE
 from bioemu.so3_sde import DiGSO3SDE
-from toy_gmm import TimeDependentGMM1D
 
 # Suppress noisy warnings from 1D toy setup
 logging.disable(logging.WARNING)

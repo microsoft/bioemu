@@ -16,12 +16,12 @@ import matplotlib.pyplot as plt
 import torch
 import torch.nn as nn
 from torch_geometric.data import Batch
+from toy_gmm import TimeDependentGMM1D
 
 from bioemu.chemgraph import ChemGraph
 from bioemu.sde_lib import CosineVPSDE
 from bioemu.so3_sde import DiGSO3SDE
 from bioemu.steering.dpm_fkc import dpm_solver_fkc
-from toy_gmm import TimeDependentGMM1D
 
 # 1. Setup: GMM target distribution + SDE scheduler
 
@@ -70,9 +70,7 @@ class GMMScoreWrapper(nn.Module):
         )
 
         # Embed 1D score into 3D: [score × std, 0, 0]
-        zero_yz = torch.zeros(
-            batch.pos.shape[0], 2, device=batch.pos.device, dtype=batch.pos.dtype
-        )
+        zero_yz = torch.zeros(batch.pos.shape[0], 2, device=batch.pos.device, dtype=batch.pos.dtype)
         pos_output = torch.cat([score_1d * pos_std[:, 0:1], zero_yz], dim=1)
 
         return {

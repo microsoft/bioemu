@@ -23,20 +23,18 @@ import matplotlib.pyplot as plt
 import numpy as np
 import torch
 import torch.nn as nn
+
 try:
     from FastMBAR import FastMBAR
 except ImportError:
-    raise ImportError(
-        "FastMBAR is required for this script. Install with `pip install FastMBAR`."
-    )
+    raise ImportError("FastMBAR is required for this script. Install with `pip install FastMBAR`.")
 from torch_geometric.data import Batch
+from toy_gmm import TimeDependentGMM1D
 
 from bioemu.chemgraph import ChemGraph
 from bioemu.sde_lib import CosineVPSDE
 from bioemu.so3_sde import DiGSO3SDE
 from bioemu.steering.dpm_fkc import dpm_solver_fkc
-from toy_gmm import TimeDependentGMM1D
-
 
 # --------------------- GMM / score wrapper --------------------------- #
 
@@ -68,9 +66,7 @@ class GMMScoreWrapper(nn.Module):
         _, pos_std = self.pos_sde.marginal_prob(
             x=torch.ones_like(batch.pos), t=t, batch_idx=batch.batch
         )
-        zero_yz = torch.zeros(
-            batch.pos.shape[0], 2, device=batch.pos.device, dtype=batch.pos.dtype
-        )
+        zero_yz = torch.zeros(batch.pos.shape[0], 2, device=batch.pos.device, dtype=batch.pos.dtype)
         pos_output = torch.cat([score_1d * pos_std[:, 0:1], zero_yz], dim=1)
         return {
             "pos": pos_output,
@@ -181,7 +177,6 @@ def main():
 
     # ---------------- Plot per-window histograms vs theoretical ------- #
     x_grid = np.linspace(-6, 8, 2000)
-    dx = x_grid[1] - x_grid[0]
 
     # Unbiased GMM PDF (analytical)
     def gmm_pdf(x):
