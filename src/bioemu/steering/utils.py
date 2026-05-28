@@ -7,6 +7,7 @@ import torch
 from torch_geometric.data import Batch
 from torch_geometric.data.batch import Batch as BatchType
 
+from ..chemgraph import ChemGraph
 from ..sde_lib import SDE
 from ..so3_sde import SO3SDE, apply_rotvec_to_rotmat, skew_matrix_to_vector
 
@@ -34,6 +35,8 @@ def validate_steering_config(steering_config: dict | None) -> None:
                 f"steering_config is missing required key '{key}'. "
                 "All of 'start', 'end', 'num_particles', 'ess_threshold' must be specified."
             )
+    start = steering_config["start"]
+    end = steering_config["end"]
     # Validate value types and ranges
     num_particles = steering_config["num_particles"]
     if not isinstance(num_particles, int) or num_particles < 1:
@@ -41,8 +44,6 @@ def validate_steering_config(steering_config: dict | None) -> None:
     ess_threshold = steering_config["ess_threshold"]
     if not isinstance(ess_threshold, int | float) or not (0.0 <= ess_threshold <= 1.0):
         raise ValueError(f"ess_threshold must be a float in [0.0, 1.0], got {ess_threshold!r}")
-    start = steering_config["start"]
-    end = steering_config["end"]
     if not isinstance(start, int | float) or not isinstance(end, int | float):
         raise ValueError(f"start and end must be floats, got start={start!r}, end={end!r}")
     if not (0.0 <= end <= start <= 1.0):
@@ -132,15 +133,44 @@ def get_pos0_rot0(sdes, batch, t, score):
     return x0_t, R0_t
 
 
+def compute_sequence_alignment(ref_sequence: str, sample_sequence: str) -> dict[int, int]:
+    """Compute sequence alignment and return mapping from reference to sample indices.
+
+    Uses Bio.Align.PairwiseAligner for global sequence alignment.
+
+    Args:
+        ref_sequence: Reference amino acid sequence.
+        sample_sequence: Sample amino acid sequence.
+
+    Returns:
+        Dictionary mapping reference 0-indexed positions to sample 0-indexed positions.
+        Only positions that align (no gaps) are included in the mapping.
+    """
+    from Bio import Align
+
+    aligner = Align.PairwiseAligner(mode="global", open_gap_score=-0.5)
+    alignments = aligner.align(ref_sequence, sample_sequence)
+    alignment = alignments[0]  # Take best alignment
+
+    # Build mapping from reference indices to sample indices
+    ref_ranges, sample_ranges = alignment.aligned
+    ref_to_sample: dict[int, int] = {}
+    for (ref_start, ref_end), (sample_start, sample_end) in zip(ref_ranges, sample_ranges):
+        for ref_idx, sample_idx in zip(range(ref_start, ref_end), range(sample_start, sample_end)):
+            ref_to_sample[ref_idx] = sample_idx
+
+    return ref_to_sample
+
+
 def resample_based_on_log_weights(
-    batch: BatchType,
+    batch: ChemGraph,
     log_weight: torch.Tensor,
     n_particles: int,
     is_last_step: bool,
     ess_threshold: float,
     step: int,
     t: float,
-) -> tuple[BatchType, torch.Tensor, torch.Tensor, torch.Tensor]:
+) -> tuple[ChemGraph, torch.Tensor, torch.Tensor, torch.Tensor]:
     """Resample particles based on importance weights.
 
     When batch_size < n_particles (due to memory constraints), the entire batch is
@@ -229,9 +259,38 @@ def resample_based_on_log_weights(
     return batch, log_weight, indices, ess
 
 
-# =============================================================================
-# Denoiser utility functions (moved from denoisers/utils.py)
-# =============================================================================
+def kabsch_align(samples_centered: torch.Tensor, ref_centered: torch.Tensor) -> torch.Tensor:
+    """Optimal rigid alignment of ``samples_centered`` onto ``ref_centered`` (Kabsch algorithm).
+
+    Both inputs must already be mean-centred.  Gradients do not flow through the
+    SVD (``R`` is detached) for numerical stability.
+
+    Args:
+        samples_centered: ``(batch, n_atoms, 3)`` — mean-centred sample coordinates.
+        ref_centered: ``(n_atoms, 3)`` — mean-centred reference coordinates.
+
+    Returns:
+        Rotated samples with the same shape as ``samples_centered``.
+    """
+    batch_size = samples_centered.shape[0]
+    device = samples_centered.device
+
+    # Covariance matrix H = P^T * Q
+    H = torch.einsum("bni,nj->bij", samples_centered, ref_centered)
+
+    # SVD decomposition
+    U, _S, Vh = torch.linalg.svd(H)
+
+    # Optimal rotation (handle improper rotation / reflection)
+    d = torch.det(torch.bmm(Vh.transpose(-2, -1), U.transpose(-2, -1)))
+    sign_matrix = torch.ones(batch_size, 3, device=device)
+    sign_matrix[:, -1] = d.sign()
+    R = torch.bmm(Vh.transpose(-2, -1) * sign_matrix.unsqueeze(-1), U.transpose(-2, -1))
+
+    # Detach R so gradients don't flow through SVD (numerically unstable)
+    R = R.detach()
+
+    return torch.einsum("bij,bnj->bni", R, samples_centered)
 
 
 def compute_ess_from_log_weights(
@@ -352,7 +411,7 @@ def compute_reward_and_grad(
         # Choose coordinates for potentials: x_t or x0
         seq_length = batch_pos.shape[0] // batch_size
         assert batch_pos.shape[0] == batch_size * seq_length
-        coords = coords.reshape(batch_size, seq_length, -1)
+        coords = coords.view(batch_size, seq_length, -1)
 
         reward = torch.zeros(batch_size, device=device)
         if len(potentials) > 0:

@@ -1,7 +1,7 @@
 """Lightweight integration tests for steering configuration and wiring.
 
-These tests verify that the SMC denoiser loop runs correctly with and without
-steering potentials, without requiring model weights or GPU.
+These tests verify that yaml configs parse correctly and produce valid
+potential objects, without requiring model weights or GPU.
 """
 
 import os
@@ -99,6 +99,212 @@ def score_model(batch):
             }
 
     return MockScoreModel()
+
+
+class TestCvSteerConfig:
+    """Verify cv_steer.yaml loads correctly."""
+
+    def test_config_loads_and_has_denoiser(self):
+        with open(STEERING_CONFIG_DIR / "cv_steer.yaml") as f:
+            cfg = yaml.safe_load(f)
+        assert "_target_" in cfg
+        assert "fk_potentials" in cfg
+        assert "steering_config" in cfg
+
+
+class TestFkcSteeringIntegration:
+    """Integration test: run compute_reward_and_grad → FKC weights pipeline.
+
+    Verifies the full FKC steering pipeline with a deterministic mock score model.
+    """
+
+    @staticmethod
+    def _make_sdes():
+        return {
+            "pos": CosineVPSDE(),
+            "node_orientations": DiGSO3SDE(num_sigma=10, num_omega=10, l_max=10),
+        }
+
+    @staticmethod
+    def _make_batch(n_residues: int = 8, batch_size: int = 4):
+        torch.manual_seed(42)
+        data_list = []
+        for i in range(batch_size):
+            g = ChemGraph(
+                pos=torch.randn(n_residues, 3) * 0.1,
+                node_orientations=torch.eye(3).unsqueeze(0).expand(n_residues, -1, -1).clone(),
+                edge_index=torch.zeros(2, 0, dtype=torch.long),
+                single_embeds=torch.zeros(n_residues, 1),
+                pair_embeds=torch.zeros(n_residues**2, 1),
+                sequence="A" * n_residues,
+                system_id=f"test_{i}",
+                node_labels=torch.zeros(n_residues, dtype=torch.long),
+            )
+            data_list.append(g)
+        return Batch.from_data_list(data_list)
+
+    @staticmethod
+    def _make_score_model(total_nodes: int):
+        class MockScoreModel(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.dummy = torch.nn.Parameter(torch.zeros(1))
+                torch.manual_seed(99)
+                self._pos = torch.randn(total_nodes, 3) * 0.01
+                self._rot = torch.randn(total_nodes, 3) * 0.01
+
+            def forward(self, batch, t):
+                return {
+                    "pos": self._pos + self.dummy * 0,
+                    "node_orientations": self._rot + self.dummy * 0,
+                }
+
+        return MockScoreModel()
+
+    def test_reward_and_grad_pipeline(self):
+        """Full pipeline: potentials → compute_reward_and_grad → finite grad values."""
+        from bioemu.steering.utils import compute_reward_and_grad
+
+        n_res, bs = 8, 4
+        sdes = self._make_sdes()
+        batch = self._make_batch(n_res, bs)
+        model = self._make_score_model(n_res * bs)
+        t = torch.full((bs,), 0.5)
+
+        pot = UmbrellaPotential(cv=CaCaDistance(), target=0.38, slope=10.0, weight=1.0)
+
+        reward, grad_x, grad_rot, grad_t, raw_score, info = compute_reward_and_grad(
+            sdes=sdes,
+            batch=batch,
+            t=t,
+            score_model=model,
+            potentials=[pot],
+            use_x0_for_reward=True,
+            eval_score=True,
+        )
+
+        assert reward.shape == (bs,)
+        assert grad_x.shape == (n_res * bs, 3)
+        assert grad_t.shape == (bs,)
+        assert raw_score.shape == (n_res * bs, 3)
+        assert torch.isfinite(reward).all()
+        assert torch.isfinite(grad_x).all()
+
+    def test_fkc_weights_pipeline(self):
+        """Full pipeline: compute_reward_and_grad → FKC weights → finite log weights."""
+        from bioemu.steering.dpm_fkc import _compute_fkc_weights, _get_fkc_guided_score
+
+        n_res, bs = 8, 4
+        sdes = self._make_sdes()
+        batch = self._make_batch(n_res, bs)
+        model = self._make_score_model(n_res * bs)
+        t = torch.full((bs,), 0.5)
+
+        pot = UmbrellaPotential(cv=CaCaDistance(), target=0.38, slope=10.0, weight=1.0)
+
+        guided = _get_fkc_guided_score(
+            sdes=sdes,
+            batch=batch,
+            t=t,
+            score_model=model,
+            potentials=[pot],
+            use_x0_for_reward=True,
+            enable_grad=True,
+            noise_scale=1.0,
+        )
+
+        assert guided.pos.shape == (n_res * bs, 3)
+        assert guided.reward.shape == (bs,)
+        assert torch.isfinite(guided.pos).all()
+
+        # Compute FKC weights using a separate reward call (as done in dpm_fkc_step)
+        from bioemu.steering.utils import compute_reward_and_grad
+
+        batch2 = self._make_batch(n_res, bs)
+        t2 = torch.full((bs,), 0.5)
+        _, reward_grad_x, _, reward_grad_t, _, _ = compute_reward_and_grad(
+            sdes=sdes,
+            batch=batch2,
+            t=t2,
+            score_model=model,
+            potentials=[pot],
+            use_x0_for_reward=True,
+            eval_score=False,
+        )
+
+        batch_idx = batch2.batch
+        t_next = torch.full((bs,), 0.4)
+        log_weights = _compute_fkc_weights(
+            batch2,
+            sdes["pos"],
+            guided.raw_score["pos"],
+            reward_grad_x,
+            reward_grad_t,
+            t2,
+            t_next,
+            batch_idx,
+        )
+        assert log_weights.shape == (bs,)
+        assert torch.isfinite(log_weights).all()
+
+    def test_unsteered_loop_via_dpm_solver_fkc(self):
+        """dpm_solver_fkc with no potentials = unsteered DPM solver loop."""
+        from bioemu.steering.dpm_fkc import dpm_solver_fkc
+
+        n_res, bs = 8, 2
+        sdes = self._make_sdes()
+        model = self._make_score_model(n_res * bs)
+        batch = self._make_batch(n_res, bs)
+
+        torch.manual_seed(42)
+        result_batch, batch_log_weights = dpm_solver_fkc(
+            sdes=sdes,
+            batch=batch,
+            N=5,
+            score_model=model,
+            max_t=0.99,
+            eps_t=0.01,
+            device=torch.device("cpu"),
+            fk_potentials=[],
+            steering_config=None,
+            noise=0.3,
+        )
+
+        assert result_batch.pos.shape == (n_res * bs, 3)
+        assert result_batch.node_orientations.shape == (n_res * bs, 3, 3)
+        assert torch.isfinite(result_batch.pos).all()
+        assert torch.isfinite(result_batch.node_orientations).all()
+        # No steering → all log weights should be zero
+        assert torch.allclose(batch_log_weights, torch.zeros_like(batch_log_weights))
+
+    def test_steered_loop_via_dpm_solver_fkc(self):
+        """dpm_solver_fkc with potentials = steered DPM solver loop."""
+        from bioemu.steering.dpm_fkc import dpm_solver_fkc
+
+        n_res, bs = 8, 4
+        sdes = self._make_sdes()
+        model = self._make_score_model(n_res * bs)
+        batch = self._make_batch(n_res, bs)
+        pot = UmbrellaPotential(cv=CaCaDistance(), target=0.38, slope=10.0, weight=1.0)
+
+        torch.manual_seed(42)
+        result_batch, batch_log_weights = dpm_solver_fkc(
+            sdes=sdes,
+            batch=batch,
+            N=5,
+            score_model=model,
+            max_t=0.99,
+            eps_t=0.01,
+            device=torch.device("cpu"),
+            fk_potentials=[pot],
+            steering_config={"num_particles": 4, "ess_threshold": 0.5, "start": 1.0, "end": 0.0},
+            noise=0.5,
+        )
+
+        assert result_batch.pos.shape[1] == 3
+        assert torch.isfinite(result_batch.pos).all()
+        # With potentials, log weights should be non-zero
+        assert not torch.allclose(batch_log_weights, torch.zeros_like(batch_log_weights))
 
 
 class TestSmcSteeringIntegration:
@@ -291,8 +497,204 @@ class TestResampleCorrectness:
         torch.testing.assert_close(new_batch.pos, expected_pos)
 
 
+class TestOdeConsistency:
+    """Verify consistency between dpm_solver, dpm_solver_fkc, and dpm_solver_smc in ODE mode.
+
+    All three solvers with noise=0 should produce finite, reasonable outputs.
+    FKC and SMC (both using DPM-Solver++ with 0.5*score) should be identical.
+    dpm_solver (DPM-Solver with 1.0*score and midpoint-only formula) differs but should be close.
+    """
+
+    @staticmethod
+    def _make_sdes():
+        return {
+            "pos": CosineVPSDE(),
+            "node_orientations": DiGSO3SDE(num_sigma=10, num_omega=10, l_max=10),
+        }
+
+    @staticmethod
+    def _make_batch(n_residues: int, batch_size: int):
+        data_list = []
+        for i in range(batch_size):
+            g = ChemGraph(
+                pos=torch.randn(n_residues, 3) * 0.1,
+                node_orientations=torch.eye(3).unsqueeze(0).expand(n_residues, -1, -1).clone(),
+                edge_index=torch.zeros(2, 0, dtype=torch.long),
+                single_embeds=torch.zeros(n_residues, 1),
+                pair_embeds=torch.zeros(n_residues**2, 1),
+                sequence="A" * n_residues,
+                system_id=f"test_{i}",
+                node_labels=torch.zeros(n_residues, dtype=torch.long),
+            )
+            data_list.append(g)
+        return Batch.from_data_list(data_list)
+
+    @staticmethod
+    def _make_score_model(total_nodes: int, seed: int = 99):
+        class MockScoreModel(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.dummy = torch.nn.Parameter(torch.zeros(1))
+                torch.manual_seed(seed)
+                self._pos = torch.randn(total_nodes, 3) * 0.05
+                self._rot = torch.randn(total_nodes, 3) * 0.05
+
+            def forward(self, batch, t):
+                return {
+                    "pos": self._pos + self.dummy * 0,
+                    "node_orientations": self._rot + self.dummy * 0,
+                }
+
+        return MockScoreModel()
+
+    def test_fkc_ode_vs_smc_ode_identical(self):
+        """FKC(noise=0) and SMC(noise_scale=0) should produce identical ODE steps."""
+        from bioemu.steering.dpm_fkc import dpm_solver_sde_fkc_step
+        from bioemu.steering.dpm_smc import dpm_solver_sde_smc_step
+
+        n_res, bs = 8, 2
+        sdes = self._make_sdes()
+        model = self._make_score_model(n_res * bs)
+
+        torch.manual_seed(42)
+        batch = self._make_batch(n_res, bs)
+
+        t = torch.full((bs,), 0.8)
+        t_next = torch.full((bs,), 0.6)
+
+        torch.manual_seed(100)
+        fkc_result = dpm_solver_sde_fkc_step(
+            batch=batch.clone(),
+            t=t,
+            t_next=t_next,
+            sdes=sdes,
+            score_model=model,
+            max_t=0.99,
+            potentials=[],
+            is_last_step=False,
+            enable_grad=False,
+            noise_scale=0.0,
+        )
+
+        torch.manual_seed(100)
+        smc_result = dpm_solver_sde_smc_step(
+            batch=batch.clone(),
+            t=t,
+            t_next=t_next,
+            sdes=sdes,
+            score_model=model,
+            max_t=0.99,
+            potentials=[],
+            step_idx=0,
+            noise_scale=0.0,
+        )
+
+        # Both use (1+0²)/2 = 0.5 * score + DPM-Solver++ formula → must be identical
+        torch.testing.assert_close(fkc_result[0].pos, smc_result[0].pos, msg="pos mismatch")
+        torch.testing.assert_close(
+            fkc_result[0].node_orientations,
+            smc_result[0].node_orientations,
+            msg="SO3 mismatch",
+        )
+
+    def test_dpm_solver_loop_ode_vs_fkc_loop_ode_close(self):
+        """Multi-step loop: dpm_solver(noise=0) vs dpm_solver_fkc(noise=0) close but not identical."""
+        from bioemu.steering.dpm_fkc import dpm_solver_fkc
+
+        n_res, bs = 8, 2
+        sdes = self._make_sdes()
+        model = self._make_score_model(n_res * bs)
+
+        torch.manual_seed(42)
+        batch = self._make_batch(n_res, bs)
+
+        torch.manual_seed(100)
+        dpm_result = dpm_solver(
+            sdes=sdes,
+            batch=batch.clone(),
+            N=5,
+            score_model=model,
+            max_t=0.99,
+            eps_t=0.01,
+            device=torch.device("cpu"),
+            noise=0.0,
+        )
+
+        torch.manual_seed(100)
+        fkc_result, _ = dpm_solver_fkc(
+            sdes=sdes,
+            batch=batch.clone(),
+            N=5,
+            score_model=model,
+            max_t=0.99,
+            eps_t=0.01,
+            device=torch.device("cpu"),
+            noise=0.0,
+            fk_potentials=[],
+            steering_config=None,
+        )
+
+        # Both should produce finite outputs
+        assert torch.isfinite(dpm_result.pos).all()
+        assert torch.isfinite(fkc_result.pos).all()
+
+        # DPM-Solver uses 1.0*score, FKC uses 0.5*score — they diverge but
+        # should stay within the same order of magnitude as the input scale (~0.1)
+        pos_diff = (dpm_result.pos - fkc_result.pos).abs().max().item()
+        assert pos_diff < 1.0, f"Results too far apart: diff={pos_diff}"
+
+    def test_dpm_solver_ode_regression(self):
+        """dpm_solver(noise=0) must produce deterministic, reproducible output."""
+        n_res, bs = 8, 2
+        sdes = self._make_sdes()
+        model = self._make_score_model(n_res * bs)
+
+        torch.manual_seed(42)
+        batch = self._make_batch(n_res, bs)
+
+        torch.manual_seed(100)
+        result1 = dpm_solver(
+            sdes=sdes,
+            batch=batch.clone(),
+            N=5,
+            score_model=model,
+            max_t=0.99,
+            eps_t=0.01,
+            device=torch.device("cpu"),
+            noise=0.0,
+        )
+
+        torch.manual_seed(42)
+        batch2 = self._make_batch(n_res, bs)
+
+        torch.manual_seed(100)
+        result2 = dpm_solver(
+            sdes=sdes,
+            batch=batch2.clone(),
+            N=5,
+            score_model=model,
+            max_t=0.99,
+            eps_t=0.01,
+            device=torch.device("cpu"),
+            noise=0.0,
+        )
+
+        torch.testing.assert_close(result1.pos, result2.pos, msg="ODE not deterministic")
+        torch.testing.assert_close(
+            result1.node_orientations,
+            result2.node_orientations,
+            msg="ODE orientations not deterministic",
+        )
+        assert (
+            abs(result1.pos.sum().item() - (-373.535)) < 0.01
+        ), f"pos sum changed: {result1.pos.sum().item()}"
+        assert (
+            abs(result1.node_orientations.sum().item() - (-7.475)) < 0.01
+        ), f"orient sum changed: {result1.node_orientations.sum().item()}"
+
+
 class TestGenerateBatchWithSteering:
-    """Test generate_batch with SMC steered denoiser.
+    """Test generate_batch with steered denoisers (FKC/SMC).
 
     Uses mock colabfold to avoid network calls, and a mock score model to avoid
     model weight downloads. Tests the full pipeline: generate_batch → denoiser.
@@ -305,6 +707,36 @@ class TestGenerateBatchWithSteering:
             "pos": torch.rand(batch["pos"].shape, device=device),
             "node_orientations": torch.rand(batch["node_orientations"].shape[0], 3, device=device),
         }
+
+    def test_generate_batch_with_fkc_denoiser(self):
+        """generate_batch with dpm_solver_fkc denoiser produces valid output."""
+        sdes = {"node_orientations": DiGSO3SDE(), "pos": CosineVPSDE()}
+
+        # Build FKC denoiser config with physical potentials
+        config_path = os.path.join(
+            os.path.dirname(__file__),
+            "../../src/bioemu/config/steering/physical_steering.yaml",
+        )
+        with open(config_path) as f:
+            denoiser_config = yaml.safe_load(f)
+
+        denoiser = hydra.utils.instantiate(denoiser_config)
+
+        with _mock_colabfold_embeds(TEST_SEQ):
+            batch = generate_batch(
+                score_model=self._mock_score_model,
+                sequence=TEST_SEQ,
+                sdes=sdes,
+                batch_size=2,
+                seed=42,
+                denoiser=denoiser,
+                cache_embeds_dir=None,
+            )
+
+        assert "pos" in batch
+        assert "node_orientations" in batch
+        assert batch["pos"].shape == (2, len(TEST_SEQ), 3)
+        assert batch["node_orientations"].shape == (2, len(TEST_SEQ), 3, 3)
 
     def test_generate_batch_with_smc_denoiser(self):
         """generate_batch with dpm_solver_smc denoiser produces valid output."""

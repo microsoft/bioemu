@@ -77,7 +77,10 @@ This code only supports sampling structures of monomers. You can try to sample m
 
 BioEmu includes a [steering system](https://arxiv.org/abs/2501.06848) that guides the diffusion process toward more physically plausible protein structures.
 Steering applies potential energy functions during denoising to favor conformations that satisfy physical constraints.
-It uses **SMC (Sequential Monte Carlo)** sampling, which simulates multiple *candidate samples* (particles) per desired output sample and resamples between them according to the favorability of the provided potentials.
+Two steering algorithms are available:
+
+- **SMC (Sequential Monte Carlo)**: Simulates multiple *candidate samples* (particles) per desired output sample, where the candidates are denoised in an unbiased way, and resamples between them according to the favorability of the provided potentials. This is the default for physical steering.
+- **FKC (Feynman–Kac Corrector)**: Uses importance weighting and may perform ESS-based resampling between particles; useful when targeting a specific collective variable value (e.g., RMSD to a reference). The samples are denoised with bias from the bias potential (reward).
 
 Empirically, using three (or up to 10) steering particles per output sample greatly reduces the number of unphysical samples (steric clashes or chain breaks) produced by the model.
 
@@ -123,6 +126,8 @@ Inside the steering YAML config (e.g., [`physical_steering.yaml`](./src/bioemu/c
 The [`physical_steering.yaml`](./src/bioemu/config/steering/physical_steering.yaml) configuration provides potentials for physical realism:
 - **CaCaDistance** + **UmbrellaPotential**: Prevents backbone discontinuities by penalizing large Cα–Cα distances
 - **PairwiseClash** + **UmbrellaPotential**: Avoids steric clashes between non-neighboring residues
+
+For custom steering, you can write your own YAML config targeting any combination of potentials and collective variables. See [`cv_steer.yaml`](./src/bioemu/config/steering/cv_steer.yaml) for an example that steers toward a target RMSD value using FKC.
 
 ## Azure AI Foundry
 BioEmu is also available on [Azure AI Foundry](https://ai.azure.com/). See [How to run BioEmu on Azure AI Foundry](AZURE_AI_FOUNDRY.md) for more details.
