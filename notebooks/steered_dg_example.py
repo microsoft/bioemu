@@ -41,18 +41,24 @@ NOTE — release vs. internal `enhanced_sampling_paper` code (read before reusin
   ``FNC_STEEPNESS=20.0`` and ``FNC_P_FOLD_THR=0.5``. The release
   ``foldedness_from_fnc`` matches the internal convention (no factor-of-2 issue).
 
-* Steering-CV slope SIGN. The FKC sampler maximises ``reward = -Σ energy`` and
-  ``LinearPotential.energy = weight · slope · clamp(cv - target)`` — i.e. it
-  favours *low* energy. The correct slope sign therefore depends on the CV:
-      - RMSD steering (folded = LOW rmsd)  -> slope must be POSITIVE.
-      - FNC  steering (folded = HIGH fnc)  -> slope must be NEGATIVE.
-  We steer with **RMSD**, so we use a **positive** slope (per-system magnitude
-  from the internal config).
-  ⚠️ The release default `config/steering/cv_steer.yaml` ships an RMSD CV with
-  ``slope=-7.4`` (a *negative*, FNC-style sign); used verbatim with RMSD it would
-  bias toward UNFOLDING. We override it to positive here. (Internal code hides
-  this via ``force_slope_sign: true``; the release ``LinearPotential`` has no
-  such auto-sign.)
+* Steering-CV slope SIGN (verified empirically — see note). The FKC sampler
+  maximises ``reward = -Σ energy`` with
+  ``LinearPotential.energy = weight · slope · clamp(cv - target)``. The purpose of
+  steering here is *enhanced sampling*: bias toward the RARE state (the unfolded
+  basin for a stable protein), then reweight back. The correct sign per CV is:
+      - RMSD steering -> slope must be **NEGATIVE** (drives toward HIGH RMSD,
+        i.e. structural unfolding).
+      - FNC  steering -> slope must be **POSITIVE** (drives toward LOW FNC).
+  This matches the internal ``run_steering_foldedness.py`` convention
+  (``NEGATIVE_SLOPE_CVS`` = {dRMSD, RMSD, LocalRMSD}) and the release default
+  ``config/steering/cv_steer.yaml`` (which ships RMSD ``slope=-7.4``). We store a
+  positive magnitude per system and apply the negative sign in the potential
+  builders (``-abs(steer_slope)``).
+  Empirical check (2ABD, slope magnitude 3.15): with the NEGATIVE sign the
+  sampler explores both basins (≈54% of samples have FNC<0.5) and the reweighted
+  ΔG = -1.18 kcal/mol matches the well-sampled baseline (-1.25) and the internal
+  reference (-1.2). With a POSITIVE sign it over-folds (FNC<0.5 in <1% of
+  samples) and ΔG is biased to -1.55. So POSITIVE is wrong for RMSD steering.
 
 * Steered reweighting. We follow the internal recipe: reweight by inverse
   Boltzmann weights ``w ∝ exp(+E)`` where ``E`` is the **steering** energy
@@ -246,8 +252,9 @@ def build_steering_denoiser_config(
 ) -> dict:
     """Self-contained FKC steering denoiser config (RMSD CV + linear potential).
 
-    Mirrors `config/steering/cv_steer.yaml` but with the corrected POSITIVE slope
-    for RMSD steering and per-system reference / clip_max.
+    Mirrors `config/steering/cv_steer.yaml`: NEGATIVE slope for RMSD steering
+    (drives toward the unfolded basin for enhanced sampling) and per-system
+    reference / clip_max.
     """
     return {
         "_target_": "bioemu.steering.dpm_fkc.dpm_solver_fkc",
@@ -261,7 +268,8 @@ def build_steering_denoiser_config(
             {
                 "_target_": "bioemu.steering.LinearPotential",
                 "target": STEER_TARGET,
-                "slope": system.steer_slope,  # POSITIVE: RMSD steering -> folded
+                # NEGATIVE: RMSD steering -> enhance the (rare) unfolded basin.
+                "slope": -abs(system.steer_slope),
                 "weight": STEER_WEIGHT,
                 "clip_min": STEER_CLIP_MIN,
                 "clip_max": system.steer_clip_max,
@@ -293,7 +301,7 @@ def build_steering_potential(reference_pdb: str, system: System) -> LinearPotent
     """Reconstruct the RMSD steering potential for inverse-Boltzmann reweighting."""
     return LinearPotential(
         target=STEER_TARGET,
-        slope=system.steer_slope,
+        slope=-abs(system.steer_slope),
         weight=STEER_WEIGHT,
         clip_min=STEER_CLIP_MIN,
         clip_max=system.steer_clip_max,
