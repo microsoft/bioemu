@@ -102,7 +102,10 @@ class System:
     sequence: str
     steer_slope: float  # POSITIVE magnitude for RMSD steering (see header)
     steer_clip_max: float
-    ref_dg: float  # internal large-scale reference ΔG (kcal/mol), for context
+    # Internal FNC-CV reference ΔG (kcal/mol), for context. Source:
+    # enhanced_sampling_paper/scripts/thermomutdb_fnc_slopes.csv (`dG_fnc` column),
+    # computed from ~50k UNSTEERED samples (the "self-reference" in mae_selfref_FNC.pdf).
+    ref_dg: float
 
 
 SYSTEMS: dict[str, System] = {
@@ -160,6 +163,14 @@ UNSTEERED_NUM_SAMPLES = 256
 # GPU memory (e.g. ~128 for 2ABD on a 46 GB card; 256 OOMs with reward grads).
 UNSTEERED_BATCH = 64
 
+# Number of denoising steps (time-grid points). Used for BOTH the unsteered
+# baseline and the steered FKC runs so the two ΔG estimates are directly
+# comparable. The release default dpm.yaml uses N=50; cv_steer.yaml uses N=100.
+DENOISE_STEPS = 100
+DENOISE_EPS_T = 0.001
+DENOISE_MAX_T = 0.99
+DENOISE_NOISE = 1.0  # 'a' parameter: 1.0 = full SDE (matched across both runs)
+
 # Common steering-potential parameters (RMSD CV, positive slope — see header).
 STEER_TARGET = 0.5  # target RMSD (nm)
 STEER_CLIP_MIN = -0.5
@@ -208,6 +219,28 @@ def batch_size_100_for(num_particles: int, seq_len: int) -> int:
     return int(np.ceil(num_particles * (seq_len / 100.0) ** 2)) + 1
 
 
+def build_unsteered_denoiser_config() -> dict:
+    """Unsteered baseline through the SAME FKC code path, with an empty potential.
+
+    Calling `dpm_solver_fkc` with ``fk_potentials=[]`` and ``steering_config=None``
+    is documented to be equivalent to unsteered DPM sampling (no reward, no
+    resampling), but it shares the steered runs' integrator, step count
+    (DENOISE_STEPS) and SDE noise (DENOISE_NOISE) so the two ΔG estimates are
+    directly comparable.
+    """
+    return {
+        "_target_": "bioemu.steering.dpm_fkc.dpm_solver_fkc",
+        "_partial_": True,
+        "eps_t": DENOISE_EPS_T,
+        "max_t": DENOISE_MAX_T,
+        "N": DENOISE_STEPS,
+        "noise": DENOISE_NOISE,
+        "use_x0_for_reward": True,
+        "fk_potentials": [],
+        "steering_config": None,
+    }
+
+
 def build_steering_denoiser_config(
     reference_pdb: str, num_particles: int, system: System
 ) -> dict:
@@ -219,10 +252,10 @@ def build_steering_denoiser_config(
     return {
         "_target_": "bioemu.steering.dpm_fkc.dpm_solver_fkc",
         "_partial_": True,
-        "eps_t": 0.001,
-        "max_t": 0.99,
-        "N": 100,
-        "noise": 1.0,
+        "eps_t": DENOISE_EPS_T,
+        "max_t": DENOISE_MAX_T,
+        "N": DENOISE_STEPS,
+        "noise": DENOISE_NOISE,
         "use_x0_for_reward": True,
         "fk_potentials": [
             {
@@ -336,8 +369,7 @@ def main() -> None:
         output_dir=unsteered_dir,
         batch_size_100=batch_size_100_for(UNSTEERED_BATCH, seq_len),
         model_name=MODEL_NAME,
-        denoiser_type="dpm",
-        denoiser_config=None,
+        denoiser_config=build_unsteered_denoiser_config(),
         filter_samples=False,
     )
     pos = load_ca_positions(unsteered_dir)

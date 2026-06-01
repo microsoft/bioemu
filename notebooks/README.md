@@ -43,14 +43,18 @@ input sequence. A GPU is strongly recommended for any example that calls
 
     | condition       | n_particles | ΔG (kcal/mol) | p_fold |
     |-----------------|-------------|---------------|--------|
-    | unsteered       | 256         | -1.75         | 0.950  |
+    | unsteered       | 256         | -1.25         | 0.891  |
     | steered         | 16          | -4.35         | 0.999  |
     | steered         | 64          | -0.98         | 0.838  |
     | steered         | 128         | -0.73         | 0.773  |
 
-    With too few particles (np=16) the inverse-Boltzmann reweighting is dominated
-    by a handful of folded samples and ΔG is badly biased; as `num_particles`
-    grows the steered estimate settles into the reference range (≈ -1.2 kcal/mol).
+    The unsteered baseline runs through the *same* FKC integrator as the steered
+    runs but with an empty potential (`fk_potentials=[]`, `steering_config=None`)
+    and identical step count / SDE noise (N=100, noise=1.0), so the estimates are
+    directly comparable. With too few particles (np=16) the inverse-Boltzmann
+    reweighting is dominated by a handful of folded samples and ΔG is badly
+    biased; as `num_particles` grows the steered estimate settles into the
+    reference range (≈ -1.2 kcal/mol, matching the well-sampled baseline).
   - The script header documents several **release-vs-internal** parameter
     conventions worth reading before reuse — most importantly the **slope sign**
     for steering: RMSD steering (folded = low RMSD) needs a **positive** slope,
