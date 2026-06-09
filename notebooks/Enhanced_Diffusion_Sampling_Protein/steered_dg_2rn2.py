@@ -13,12 +13,6 @@ What this script does, in ONE invocation on ONE GPU:
   3. Sub-sample both pools at a range of effective sample counts and compute the
      reweighted FNC-CV ΔG per draw, producing a convergence curve with error bars.
 
-The steered curve converges toward the internal reference ΔG (≈ -5.3 kcal/mol)
-within a few hundred effective samples, while the unsteered baseline saturates at
-an artifactual folded floor and does not resolve the rare unfolded state at this
-budget. All the physics (system, steering config, ΔG recipe, subsampling) lives
-in ``steered_dg_lib.py``; this file is just the runnable driver and its knobs.
-
 NOTE: 2RN2 with ~1000 steered samples takes a few hours on a single GPU. Reduce
 STEERED_TOTAL / UNSTEERED_TOTAL below for a quick smoke test. To parallelise
 across GPUs, launch several processes that each write into a distinct

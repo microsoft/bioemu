@@ -3,10 +3,10 @@
 This module holds everything the example driver (``steered_dg_2rn2.py``) needs:
 the system definition, the FKC steering / unsteered denoiser configs, the
 reference-PDB download, the Fraction-of-Native-Contacts (FNC) ΔG recipe, and the
-batch-subsampling utilities. It has **no run side effects** — import it freely.
+batch-subsampling utilities.
 
 All of this uses *release* BioEmu APIs only and reproduces the core idea of the
-internal enhanced-sampling experiments:
+experiments in the enhanced diffusion sampling paper:
 
   1. Sample conformers WITH FKC steering using an **RMSD** collective variable and
      a **linear potential**, then reweight the steered ensemble back to the
@@ -16,24 +16,16 @@ internal enhanced-sampling experiments:
   3. Evaluate the folding free energy ΔG of both with the **FNC** CV (not the CV
      used for steering) and compare convergence vs. number of samples.
 
-ΔG is evaluated exactly as in the internal analysis:
+ΔG is evaluated with
 
     foldedness = sigmoid(2 * steepness * (FNC - p_fold_thr))   (foldedness_from_fnc)
     p_fold     = weighted mean foldedness
     ΔG         = -kT * ln(p_fold / (1 - p_fold))
 
---------------------------------------------------------------------------------
-NOTE — release vs. internal `enhanced_sampling_paper` code (read before reusing):
---------------------------------------------------------------------------------
-* FNC CV class name. Internal `compute_dg.py` targets ``bioemu.steering.FNC_CV``;
-  the release exposes it as ``bioemu.steering.FractionNativeContacts``.
-
-* FNC ΔG-evaluation parameters. The internal evaluation
-  (`scripts/batch_subsampling_analysis.py` -> `CV_PARAMS["FNC"]`) uses
-  ``steepness=20.0`` and ``threshold (p_fold_thr)=0.5``. It does **NOT** use the
-  per-system ``slope_fnc`` column — that is a steering-side quantity. We use
-  ``FNC_STEEPNESS=20.0`` and ``FNC_P_FOLD_THR=0.5``. The release
-  ``foldedness_from_fnc`` matches the internal convention (no factor-of-2 issue).
+* FNC ΔG-evaluation parameters. We use
+  ``FNC_STEEPNESS=20.0`` and ``FNC_P_FOLD_THR=0.5``. 
+  Note this is consistent with the Enhanced Diffusion Sampling paper, 
+  but NOT the same as what we use for the Science paper
 
 * Steering-CV slope SIGN (verified empirically). The FKC sampler maximises
   ``reward = -Σ energy`` with
@@ -43,29 +35,10 @@ NOTE — release vs. internal `enhanced_sampling_paper` code (read before reusin
       - RMSD steering -> slope must be **NEGATIVE** (drives toward HIGH RMSD,
         i.e. structural unfolding).
       - FNC  steering -> slope must be **POSITIVE** (drives toward LOW FNC).
-  This matches the internal ``run_steering_foldedness.py`` convention
-  (``NEGATIVE_SLOPE_CVS`` = {dRMSD, RMSD, LocalRMSD}) and the release default
-  ``config/steering/cv_steer.yaml`` (which ships RMSD ``slope=-7.4``). We store a
-  positive magnitude on the system and apply the negative sign in the potential
-  builders (``-abs(steer_slope)``). Empirical check (on 2ABD): with the NEGATIVE
-  sign the sampler explores both basins and the reweighted ΔG matches the
-  well-sampled baseline / internal reference; a POSITIVE sign over-folds and
-  biases ΔG. So POSITIVE is wrong for RMSD steering.
 
 * Steered reweighting. We reweight by inverse-Boltzmann weights ``w ∝ exp(+E)``
   where ``E`` is the **steering** energy (RMSD LinearPotential) recomputed on the
-  final samples — NOT the FKC sampler's residual ``log_weights``. The small
-  residual FK weight correction is ignored, identical to the internal analysis.
-
---------------------------------------------------------------------------------
-ENVIRONMENT NOTE
---------------------------------------------------------------------------------
-Embedding generation needs the in-process ColabFold/AlphaFold stack. If you hit
-import/protobuf errors, install compatible pins into the bioemu env:
-    pip install "tensorflow-cpu==2.18.0" "jax==0.4.35" "jaxlib==0.4.35" \
-                dm-haiku chex optax ml_collections immutabledict biopython
-(MSA + embeddings are computed once per sequence and cached in
-``~/.bioemu_embeds_cache``; subsequent runs are fast.)
+  final samples — NOT the FKC sampler's residual ``log_weights``. 
 """
 
 from __future__ import annotations
@@ -94,8 +67,7 @@ class System:
     sequence: str
     steer_slope: float  # POSITIVE magnitude for RMSD steering (sign applied later)
     steer_clip_max: float
-    # Internal FNC-CV reference ΔG (kcal/mol), for context. Source:
-    # enhanced_sampling_paper/scripts/thermomutdb_fnc_slopes.csv (`dG_fnc` column),
+    # Precomputed FNC-CV reference ΔG (kcal/mol), for context,
     # computed from ~50k UNSTEERED samples (the "self-reference").
     ref_dg: float
 
