@@ -14,7 +14,14 @@ import torch
 import torch.nn as nn
 from torch_geometric.data import Batch
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent / "notebooks"))
+sys.path.insert(
+    0,
+    str(
+        Path(__file__).resolve().parent.parent.parent
+        / "notebooks"
+        / "Enhanced_Diffusion_Sampling_GMM"
+    ),
+)
 
 from toy_gmm import TimeDependentGMM1D
 
