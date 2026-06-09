@@ -48,25 +48,33 @@ import urllib.request
 from dataclasses import dataclass
 from pathlib import Path
 
+import hydra
 import numpy as np
 import torch
+import yaml
 
-from bioemu.sample import main as sample_main
-from bioemu.steering import FractionNativeContacts, LinearPotential, RMSD
+from bioemu.steering import FractionNativeContacts, LinearPotential
 from bioemu.training.foldedness import foldedness_from_fnc
 
 logger = logging.getLogger(__name__)
 
+# Self-contained denoiser configs shipped next to this module. The steered config
+# (RMSD CV + linear potential) and the unsteered baseline (empty potential) follow
+# the same format as src/bioemu/config/steering/cv_steer.yaml and are passed
+# straight to bioemu sample() via load_denoiser_config().
+_THIS_DIR = Path(__file__).resolve().parent
+STEERED_CONFIG = _THIS_DIR / "steered_denoiser.yaml"
+UNSTEERED_CONFIG = _THIS_DIR / "unsteered_denoiser.yaml"
+
 
 # ----------------------------------------------------------------------------
-# System (sequence + steering params from internal systems_config.csv)
+# System (sequence + reference ΔG). Steering parameters (slope, clip_max) live in
+# steered_denoiser.yaml, the single source of truth for the steering potential.
 # ----------------------------------------------------------------------------
 @dataclass(frozen=True)
 class System:
     pdb_id: str
     sequence: str
-    steer_slope: float  # POSITIVE magnitude for RMSD steering (sign applied later)
-    steer_clip_max: float
     # Precomputed FNC-CV reference ΔG (kcal/mol), for context,
     # computed from ~50k UNSTEERED samples (the "self-reference").
     ref_dg: float
@@ -82,29 +90,14 @@ SYSTEM = System(
         "TDSQYVRQGITQWIHNWKKRGWKTADKKPVKNVDLWQRLDAALGQHQIKWEWVKGHAGHPENERCDEL"
         "ARAAAMNPTLEDTGYQVEV"
     ),
-    steer_slope=9.77,
-    steer_clip_max=1.44,
     ref_dg=-5.3,
 )
 
 
 # ----------------------------------------------------------------------------
-# Denoising / steering / ΔG constants
+# ΔG constants. Denoising / steering parameters now live in the YAML configs
+# (steered_denoiser.yaml, unsteered_denoiser.yaml).
 # ----------------------------------------------------------------------------
-# Number of denoising steps (time-grid points). Used for BOTH the unsteered
-# baseline and the steered FKC runs so the two ΔG estimates are directly
-# comparable. The release default dpm.yaml uses N=50; cv_steer.yaml uses N=100.
-DENOISE_STEPS = 100
-DENOISE_EPS_T = 0.001
-DENOISE_MAX_T = 0.99
-DENOISE_NOISE = 1.0  # 'a' parameter: 1.0 = full SDE (matched across both runs)
-
-# Common steering-potential parameters (RMSD CV, negative slope — see header).
-STEER_TARGET = 0.5  # target RMSD (nm)
-STEER_CLIP_MIN = -0.5
-STEER_WEIGHT = 1.0
-ESS_THRESHOLD = 0.7
-
 # FNC ΔG-evaluation parameters (internal CV_PARAMS["FNC"]).
 FNC_STEEPNESS = 20.0
 FNC_P_FOLD_THR = 0.5
@@ -151,83 +144,40 @@ def batch_size_100_for(num_particles: int, seq_len: int) -> int:
 
 
 # ----------------------------------------------------------------------------
-# Denoiser configs
+# Denoiser configs (loaded from the YAML files shipped next to this module)
 # ----------------------------------------------------------------------------
-def build_unsteered_denoiser_config() -> dict:
-    """Unsteered baseline through the SAME FKC code path, with an empty potential.
-
-    Calling `dpm_solver_fkc` with ``fk_potentials=[]`` and ``steering_config=None``
-    is documented to be equivalent to unsteered DPM sampling (no reward, no
-    resampling), but it shares the steered runs' integrator, step count
-    (DENOISE_STEPS) and SDE noise (DENOISE_NOISE) so the two ΔG estimates are
-    directly comparable.
-    """
-    return {
-        "_target_": "bioemu.steering.dpm_fkc.dpm_solver_fkc",
-        "_partial_": True,
-        "eps_t": DENOISE_EPS_T,
-        "max_t": DENOISE_MAX_T,
-        "N": DENOISE_STEPS,
-        "noise": DENOISE_NOISE,
-        "use_x0_for_reward": True,
-        "fk_potentials": [],
-        "steering_config": None,
-    }
-
-
-def build_steering_denoiser_config(
-    reference_pdb: str, num_particles: int, system: System = SYSTEM
+def load_denoiser_config(
+    config_path: Path,
+    reference_pdb: str | None = None,
+    num_particles: int | None = None,
 ) -> dict:
-    """Self-contained FKC steering denoiser config (RMSD CV + linear potential).
+    """Load a denoiser-config YAML and inject the runtime-only overrides.
 
-    Mirrors `config/steering/cv_steer.yaml`: NEGATIVE slope for RMSD steering
-    (drives toward the unfolded basin for enhanced sampling) and per-system
-    reference / clip_max.
+    The YAML files (``steered_denoiser.yaml`` / ``unsteered_denoiser.yaml``) hold
+    all the physics; only ``reference_pdb`` (path on disk) and ``num_particles``
+    (one FKC population per batch) are runtime values, so they are placeholders in
+    the YAML and filled in here. The returned dict is passed straight to bioemu
+    ``sample(denoiser_config=...)``.
     """
-    return {
-        "_target_": "bioemu.steering.dpm_fkc.dpm_solver_fkc",
-        "_partial_": True,
-        "eps_t": DENOISE_EPS_T,
-        "max_t": DENOISE_MAX_T,
-        "N": DENOISE_STEPS,
-        "noise": DENOISE_NOISE,
-        "use_x0_for_reward": True,
-        "fk_potentials": [
-            {
-                "_target_": "bioemu.steering.LinearPotential",
-                "target": STEER_TARGET,
-                # NEGATIVE: RMSD steering -> enhance the (rare) unfolded basin.
-                "slope": -abs(system.steer_slope),
-                "weight": STEER_WEIGHT,
-                "clip_min": STEER_CLIP_MIN,
-                "clip_max": system.steer_clip_max,
-                "cv": {
-                    "_target_": "bioemu.steering.RMSD",
-                    "reference_pdb": reference_pdb,
-                },
-            }
-        ],
-        "steering_config": {
-            "num_particles": num_particles,
-            "ess_threshold": ESS_THRESHOLD,
-            "start": 1.0,
-            "end": 0.0,
-        },
-    }
+    with open(config_path) as f:
+        cfg = yaml.safe_load(f)
+    if reference_pdb is not None and cfg.get("fk_potentials"):
+        cfg["fk_potentials"][0]["cv"]["reference_pdb"] = reference_pdb
+    if num_particles is not None and cfg.get("steering_config"):
+        cfg["steering_config"]["num_particles"] = num_particles
+    return cfg
 
 
 def build_steering_potential(
-    reference_pdb: str, system: System = SYSTEM
+    reference_pdb: str, config_path: Path = STEERED_CONFIG
 ) -> LinearPotential:
-    """Reconstruct the RMSD steering potential for inverse-Boltzmann reweighting."""
-    return LinearPotential(
-        target=STEER_TARGET,
-        slope=-abs(system.steer_slope),
-        weight=STEER_WEIGHT,
-        clip_min=STEER_CLIP_MIN,
-        clip_max=system.steer_clip_max,
-        cv=RMSD(reference_pdb=reference_pdb),
-    )
+    """Reconstruct the RMSD steering potential for inverse-Boltzmann reweighting.
+
+    Instantiated from the SAME ``fk_potentials`` entry used for sampling, so the
+    reweighting potential and the sampling potential can never drift apart.
+    """
+    cfg = load_denoiser_config(config_path, reference_pdb=reference_pdb)
+    return hydra.utils.instantiate(cfg["fk_potentials"][0])
 
 
 # ----------------------------------------------------------------------------
@@ -259,33 +209,10 @@ def dg_from_cv(
 
 
 # ----------------------------------------------------------------------------
-# Generation (single run, sequential batches on one GPU)
-# ----------------------------------------------------------------------------
-def generate_pool(
-    seq: str,
-    seq_len: int,
-    output_dir: Path,
-    num_samples: int,
-    batch_size: int,
-    denoiser_config: dict,
-) -> None:
-    """Generate ``num_samples`` in ``batch_size`` chunks (resumable via npz cache)."""
-    sample_main(
-        sequence=seq,
-        num_samples=num_samples,
-        output_dir=output_dir,
-        batch_size_100=batch_size_100_for(batch_size, seq_len),
-        model_name=MODEL_NAME,
-        denoiser_config=denoiser_config,
-        filter_samples=False,
-    )
-
-
-# ----------------------------------------------------------------------------
 # Per-batch precompute
 # ----------------------------------------------------------------------------
 def precompute_steered_batches(
-    output_dir: Path, seq: str, reference_pdb: str, system: System = SYSTEM
+    output_dir: Path, seq: str, reference_pdb: str
 ) -> list[dict]:
     """For each FKC batch: steering energy (RMSD) + FNC-CV values.
 
@@ -293,7 +220,7 @@ def precompute_steered_batches(
     Drops any trailing batch whose size differs from the regular size. Reads
     ``batch_*.npz`` recursively, so sharded sub-directories are fine.
     """
-    steering_potential = build_steering_potential(reference_pdb, system)
+    steering_potential = build_steering_potential(reference_pdb)
     fnc_cv = FractionNativeContacts(reference_pdb=reference_pdb)
     files = sorted(output_dir.rglob("batch_*.npz"))
     if not files:

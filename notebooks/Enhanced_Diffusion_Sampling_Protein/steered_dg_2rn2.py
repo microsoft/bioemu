@@ -13,6 +13,10 @@ What this script does, in ONE invocation on ONE GPU:
   3. Sub-sample both pools at a range of effective sample counts and compute the
      reweighted FNC-CV ΔG per draw, producing a convergence curve with error bars.
 
+The two denoiser configs are the YAML files next to this script
+(``steered_denoiser.yaml`` and ``unsteered_denoiser.yaml``); generation is just a
+direct call to bioemu ``sample()``.
+
 NOTE: 2RN2 with ~1000 steered samples takes a few hours on a single GPU. Reduce
 STEERED_TOTAL / UNSTEERED_TOTAL below for a quick smoke test. To parallelise
 across GPUs, launch several processes that each write into a distinct
@@ -29,8 +33,23 @@ from pathlib import Path
 
 import matplotlib.pyplot as plt
 import numpy as np
+from bioemu.sample import main as sample_main
 
-import steered_dg_lib as L
+from steered_dg_lib import (
+    MODEL_NAME,
+    STEERED_CONFIG,
+    SYSTEM,
+    UNSTEERED_CONFIG,
+    batch_size_100_for,
+    dg_from_cv,
+    fetch_reference_pdb,
+    inverse_boltzmann_weights,
+    load_denoiser_config,
+    precompute_steered_batches,
+    precompute_unsteered_cv,
+    subsample_steered,
+    subsample_unsteered,
+)
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -61,12 +80,12 @@ OUTPUT_ROOT = Path("steered_dg_2rn2_outputs")
 
 
 def main() -> None:
-    system = L.SYSTEM
+    system = SYSTEM
     seq = system.sequence
     seq_len = len(seq)
     OUTPUT_ROOT.mkdir(parents=True, exist_ok=True)
     reference_pdb = str(
-        L.fetch_reference_pdb(system.pdb_id, OUTPUT_ROOT / "2rn2_reference.pdb")
+        fetch_reference_pdb(system.pdb_id, OUTPUT_ROOT / "2rn2_reference.pdb")
     )
     logger.info(
         "System %s (len=%d, internal FNC-CV ref ΔG ≈ %.1f kcal/mol)",
@@ -78,19 +97,26 @@ def main() -> None:
     logger.info("Generating STEERED pool: %d samples (pop=%d)...", STEERED_TOTAL, STEERED_POP)
     logger.info("=" * 80)
     steered_dir = OUTPUT_ROOT / "steered_pool"
-    L.generate_pool(
-        seq, seq_len, steered_dir, STEERED_TOTAL, STEERED_POP,
-        L.build_steering_denoiser_config(reference_pdb, STEERED_POP, system),
+    sample_main(
+        sequence=seq,
+        num_samples=STEERED_TOTAL,
+        output_dir=steered_dir,
+        batch_size_100=batch_size_100_for(STEERED_POP, seq_len),
+        model_name=MODEL_NAME,
+        denoiser_config=load_denoiser_config(
+            STEERED_CONFIG, reference_pdb=reference_pdb, num_particles=STEERED_POP
+        ),
+        filter_samples=False,
     )
-    steered_batches = L.precompute_steered_batches(steered_dir, seq, reference_pdb, system)
+    steered_batches = precompute_steered_batches(steered_dir, seq, reference_pdb)
 
     all_energy = np.concatenate([b["energy"] for b in steered_batches])
     all_cv = np.concatenate([b["cv"] for b in steered_batches])
-    dG_full, p_full = L.dg_from_cv(all_cv, weights=L.inverse_boltzmann_weights(all_energy))
+    dG_full, p_full = dg_from_cv(all_cv, weights=inverse_boltzmann_weights(all_energy))
     logger.info("Steered full-pool ΔG = %.3f kcal/mol (p_fold=%.4f, n=%d)",
                 dG_full, p_full, len(all_cv))
 
-    steered_curve = L.subsample_steered(steered_batches, STEERED_POP, N_RESAMPLE, RANDOM_SEED)
+    steered_curve = subsample_steered(steered_batches, STEERED_POP, N_RESAMPLE, RANDOM_SEED)
 
     # 2. Optionally generate the unsteered baseline pool.
     unsteered_curve = None
@@ -99,15 +125,20 @@ def main() -> None:
         logger.info("Generating UNSTEERED pool: %d samples...", UNSTEERED_TOTAL)
         logger.info("=" * 80)
         unsteered_dir = OUTPUT_ROOT / "unsteered_pool"
-        L.generate_pool(
-            seq, seq_len, unsteered_dir, UNSTEERED_TOTAL, UNSTEERED_BATCH,
-            L.build_unsteered_denoiser_config(),
+        sample_main(
+            sequence=seq,
+            num_samples=UNSTEERED_TOTAL,
+            output_dir=unsteered_dir,
+            batch_size_100=batch_size_100_for(UNSTEERED_BATCH, seq_len),
+            model_name=MODEL_NAME,
+            denoiser_config=load_denoiser_config(UNSTEERED_CONFIG),
+            filter_samples=False,
         )
-        cv_pool = L.precompute_unsteered_cv(unsteered_dir, seq, reference_pdb)
-        dG_uns, p_uns = L.dg_from_cv(cv_pool, weights=None)
+        cv_pool = precompute_unsteered_cv(unsteered_dir, seq, reference_pdb)
+        dG_uns, p_uns = dg_from_cv(cv_pool, weights=None)
         logger.info("Unsteered full-pool ΔG = %.3f kcal/mol (p_fold=%.4f, n=%d)",
                     dG_uns, p_uns, len(cv_pool))
-        unsteered_curve = L.subsample_unsteered(
+        unsteered_curve = subsample_unsteered(
             cv_pool, steered_curve["n_eff"], N_RESAMPLE, RANDOM_SEED
         )
 

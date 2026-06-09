@@ -1,0 +1,33 @@
+# FKC (Feynman-Kac Corrector) steered denoiser config for the 2RN2 ΔG example.
+# Self-contained denoiser config — pass as `denoiser_config` to bioemu sample().
+# Mirrors src/bioemu/config/steering/cv_steer.yaml, with the per-system 2RN2
+# values taken from the internal enhanced-sampling `systems_config.csv`
+# (slope, clip_max). `reference_pdb` and `num_particles` are placeholders that the
+# driver overrides at runtime (see steered_dg_2rn2.py / load_denoiser_config).
+#
+# NOTE on the slope SIGN: RMSD steering biases toward HIGH RMSD (the rare unfolded
+# basin) for enhanced sampling, so the slope is NEGATIVE. The magnitude (9.77) is
+# the per-system 2RN2 value; the release default in cv_steer.yaml is a generic -7.4.
+_target_: bioemu.steering.dpm_fkc.dpm_solver_fkc
+_partial_: true
+eps_t: 0.001
+max_t: 0.99
+N: 100
+noise: 1.0
+use_x0_for_reward: true
+fk_potentials:
+  - _target_: bioemu.steering.LinearPotential
+    target: 0.5
+    slope: -9.77 # Specific hyperparam for 2RN2
+    order: 1
+    weight: 1.0
+    clip_min: -0.5
+    clip_max: 1.44 # Specific hyperparam for 2RN2
+    cv:
+      _target_: bioemu.steering.RMSD
+      reference_pdb: ???  # overridden at runtime
+steering_config:
+  num_particles: 32  # overridden at runtime (one FKC population per batch)
+  ess_threshold: 0.7
+  start: 1.0
+  end: 0.0

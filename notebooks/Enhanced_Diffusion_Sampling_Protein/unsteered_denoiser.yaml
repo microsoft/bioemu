@@ -1,0 +1,15 @@
+# Unsteered baseline denoiser config for the 2RN2 ΔG example.
+# Runs through the SAME FKC integrator as the steered config but with an empty
+# potential (`fk_potentials: []`, `steering_config: null`), which is equivalent to
+# unsteered DPM sampling (no reward, no resampling). It deliberately keeps the
+# steered run's step count (N) and SDE noise so the two ΔG estimates are directly
+# comparable.
+_target_: bioemu.steering.dpm_fkc.dpm_solver_fkc
+_partial_: true
+eps_t: 0.001
+max_t: 0.99
+N: 100
+noise: 1.0
+use_x0_for_reward: true
+fk_potentials: []
+steering_config: null
