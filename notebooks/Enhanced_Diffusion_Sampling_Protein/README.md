@@ -21,5 +21,5 @@ With ~1056 steered + 1024 unsteered samples, the steered convergence curve falls
 
 - Steered draws sub-sample at the granularity of whole batches (each FKC batch is an independent importance-sampling population), so a draw's effective sample count is `n_batches · STEERED_POP`. The reweighted FNC-CV ΔG uses inverse-Boltzmann weights; unsteered draws use uniform weights. 
 - GPU memory: steered FKC runs needs to run with a smaller batch compared to the unsteered runs (the whole particle population lives in one batch), so `STEERED_POP` is bounded by GPU memory (2RN2: pop=32 peaks ~35 GB on a 46 GB card; pop=50 OOMs).
-- The precompute reads `batch_*.npz` recursively, so to parallelise across GPUs you can launch several processes that each write into a distinct sub-directory of the same pool with a distinct `base_seed` (identical seeds produce identical samples); the pools then merge transparently.
+- This is a single-process example: each pool's ΔG uses only the `batch_*.npz` that this run writes directly into `steered_pool/` / `unsteered_pool/`. Increase `STEERED_TOTAL` / `UNSTEERED_TOTAL` to push the curve further out.
 - The analysis code reads Cα positions (nm) straight from the `batch_*.npz` files (written before the `topology.pdb` + `samples.xtc` conversion).

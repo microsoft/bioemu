@@ -217,12 +217,12 @@ def precompute_steered_batches(
     """For each FKC batch: steering energy (RMSD) + FNC-CV values.
 
     Returns a list of {"energy": (b,), "cv": (b,)} dicts, one per batch file.
-    Drops any trailing batch whose size differs from the regular size. Reads
-    ``batch_*.npz`` recursively, so sharded sub-directories are fine.
+    Drops any trailing batch whose size differs from the regular size. Reads only
+    the ``batch_*.npz`` written directly in ``output_dir`` by this run.
     """
     steering_potential = build_steering_potential(reference_pdb)
     fnc_cv = FractionNativeContacts(reference_pdb=reference_pdb)
-    files = sorted(output_dir.rglob("batch_*.npz"))
+    files = sorted(output_dir.glob("batch_*.npz"))
     if not files:
         raise FileNotFoundError(f"No batch_*.npz under {output_dir}")
 
@@ -248,10 +248,10 @@ def precompute_steered_batches(
 def precompute_unsteered_cv(output_dir: Path, seq: str, reference_pdb: str) -> np.ndarray:
     """Pool all FNC-CV values from unsteered batches (uniform weights later).
 
-    Reads ``batch_*.npz`` recursively, so sharded sub-directories are fine.
+    Reads only the ``batch_*.npz`` written directly in ``output_dir`` by this run.
     """
     fnc_cv = FractionNativeContacts(reference_pdb=reference_pdb)
-    files = sorted(output_dir.rglob("batch_*.npz"))
+    files = sorted(output_dir.glob("batch_*.npz"))
     if not files:
         raise FileNotFoundError(f"No batch_*.npz under {output_dir}")
     cvs = []

@@ -18,10 +18,8 @@ The two denoiser configs are the YAML files next to this script
 direct call to bioemu ``sample()``.
 
 NOTE: 2RN2 with ~1000 steered samples takes a few hours on a single GPU. Reduce
-STEERED_TOTAL / UNSTEERED_TOTAL below for a quick smoke test. To parallelise
-across GPUs, launch several processes that each write into a distinct
-sub-directory of the same pool with a DISTINCT ``base_seed`` (identical seeds
-produce identical samples); the precompute pools all sub-directories recursively.
+STEERED_TOTAL / UNSTEERED_TOTAL below for a quick smoke test. The ΔG is computed
+only from the ``batch_*.npz`` this run writes directly into each pool directory.
 
 Run:  python steered_dg_2rn2.py
 """
