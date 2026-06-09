@@ -31,8 +31,6 @@ from pathlib import Path
 
 import matplotlib.pyplot as plt
 import numpy as np
-from bioemu.sample import main as sample_main
-
 from steered_dg_lib import (
     MODEL_NAME,
     STEERED_CONFIG,
@@ -48,6 +46,8 @@ from steered_dg_lib import (
     subsample_steered,
     subsample_unsteered,
 )
+
+from bioemu.sample import main as sample_main
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -82,12 +82,12 @@ def main() -> None:
     seq = system.sequence
     seq_len = len(seq)
     OUTPUT_ROOT.mkdir(parents=True, exist_ok=True)
-    reference_pdb = str(
-        fetch_reference_pdb(system.pdb_id, OUTPUT_ROOT / "2rn2_reference.pdb")
-    )
+    reference_pdb = str(fetch_reference_pdb(system.pdb_id, OUTPUT_ROOT / "2rn2_reference.pdb"))
     logger.info(
         "System %s (len=%d, internal FNC-CV ref ΔG ≈ %.1f kcal/mol)",
-        system.pdb_id, seq_len, system.ref_dg,
+        system.pdb_id,
+        seq_len,
+        system.ref_dg,
     )
 
     # 1. Generate steered pool (independent FKC populations of STEERED_POP each).
@@ -111,8 +111,9 @@ def main() -> None:
     all_energy = np.concatenate([b["energy"] for b in steered_batches])
     all_cv = np.concatenate([b["cv"] for b in steered_batches])
     dG_full, p_full = dg_from_cv(all_cv, weights=inverse_boltzmann_weights(all_energy))
-    logger.info("Steered full-pool ΔG = %.3f kcal/mol (p_fold=%.4f, n=%d)",
-                dG_full, p_full, len(all_cv))
+    logger.info(
+        "Steered full-pool ΔG = %.3f kcal/mol (p_fold=%.4f, n=%d)", dG_full, p_full, len(all_cv)
+    )
 
     steered_curve = subsample_steered(steered_batches, STEERED_POP, N_RESAMPLE, RANDOM_SEED)
 
@@ -134,16 +135,21 @@ def main() -> None:
         )
         cv_pool = precompute_unsteered_cv(unsteered_dir, seq, reference_pdb)
         dG_uns, p_uns = dg_from_cv(cv_pool, weights=None)
-        logger.info("Unsteered full-pool ΔG = %.3f kcal/mol (p_fold=%.4f, n=%d)",
-                    dG_uns, p_uns, len(cv_pool))
+        logger.info(
+            "Unsteered full-pool ΔG = %.3f kcal/mol (p_fold=%.4f, n=%d)",
+            dG_uns,
+            p_uns,
+            len(cv_pool),
+        )
         unsteered_curve = subsample_unsteered(
             cv_pool, steered_curve["n_eff"], N_RESAMPLE, RANDOM_SEED
         )
 
     # 3. Report table.
     logger.info("=" * 80)
-    logger.info("ΔG convergence for %s (internal ref ≈ %.2f kcal/mol)",
-                system.pdb_id, system.ref_dg)
+    logger.info(
+        "ΔG convergence for %s (internal ref ≈ %.2f kcal/mol)", system.pdb_id, system.ref_dg
+    )
     logger.info("=" * 80)
     logger.info("%-10s %22s", "n_eff", "steered ΔG (mean±std)")
     for n, m, s in zip(steered_curve["n_eff"], steered_curve["mean"], steered_curve["std"]):
@@ -152,16 +158,27 @@ def main() -> None:
     # 4. Plot ΔG vs effective sample count, with error bars.
     fig, ax = plt.subplots(figsize=(8, 5))
     ax.errorbar(
-        steered_curve["n_eff"], steered_curve["mean"], yerr=steered_curve["std"],
-        fmt="o-", color="steelblue", capsize=3, label="Steered (RMSD, FKC)",
+        steered_curve["n_eff"],
+        steered_curve["mean"],
+        yerr=steered_curve["std"],
+        fmt="o-",
+        color="steelblue",
+        capsize=3,
+        label="Steered (RMSD, FKC)",
     )
     if unsteered_curve is not None:
         ax.errorbar(
-            unsteered_curve["n_eff"], unsteered_curve["mean"], yerr=unsteered_curve["std"],
-            fmt="s--", color="darkorange", capsize=3, label="Unsteered",
+            unsteered_curve["n_eff"],
+            unsteered_curve["mean"],
+            yerr=unsteered_curve["std"],
+            fmt="s--",
+            color="darkorange",
+            capsize=3,
+            label="Unsteered",
         )
-    ax.axhline(system.ref_dg, color="red", linestyle=":",
-               label=f"Internal ref ({system.ref_dg:.2f})")
+    ax.axhline(
+        system.ref_dg, color="red", linestyle=":", label=f"Internal ref ({system.ref_dg:.2f})"
+    )
     ax.set_xlabel("Effective number of samples")
     ax.set_ylabel("ΔG (kcal/mol)")
     ax.set_title(f"{system.pdb_id} folding ΔG convergence (subsampling, {N_RESAMPLE} draws)")

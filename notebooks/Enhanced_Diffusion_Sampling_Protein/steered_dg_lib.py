@@ -23,8 +23,8 @@ experiments in the enhanced diffusion sampling paper:
     ΔG         = -kT * ln(p_fold / (1 - p_fold))
 
 * FNC ΔG-evaluation parameters. We use
-  ``FNC_STEEPNESS=20.0`` and ``FNC_P_FOLD_THR=0.5``. 
-  Note this is consistent with the Enhanced Diffusion Sampling paper, 
+  ``FNC_STEEPNESS=20.0`` and ``FNC_P_FOLD_THR=0.5``.
+  Note this is consistent with the Enhanced Diffusion Sampling paper,
   but NOT the same as what we use for the Science paper
 
 * Steering-CV slope SIGN (verified empirically). The FKC sampler maximises
@@ -38,7 +38,7 @@ experiments in the enhanced diffusion sampling paper:
 
 * Steered reweighting. We reweight by inverse-Boltzmann weights ``w ∝ exp(+E)``
   where ``E`` is the **steering** energy (RMSD LinearPotential) recomputed on the
-  final samples — NOT the FKC sampler's residual ``log_weights``. 
+  final samples — NOT the FKC sampler's residual ``log_weights``.
 """
 
 from __future__ import annotations
@@ -190,9 +190,7 @@ def inverse_boltzmann_weights(energy: np.ndarray) -> np.ndarray:
     return w / w.sum()
 
 
-def dg_from_cv(
-    cv_values: np.ndarray, weights: np.ndarray | None = None
-) -> tuple[float, float]:
+def dg_from_cv(cv_values: np.ndarray, weights: np.ndarray | None = None) -> tuple[float, float]:
     """ΔG (kcal/mol) and p_fold from FNC-CV values via the foldedness sigmoid."""
     foldedness = foldedness_from_fnc(
         torch.tensor(cv_values), p_fold_thr=FNC_P_FOLD_THR, steepness=FNC_STEEPNESS
@@ -211,9 +209,7 @@ def dg_from_cv(
 # ----------------------------------------------------------------------------
 # Per-batch precompute
 # ----------------------------------------------------------------------------
-def precompute_steered_batches(
-    output_dir: Path, seq: str, reference_pdb: str
-) -> list[dict]:
+def precompute_steered_batches(output_dir: Path, seq: str, reference_pdb: str) -> list[dict]:
     """For each FKC batch: steering energy (RMSD) + FNC-CV values.
 
     Returns a list of {"energy": (b,), "cv": (b,)} dicts, one per batch file.
@@ -230,6 +226,7 @@ def precompute_steered_batches(
     sizes: list[int] = []
     for f in files:
         pos = torch.tensor(np.load(f)["pos"], dtype=torch.float32)
+        assert steering_potential.cv is not None
         rmsd = steering_potential.cv.compute_batch(pos, sequence=seq)
         energy = steering_potential.energy_from_cv(rmsd).cpu().numpy()
         cv = fnc_cv.compute_batch(pos, sequence=seq).cpu().numpy()
@@ -240,7 +237,10 @@ def precompute_steered_batches(
     kept = [b for b, s in zip(batches, sizes) if s == regular]
     logger.info(
         "Steered pool: %d batches of size %d (%d samples); dropped %d odd-sized",
-        len(kept), regular, len(kept) * regular, len(batches) - len(kept),
+        len(kept),
+        regular,
+        len(kept) * regular,
+        len(batches) - len(kept),
     )
     return kept
 
@@ -285,17 +285,19 @@ def subsample_steered(
             cv = np.concatenate([batches[i]["cv"] for i in chosen])
             dG, _ = dg_from_cv(cv, weights=inverse_boltzmann_weights(energy))
             dGs.append(dG)
-        dGs = np.array(dGs)
+        dGs_arr = np.array(dGs)
         n_eff_list.append(n_batches * pop)
-        means.append(float(dGs.mean()))
-        stds.append(float(dGs.std()))
-        all_dGs.append(dGs)
+        means.append(float(dGs_arr.mean()))
+        stds.append(float(dGs_arr.std()))
+        all_dGs.append(dGs_arr)
     return {"n_eff": n_eff_list, "mean": means, "std": stds, "all": all_dGs}
 
 
 def subsample_unsteered(
-    cv_pool: np.ndarray, n_eff_list: list[int],
-    n_resample: int = N_RESAMPLE, seed: int = RANDOM_SEED,
+    cv_pool: np.ndarray,
+    n_eff_list: list[int],
+    n_resample: int = N_RESAMPLE,
+    seed: int = RANDOM_SEED,
 ) -> dict:
     """Draw n particles without replacement; ΔG per draw (uniform weights)."""
     rng = np.random.default_rng(seed)
@@ -308,8 +310,8 @@ def subsample_unsteered(
             idx = rng.choice(n_total, size=n, replace=False)
             dG, _ = dg_from_cv(cv_pool[idx], weights=None)
             dGs.append(dG)
-        dGs = np.array(dGs)
+        dGs_arr = np.array(dGs)
         n_used.append(n)
-        means.append(float(dGs.mean()))
-        stds.append(float(dGs.std()))
+        means.append(float(dGs_arr.mean()))
+        stds.append(float(dGs_arr.std()))
     return {"n_eff": n_used, "mean": means, "std": stds}
