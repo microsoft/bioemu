@@ -33,6 +33,8 @@
   ]
   readme = "README.md"
 
+[project.urls]
+  Homepage = "https://github.com/microsoft/bioemu"
 
 [tool.setuptools.dynamic]
   version = { attr = "bioemu.__version__" }
