@@ -1,25 +1,35 @@
-# Real-protein steered free-energy (`Enhanced_Diffusion_Sampling_Protein/`)
+# Steered free-energy estimation on a real protein (`Enhanced_Diffusion_Sampling_Protein/`)
 
-End-to-end demonstration, on *release* BioEmu APIs only, that **FKC steering** with an **RMSD** collective variable + a **linear potential** recovers the folding free energy ΔG of a hard system (**2RN2**, E. coli RNase H, len 155, unsteered sampling ref ΔG ≈ -5.3 kcal/mol) at a high sample budget with plain unsteered sampling. ΔG is evaluated with the **Fraction of Native Contacts (FNC)** CV via `foldedness_from_fnc` and `ΔG = -kT·ln(p_fold/(1-p_fold))`; steered ensembles are reweighted back to the unbiased ensemble with inverse-Boltzmann weights from the steering energy.
+This example estimates the **folding free energy (ΔG)** of a protein using FKC steering, achieving an accurate result with a fraction of the samples that unsteered sampling would need.
+
+## Background: computing ΔG from samples
+
+Given an ensemble of sampled protein conformations, ΔG is estimated as follows:
+
+1. For each sample, compute foldedness p_fold, here defined as sigmoid of the Fraction of Native Contacts (FNC).
+2. Compute ΔG = −kT·ln(p_fold / (1 − p_fold)).
+
+The challenge is that for many proteins the unfolded state is rare: unsteered sampling produces almost exclusively folded conformations, so p_fold ≈ 1 and the ΔG estimate is wrong. Getting enough unfolded samples by brute force can require orders of magnitude more compute.
+
+## This example
+
+**Target system:** 2RN2 (E. coli RNase H, 155 residues) — a hard case where the unfolded basin is rarely visited by unsteered sampling at moderate budgets.
+
+**FKC steering** accelerates sampling of this by applying a biasing potential (linear in RMSD) during sampling that encourages exploration of the unfolded state. The bias is then corrected via importance-weight reweighting, recovering the true unbiased ΔG. This lets us get an accurate estimate with a few hundreds steered samples, where the same number of unsteered samples would fail entirely.
 
 ## Files
 
-- **`steered_dg_2rn2.py`** — the runnable example. In a single invocation on a single GPU it generates ~`STEERED_TOTAL` steered samples (independent FKC populations of `STEERED_POP` particles each), ~`UNSTEERED_TOTAL` unsteered baseline samples (same FKC integrator, empty potential), then sub-samples both pools at a range of effective sample counts and plots the ΔG convergence curve with error bars. Generation is a direct call to bioemu `sample()`. Run with `python steered_dg_2rn2.py`. Tune the knobs at the top of the file (`STEERED_POP`, `STEERED_TOTAL`, `UNSTEERED_TOTAL`, `INCLUDE_UNSTEERED`, `N_RESAMPLE`); reduce the totals for a quick smoke test.
-- **`steered_denoiser.yaml`** — the FKC steered denoiser config (RMSD CV + linear potential), self-contained and passed straight to `sample()`. It mirrors `src/bioemu/config/steering/cv_steer.yaml` with the per-system 2RN2 values (`slope: -9.77`, `clip_max: 1.44`). The **slope sign is negative** because RMSD steering biases toward high RMSD (unfolding) to enhance the rare unfolded basin; the magnitude (9.77) is the per-system 2RN2 value. `reference_pdb` and `num_particles` are placeholders the driver fills in at runtime.
-- **`unsteered_denoiser.yaml`** — the unsteered baseline config: the same FKC integrator with an empty potential (`fk_potentials: []`, `steering_config: null`) and identical `N` / SDE noise, so the two ΔG estimates are directly comparable. Note this unsteered denoiser is different from the default one (it includes stochastic noise and with more steps for fair comparison).
-- **`steered_dg_lib.py`** — shared library (system definition, YAML config loader, reference-PDB download, the FNC ΔG recipe, and the batch-subsampling utilities). No run side effects; the example imports from it. The steering potential used for inverse-Boltzmann reweighting is instantiated from `steered_denoiser.yaml`, so the sampling and reweighting potentials can never drift apart.
+- **`steered_dg_2rn2.py`**: the main script. Generates steered and unsteered sample pools on a single GPU, then plots ΔG convergence vs sample count. Run with `python steered_dg_2rn2.py`. Tune constants at the top of the file (`STEERED_POP`, `STEERED_TOTAL`, `UNSTEERED_TOTAL`, etc.); reduce totals for a quick smoke test.
+- **`steered_denoiser.yaml`**: FKC denoiser config with the RMSD steering potential (per-system 2RN2 parameters). Passed directly to `bioemu.sample()`.
+- **`unsteered_denoiser.yaml`**: baseline FKC denoiser with no steering potential. Uses the same integrator/noise settings as the steered config for a fair comparison.
+- **`steered_dg_lib.py`**: shared library: system definition, config loading, reference-PDB download, FNC-based ΔG computation, and subsampling utilities. Imported by the main script.
 
 ## Outputs
 
 Written to `steered_dg_2rn2_outputs/`: `steered_pool/` + `unsteered_pool/` samples, the downloaded `2rn2_reference.pdb`, and `dg_subsampling_convergence.png`.
 
-## Example result
-
-With ~1056 steered + 1024 unsteered samples, the steered convergence curve falls from ≈ -7 kcal/mol (n_eff≈32, high variance) and settles onto the reference (≈ -5.3 kcal/mol) within a few hundred effective samples (~500-600 samples), with shrinking error bars. The unsteered baseline, by contrast, struggles at an artifactual folded floor (≈ -9.5 to -11 kcal/mol, p_fold≈1.0) and does not resolve the rare unfolded state at this budget. This is the headline demonstration: FKC steering recovers the reference ΔG of a hard system at a sample count where the plain baseline cannot.
-
 ## Implementation notes
 
-- Steered draws sub-sample at the granularity of whole batches (each FKC batch is an independent importance-sampling population), so a draw's effective sample count is `n_batches · STEERED_POP`. The reweighted FNC-CV ΔG uses inverse-Boltzmann weights; unsteered draws use uniform weights. 
-- GPU memory: steered FKC runs needs to run with a smaller batch compared to the unsteered runs (the whole particle population lives in one batch), so `STEERED_POP` is bounded by GPU memory (2RN2: pop=32 peaks ~35 GB on a 46 GB card; pop=50 OOMs).
-- This is a single-process example: each pool's ΔG uses only the `batch_*.npz` that this run writes directly into `steered_pool/` / `unsteered_pool/`. Increase `STEERED_TOTAL` / `UNSTEERED_TOTAL` to push the curve further out.
-- The analysis code reads Cα positions (nm) straight from the `batch_*.npz` files (written before the `topology.pdb` + `samples.xtc` conversion).
+- Each steered batch is an independent FKC particle population; subsampling operates at batch granularity.
+- GPU memory limits `STEERED_POP` (the full population lives in one batch). For 2RN2: pop=32 uses ~35 GB.
+- This is a single-process, single-run example. Increase `STEERED_TOTAL` / `UNSTEERED_TOTAL` to extend the convergence curve.

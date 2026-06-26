@@ -14,7 +14,9 @@ The sampling examples download a pretrained checkpoint (e.g. `bioemu-v1.1`) from
 
 ## Examples
 
-- **[`Enhanced_Diffusion_Sampling_Protein/`](Enhanced_Diffusion_Sampling_Protein/README.md)** — Real-protein steered free-energy: FKC RMSD steering recovers the folding ΔG of 2RN2 at a sample budget where unsteered sampling cannot.
-- **[`Enhanced_Diffusion_Sampling_GMM/`](Enhanced_Diffusion_Sampling_GMM/README.md)** — FKC steering validation and umbrella-sampling + MBAR on tractable 1D toy GMMs.
 - **[`Physicality_Steering/`](Physicality_Steering/README.md)** — Minimal physical (clash) steering comparison.
 - **[`PPFT/`](PPFT/README.md)** — Property-prediction fine-tuning to shift the folded-state population.
+
+The two `Enhanced_Diffusion_Sampling_*` examples below accompany the [Enhanced Diffusion Sampling](https://arxiv.org/abs/2602.16634) preprint.
+- **[`Enhanced_Diffusion_Sampling_GMM/`](Enhanced_Diffusion_Sampling_GMM/README.md)** — FKC steering validation and umbrella-sampling + MBAR on tractable 1D toy GMMs.
+- **[`Enhanced_Diffusion_Sampling_Protein/`](Enhanced_Diffusion_Sampling_Protein/README.md)** — Uses FKC steering to estimate folding free energy of a protein (2RN2) with a fraction of the computational budget that unsteered sampling would require.
