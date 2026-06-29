@@ -1,12 +1,12 @@
 repos:
 - repo: https://github.com/pre-commit/pre-commit-hooks
-  rev: v4.4.0
+  rev: f71fa2c1f9cf5cb705f73dffe4b21f7c61470ba9  # frozen: v4.4.0
   hooks:
   - id: check-added-large-files
     args: [--maxkb=40000, --enforce-all]
   # Using this mirror lets us use mypyc-compiled black, which is about 2x faster
 - repo: https://github.com/psf/black-pre-commit-mirror
-  rev: 22.3.0
+  rev: 5e15c9cebed7fa5809c89d36a894cc62a30c559c  # frozen: 22.3.0
   hooks:
   - id: black
     name: black
@@ -14,14 +14,14 @@ repos:
     exclude: src/_vendor/
     args: [--config=pyproject.toml]
 - repo: https://github.com/pycqa/isort
-  rev: 5.12.0
+  rev: e44834b7b294701f596c9118d6c370f86671a50d  # frozen: 5.12.0
   hooks:
   - id: isort
     name: isort
     exclude: src/_vendor/
     args: [--settings=pyproject.toml, --config-root=., --resolve-all-configs]
 - repo: https://github.com/pre-commit/mirrors-mypy
-  rev: v1.1.1
+  rev: b176ead5d5b92b1d4e651c118017f8fd32de424a  # frozen: v1.1.1
   hooks:
   - id: mypy
     name: mypy
@@ -47,7 +47,7 @@ repos:
     entry: mypy
     exclude: src/_vendor/
 - repo: https://github.com/charliermarsh/ruff-pre-commit
-  rev: v0.7.0
+  rev: 8983acb92ee4b01924893632cf90af926fa608f0  # frozen: v0.7.0
   hooks:
   - id: ruff
     args: [--fix]
