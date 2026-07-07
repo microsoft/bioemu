@@ -6,13 +6,12 @@ on:
 
 permissions:
   contents: read
-  id-token: write
 
 jobs:
-  deploy:
+  build:
     runs-on: ubuntu-latest
-    environment: publish-to-pypi
-
+    permissions:
+      contents: read
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
 
@@ -29,13 +28,32 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          python -m pip install --upgrade build twine wheel
+          python -m pip install --upgrade build wheel
 
       - name: Build
         run: |
           python -m build
           python -m wheel tags --platform-tag manylinux1_x86_64 dist/*any.whl
           rm dist/*any.whl
+
+      - name: Upload built distributions
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: dist
+          path: dist/
+
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
+    environment: publish-to-pypi
+    permissions:
+      id-token: write  # for trusted publishing
+    steps:
+      - name: Download built distributions
+        uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16 # v4
+        with:
+          name: dist
+          path: dist/
 
       - name: Publish
         uses: pypa/gh-action-pypi-publish@cef221092ed1bacb1cc03d23a2d87d1d172e277b # release/v1
