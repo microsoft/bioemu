@@ -120,7 +120,7 @@ class _LayerStack(hk.Module):
         def broadcast_state(layer_state):
           return jnp.broadcast_to(
               layer_state, [count,] + list(layer_state.shape))
-        zs = jax.tree_util.tree_map(broadcast_state, z)
+        zs = jax.tree.map(broadcast_state, z)
         return x, zs
     else:
       # Use scan during apply, threading through random seed so that it's

@@ -7,20 +7,19 @@
   dynamic = ["version"]
   description = "Biomolecular emulator"
   authors = []
-  requires-python = ">=3.10"
+  requires-python = ">=3.11"
   dependencies = [
     "mdtraj>=1.9.9",
     "torch_geometric>=2.6.1",
     "torch>=2.6.0",
-    "modelcif==0.7",
+    "modelcif>=0.7",
     "bio>=1.5.9",
-    "fire==0.7.0",
+    "fire>=0.7.0",
     "huggingface-hub",
     "hydra-core",
     "dm-tree",
     "stackprinter",
     "typer",
-    "uv",
     "einops",
     "matplotlib>=3.10.7",
     "requests",
@@ -29,7 +28,7 @@
     "ml-collections",
     "absl-py",
     "tensorflow-cpu>=2.12.0",
-    "jax==0.4.35",
+    "jax>=0.4.35,<0.11",
   ]
   readme = "README.md"
 
@@ -46,10 +45,10 @@
     "pytest-cov",
     "pre-commit",
   ]
-  md = ["openmm==8.4.0", "openmm-cuda-12==8.4.0"]
+  md = ["openmm>=8.4.0", "openmm-cuda-12>=8.4.0"]
   cuda = [
-    "jax[cuda12]==0.4.35",
-    "nvidia-cuda-nvcc-cu12==12.8.93",
+    "jax[cuda12]>=0.4.35,<0.11",
+    "nvidia-cuda-nvcc-cu12>=12.8.93",
   ]
 
 [tool.black]
