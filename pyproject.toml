@@ -14,7 +14,7 @@
     "torch>=2.6.0",
     "modelcif==0.7",
     "bio>=1.5.9",
-    "fire==0.7.0",
+    "fire==0.7.1",
     "huggingface-hub",
     "hydra-core",
     "dm-tree",
