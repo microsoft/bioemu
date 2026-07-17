@@ -46,7 +46,7 @@
     "pytest-cov",
     "pre-commit",
   ]
-  md = ["openmm==8.4.0", "openmm-cuda-12==8.4.0"]
+  md = ["openmm==8.4.0", "openmm-cuda-12==8.5.2"]
   cuda = [
     "jax[cuda12]==0.4.35",
     "nvidia-cuda-nvcc-cu12==12.8.93",
