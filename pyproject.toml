@@ -49,7 +49,7 @@
   md = ["openmm==8.4.0", "openmm-cuda-12==8.4.0"]
   cuda = [
     "jax[cuda12]==0.4.35",
-    "nvidia-cuda-nvcc-cu12==12.8.93",
+    "nvidia-cuda-nvcc-cu12==12.9.86",
   ]
 
 [tool.black]
