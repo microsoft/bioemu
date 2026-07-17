@@ -29,7 +29,7 @@
     "ml-collections",
     "absl-py",
     "tensorflow-cpu>=2.12.0",
-    "jax==0.4.35",
+    "jax==0.6.2",
   ]
   readme = "README.md"
 
@@ -48,7 +48,7 @@
   ]
   md = ["openmm==8.4.0", "openmm-cuda-12==8.4.0"]
   cuda = [
-    "jax[cuda12]==0.4.35",
+    "jax[cuda12]==0.6.2",
     "nvidia-cuda-nvcc-cu12==12.8.93",
   ]
 
