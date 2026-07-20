@@ -26,11 +26,15 @@ jobs:
       - name: Set up Python
         run: uv python install 3.10
 
+      - name: Create virtual environment
+        run: uv venv --python 3.10
+
       - name: Install dependencies
-        run: uv pip install --system build wheel
+        run: uv pip install build wheel
 
       - name: Build
         run: |
+          source .venv/bin/activate
           python -m build
           python -m wheel tags --platform-tag manylinux1_x86_64 dist/*any.whl
           rm dist/*any.whl
