@@ -13,7 +13,7 @@ jobs:
     permissions:
       contents: read
     steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
 
       # Make sure tags are fetched, so we can get a version.
       # Use --force to handle cases where a tag already exists locally from checkout.
@@ -26,17 +26,21 @@ jobs:
       - name: Set up Python
         run: uv python install 3.10
 
+      - name: Create virtual environment
+        run: uv venv --python 3.10
+
       - name: Install dependencies
-        run: uv pip install --system build wheel
+        run: uv pip install build wheel
 
       - name: Build
         run: |
+          source .venv/bin/activate
           python -m build
           python -m wheel tags --platform-tag manylinux1_x86_64 dist/*any.whl
           rm dist/*any.whl
 
       - name: Upload built distributions
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: dist
           path: dist/
