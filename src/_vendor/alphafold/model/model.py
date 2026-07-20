@@ -75,7 +75,7 @@ class RunModel:
     """
     if not self.params:
       # Init params randomly.
-      rng = jax.random.PRNGKey(random_seed)
+      rng = jax.random.key(random_seed)
       self.params = hk.data_structures.to_mutable_dict(
           self.init(rng, feat))
       logging.warning('Initialized parameters randomly')
@@ -114,7 +114,7 @@ class RunModel:
     self.init_params(feat)
     logging.debug('Running eval_shape with shape(feat) = %s',
                  tree.map_structure(lambda x: x.shape, feat))
-    shape = jax.eval_shape(self.apply, self.params, jax.random.PRNGKey(0), feat)
+    shape = jax.eval_shape(self.apply, self.params, jax.random.key(0), feat)
     logging.info('Output shape was %s', shape)
     return shape
 
@@ -168,7 +168,7 @@ class RunModel:
 
 
     # initialize random key
-    key = jax.random.PRNGKey(random_seed)
+    key = jax.random.key(random_seed)
     
     # iterate through recyckes
     for r in range(num_iters):      
@@ -178,7 +178,7 @@ class RunModel:
         else:
           s = r * num_ensemble
           e = (r+1) * num_ensemble
-          sub_feat = jax.tree_map(lambda x:x[s:e], feat)
+          sub_feat = jax.tree.map(lambda x:x[s:e], feat)
             
         # run
         key, sub_key = jax.random.split(key)
