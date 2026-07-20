@@ -180,7 +180,7 @@ class AlphaFold_noE(hk.Module):
       return new_prev    
     prev = batch.pop("prev",None)
     if batch["aatype"].ndim == 2:
-      batch = jax.tree_map(lambda x:x[0], batch)
+      batch = jax.tree.map(lambda x:x[0], batch)
 
     # initialize
     if prev is None:
@@ -410,7 +410,7 @@ class AlphaFold(hk.Module):
           'prev_msa_first_row': ret['representations']['msa_first_row'],
           'prev_pair': ret['representations']['pair'],
       }
-      return jax.tree_map(jax.lax.stop_gradient, new_prev)
+      return jax.tree.map(jax.lax.stop_gradient, new_prev)
 
     def do_call(prev,
                 recycle_idx,
@@ -421,12 +421,12 @@ class AlphaFold(hk.Module):
           start = recycle_idx * num_ensemble
           size = num_ensemble
           return jax.lax.dynamic_slice_in_dim(x, start, size, axis=0)
-        ensembled_batch = jax.tree_map(slice_recycle_idx, batch)
+        ensembled_batch = jax.tree.map(slice_recycle_idx, batch)
       else:
         num_ensemble = batch_size
         ensembled_batch = batch
 
-      non_ensembled_batch = jax.tree_map(lambda x: x, prev)
+      non_ensembled_batch = jax.tree.map(lambda x: x, prev)
 
       return impl(
           ensembled_batch=ensembled_batch,
@@ -1927,7 +1927,7 @@ class EmbeddingsAndEvoformer(hk.Module):
         # Add one-hot-encoded clipped residue distances to the pair activations.
         pos = batch['residue_index']
         offset = pos[:,None] - pos[None,:]
-        offset = jnp.clip(offset + c.max_relative_feature, a_min=0, a_max=2 * c.max_relative_feature)
+        offset = jnp.clip(offset + c.max_relative_feature, min=0, max=2 * c.max_relative_feature)
         if "asym_id" in batch:
           o = batch['asym_id'][:,None] - batch['asym_id'][None,:]
           offset = jnp.where(o == 0, offset, jnp.where(o > 0, 2*c.max_relative_feature, 0))

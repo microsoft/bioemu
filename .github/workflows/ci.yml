@@ -19,7 +19,7 @@ jobs:
       pull-requests: write
     strategy:
       matrix:
-        python-version: ['3.10', '3.11', '3.12', '3.13']
+        python-version: ['3.11', '3.12', '3.13']
     name: Linux py ${{ matrix.python-version }} tests
     steps:
     - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
@@ -27,15 +27,15 @@ jobs:
       uses: astral-sh/setup-uv@38f3f104447c67c051c4a08e39b64a148898af3a # v4
     - name: Set up Python ${{ matrix.python-version }}
       run: uv python install ${{ matrix.python-version }}
-    - uses: actions/setup-dotnet@67a3573c9a986a3f9c594539f4ab511d57bb3ce9 # v4
+    - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
       with:
         dotnet-version: '8.x'
     - name: Install dependencies
       run: |
-        uv sync --python ${{ matrix.python-version }} --extra dev
+        uv sync --locked --python ${{ matrix.python-version }} --extra dev
         # openmm (md extra) only supports up to Python 3.12
         if uv run python -c "import sys; sys.exit(0 if sys.version_info < (3, 13) else 1)"; then
-          uv sync --extra dev --extra md
+          uv sync --locked --extra dev --extra md
         fi
     - name: Check style
       run: uv run pre-commit run --all-files
@@ -52,7 +52,7 @@ jobs:
         uv run coverage xml
         uv run coverage html
     - name: Upload code coverage report
-      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+      uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
       with:
         name: code-coverage-html-py${{ matrix.python-version }}
         path: htmlcov
