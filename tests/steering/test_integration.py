@@ -708,14 +708,17 @@ class TestGenerateBatchWithSteering:
             "node_orientations": torch.rand(batch["node_orientations"].shape[0], 3, device=device),
         }
 
-    # Score model is mocked, so IGSO3 lookup fidelity is irrelevant here;
-    # tiny table sizes keep DiGSO3SDE initialisation instant on CPU CI runs.
-    _TINY_SO3_KWARGS = {"num_sigma": 10, "num_omega": 10, "l_max": 10}
+    @pytest.fixture(scope="class")
+    def sdes(self):
+        # Score model is mocked, so IGSO3 lookup fidelity is irrelevant here;
+        # tiny table sizes keep DiGSO3SDE initialisation instant on CPU CI runs.
+        return {
+            "node_orientations": DiGSO3SDE(num_sigma=10, num_omega=10, l_max=10),
+            "pos": CosineVPSDE(),
+        }
 
-    def test_generate_batch_with_fkc_denoiser(self):
+    def test_generate_batch_with_fkc_denoiser(self, sdes):
         """generate_batch with dpm_solver_fkc denoiser produces valid output."""
-        sdes = {"node_orientations": DiGSO3SDE(**self._TINY_SO3_KWARGS), "pos": CosineVPSDE()}
-
         # Build FKC denoiser config with physical potentials
         config_path = os.path.join(
             os.path.dirname(__file__),
@@ -742,10 +745,8 @@ class TestGenerateBatchWithSteering:
         assert batch["pos"].shape == (2, len(TEST_SEQ), 3)
         assert batch["node_orientations"].shape == (2, len(TEST_SEQ), 3, 3)
 
-    def test_generate_batch_with_smc_denoiser(self):
+    def test_generate_batch_with_smc_denoiser(self, sdes):
         """generate_batch with dpm_solver_smc denoiser produces valid output."""
-        sdes = {"node_orientations": DiGSO3SDE(**self._TINY_SO3_KWARGS), "pos": CosineVPSDE()}
-
         # Build SMC denoiser config as a dict (instead of YAML)
         pot = UmbrellaPotential(cv=CaCaDistance(), target=0.38, slope=10.0, weight=1.0)
         smc_config = {
@@ -775,10 +776,8 @@ class TestGenerateBatchWithSteering:
         assert "node_orientations" in batch
         assert batch["pos"].shape == (2, len(TEST_SEQ), 3)
 
-    def test_generate_batch_unsteered_dpm(self):
+    def test_generate_batch_unsteered_dpm(self, sdes):
         """generate_batch with standard dpm denoiser (no steering) still works."""
-        sdes = {"node_orientations": DiGSO3SDE(**self._TINY_SO3_KWARGS), "pos": CosineVPSDE()}
-
         config_path = os.path.join(
             os.path.dirname(__file__), "../../src/bioemu/config/denoiser/dpm.yaml"
         )

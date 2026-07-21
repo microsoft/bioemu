@@ -25,7 +25,7 @@ PHYSICAL_STEERING_CONFIG_PATH = os.path.join(
 # Small values keep the diffusion loop cheap while still exercising every
 # code path (config parsing, particle expansion, resampling, file IO).
 # num_samples must be divisible by every num_particles used below.
-TEST_NUM_SAMPLES = 2
+TEST_NUM_SAMPLES = 4
 TEST_BATCH_SIZE_100 = 100
 TEST_N_STEPS = 25
 TEST_NUM_PARTICLES = 2
@@ -62,7 +62,7 @@ def test_steering_with_config_path(chignolin_sequence, cached_embeds_dir, cached
     "config_overrides, test_id",
     [
         ({}, "default_config"),
-        ({"steering_config": {"num_particles": 1}}, "modified_particles"),
+        ({"steering_config": {"num_particles": 4}}, "modified_particles"),
         ({"steering_config": {"start": 0.7, "end": 0.3}}, "modified_time_window"),
     ],
     ids=["default_config", "modified_particles", "modified_time_window"],
