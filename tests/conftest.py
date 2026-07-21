@@ -29,6 +29,20 @@ def chignolin_sequence() -> str:
     return "GYDPETGTWG"
 
 
+@pytest.fixture(scope="session")
+def cached_embeds_dir(request) -> Path:
+    """Persistent embeddings cache shared by every test that calls ``sample()``.
+
+    Backed by ``pytest``'s ``.pytest_cache/`` dir (already gitignored), so the
+    ColabFold MSA fetch + AlphaFold2 forward pass in
+    :func:`bioemu.get_embeds.get_colabfold_embeds` runs at most once per
+    checkout — the first test to sample any given sequence populates it and
+    every later run (including subsequent pytest sessions) reuses it.
+    """
+    cache_dir = Path(request.config.cache.mkdir("bioemu_embeds"))
+    return cache_dir
+
+
 @pytest.fixture()
 def sdes() -> dict[str, SDE]:
     return dict(

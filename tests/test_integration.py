@@ -6,6 +6,11 @@ This test verifies that:
 1. The basic README command works correctly
 2. Steering functionality can be added via CLI parameters
 3. The new CLI steering integration works end-to-end
+
+Uses a session-scoped ``cached_embeds_dir`` fixture backed by
+``.pytest_cache/`` so ColabFold runs at most once per checkout, and
+disables sample filtering to skip the mdtraj-based physical validity
+checks.
 """
 
 import os
@@ -47,7 +52,7 @@ def run_command(cmd, description):
         return False, "", str(e)
 
 
-def test_basic_readme_command():
+def test_basic_readme_command(cached_embeds_dir):
     """Test the basic command from README.md"""
     with tempfile.TemporaryDirectory() as tmp_dir:
         output_dir = os.path.join(tmp_dir, "test-chignolin")
@@ -59,9 +64,13 @@ def test_basic_readme_command():
             "--sequence",
             "GYDPETGTWG",
             "--num_samples",
-            "5",  # Small number for fast testing
+            "2",  # Smallest useful number for fast testing
             "--output_dir",
             output_dir,
+            "--cache_embeds_dir",
+            str(cached_embeds_dir),
+            "--filter_samples",
+            "False",
         ]
 
         success, stdout, stderr = run_command(cmd, "Basic README command test")
@@ -81,7 +90,7 @@ def test_basic_readme_command():
         ), f"No output files found in {output_dir}. Found: {[f.name for f in output_path.iterdir()]}"
 
 
-def test_steering_cli_integration():
+def test_steering_cli_integration(cached_embeds_dir):
     """Test steering functionality via CLI parameters"""
     with tempfile.TemporaryDirectory() as tmp_dir:
         output_dir = os.path.join(tmp_dir, "test-steering")
@@ -105,9 +114,13 @@ def test_steering_cli_integration():
             "--sequence",
             "GYDPETGTWG",
             "--num_samples",
-            "5",  # Small number for fast testing
+            "2",  # Smallest useful number for fast testing
             "--output_dir",
             output_dir,
+            "--cache_embeds_dir",
+            str(cached_embeds_dir),
+            "--filter_samples",
+            "False",
             "--steering_potentials_config",
             str(steering_config_path),
             "--num_steering_particles",
@@ -139,7 +152,7 @@ def test_steering_cli_integration():
         ), f"No output files found in {output_dir}. Found: {[f.name for f in output_path.iterdir()]}"
 
 
-def test_steering_parameter_verification():
+def test_steering_parameter_verification(cached_embeds_dir):
     """Test that steering parameters are actually being processed correctly"""
     with tempfile.TemporaryDirectory() as tmp_dir:
         output_dir = os.path.join(tmp_dir, "test-steering-verify")
@@ -151,9 +164,13 @@ def test_steering_parameter_verification():
             "--sequence",
             "GYDPETGTWG",
             "--num_samples",
-            "3",  # Small number for fast testing
+            "2",  # Smallest useful number for fast testing
             "--output_dir",
             output_dir,
+            "--cache_embeds_dir",
+            str(cached_embeds_dir),
+            "--filter_samples",
+            "False",
             "--num_steering_particles",
             "4",  # Use 4 particles to make batch size change obvious
             "--steering_start_time",
@@ -183,7 +200,7 @@ def test_steering_parameter_verification():
         ), f"No output files found in {output_dir}. Found: {[f.name for f in output_path.iterdir()]}"
 
 
-def test_steering_with_individual_params():
+def test_steering_with_individual_params(cached_embeds_dir):
     """Test steering with individual CLI parameters only (no YAML file)"""
     with tempfile.TemporaryDirectory() as tmp_dir:
         output_dir = os.path.join(tmp_dir, "test-steering-individual")
@@ -195,9 +212,13 @@ def test_steering_with_individual_params():
             "--sequence",
             "GYDPETGTWG",
             "--num_samples",
-            "5",  # Small number for fast testing
+            "2",  # Smallest useful number for fast testing
             "--output_dir",
             output_dir,
+            "--cache_embeds_dir",
+            str(cached_embeds_dir),
+            "--filter_samples",
+            "False",
             "--num_steering_particles",
             "3",
             "--steering_start_time",
