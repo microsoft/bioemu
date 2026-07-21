@@ -708,9 +708,13 @@ class TestGenerateBatchWithSteering:
             "node_orientations": torch.rand(batch["node_orientations"].shape[0], 3, device=device),
         }
 
+    # Score model is mocked, so IGSO3 lookup fidelity is irrelevant here;
+    # tiny table sizes keep DiGSO3SDE initialisation instant on CPU CI runs.
+    _TINY_SO3_KWARGS = {"num_sigma": 10, "num_omega": 10, "l_max": 10}
+
     def test_generate_batch_with_fkc_denoiser(self):
         """generate_batch with dpm_solver_fkc denoiser produces valid output."""
-        sdes = {"node_orientations": DiGSO3SDE(), "pos": CosineVPSDE()}
+        sdes = {"node_orientations": DiGSO3SDE(**self._TINY_SO3_KWARGS), "pos": CosineVPSDE()}
 
         # Build FKC denoiser config with physical potentials
         config_path = os.path.join(
@@ -740,7 +744,7 @@ class TestGenerateBatchWithSteering:
 
     def test_generate_batch_with_smc_denoiser(self):
         """generate_batch with dpm_solver_smc denoiser produces valid output."""
-        sdes = {"node_orientations": DiGSO3SDE(), "pos": CosineVPSDE()}
+        sdes = {"node_orientations": DiGSO3SDE(**self._TINY_SO3_KWARGS), "pos": CosineVPSDE()}
 
         # Build SMC denoiser config as a dict (instead of YAML)
         pot = UmbrellaPotential(cv=CaCaDistance(), target=0.38, slope=10.0, weight=1.0)
@@ -773,7 +777,7 @@ class TestGenerateBatchWithSteering:
 
     def test_generate_batch_unsteered_dpm(self):
         """generate_batch with standard dpm denoiser (no steering) still works."""
-        sdes = {"node_orientations": DiGSO3SDE(), "pos": CosineVPSDE()}
+        sdes = {"node_orientations": DiGSO3SDE(**self._TINY_SO3_KWARGS), "pos": CosineVPSDE()}
 
         config_path = os.path.join(
             os.path.dirname(__file__), "../../src/bioemu/config/denoiser/dpm.yaml"

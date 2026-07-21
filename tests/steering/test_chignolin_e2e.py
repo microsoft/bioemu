@@ -1,10 +1,12 @@
 """End-to-end integration tests for steering with chignolin (GYDPETGTWG).
 
 These tests call the full sample() pipeline and require model weights
-(downloaded from HuggingFace). They share a session-scoped
-``cached_embeds_dir`` fixture backed by ``.pytest_cache/`` so the ColabFold
-MSA fetch + AlphaFold2 forward pass runs at most once per checkout, and
-disable sample filtering to skip mdtraj-based physical-validity checks.
+(downloaded from HuggingFace). They share session-scoped
+``cached_embeds_dir`` and ``cached_so3_dir`` fixtures backed by
+``.pytest_cache/`` so the ColabFold MSA fetch + AlphaFold2 forward pass
+and the DiGSO3SDE lookup-table build (~200s on CPU) run at most once
+per checkout, and disable sample filtering to skip mdtraj-based
+physical-validity checks.
 
 Adapted from the original tests/test_steering.py on main.
 """
@@ -42,7 +44,7 @@ def load_steering_config():
     return cfg
 
 
-def test_steering_with_config_path(chignolin_sequence, cached_embeds_dir, tmp_path):
+def test_steering_with_config_path(chignolin_sequence, cached_embeds_dir, cached_so3_dir, tmp_path):
     """Test steering by passing the steering config file as denoiser_config."""
     sample(
         sequence=chignolin_sequence,
@@ -51,6 +53,7 @@ def test_steering_with_config_path(chignolin_sequence, cached_embeds_dir, tmp_pa
         output_dir=str(tmp_path / "config_path"),
         denoiser_config=PHYSICAL_STEERING_CONFIG_PATH,
         cache_embeds_dir=str(cached_embeds_dir),
+        cache_so3_dir=str(cached_so3_dir),
         filter_samples=False,
     )
 
@@ -65,7 +68,7 @@ def test_steering_with_config_path(chignolin_sequence, cached_embeds_dir, tmp_pa
     ids=["default_config", "modified_particles", "modified_time_window"],
 )
 def test_steering_with_config_dict(
-    chignolin_sequence, cached_embeds_dir, tmp_path, config_overrides, test_id
+    chignolin_sequence, cached_embeds_dir, cached_so3_dir, tmp_path, config_overrides, test_id
 ):
     """Test steering by passing the config as a dict, with optional overrides."""
     config = load_steering_config()
@@ -79,11 +82,12 @@ def test_steering_with_config_dict(
         output_dir=str(tmp_path / test_id),
         denoiser_config=config,
         cache_embeds_dir=str(cached_embeds_dir),
+        cache_so3_dir=str(cached_so3_dir),
         filter_samples=False,
     )
 
 
-def test_no_steering(chignolin_sequence, cached_embeds_dir, tmp_path):
+def test_no_steering(chignolin_sequence, cached_embeds_dir, cached_so3_dir, tmp_path):
     """Test sampling without steering (default dpm denoiser)."""
     sample(
         sequence=chignolin_sequence,
@@ -92,5 +96,6 @@ def test_no_steering(chignolin_sequence, cached_embeds_dir, tmp_path):
         output_dir=str(tmp_path / "no_steering"),
         denoiser_type="dpm",
         cache_embeds_dir=str(cached_embeds_dir),
+        cache_so3_dir=str(cached_so3_dir),
         filter_samples=False,
     )

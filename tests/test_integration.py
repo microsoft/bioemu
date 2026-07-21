@@ -52,7 +52,7 @@ def run_command(cmd, description):
         return False, "", str(e)
 
 
-def test_basic_readme_command(cached_embeds_dir):
+def test_basic_readme_command(cached_embeds_dir, cached_so3_dir):
     """Test the basic command from README.md"""
     with tempfile.TemporaryDirectory() as tmp_dir:
         output_dir = os.path.join(tmp_dir, "test-chignolin")
@@ -69,6 +69,8 @@ def test_basic_readme_command(cached_embeds_dir):
             output_dir,
             "--cache_embeds_dir",
             str(cached_embeds_dir),
+            "--cache_so3_dir",
+            str(cached_so3_dir),
             "--filter_samples",
             "False",
         ]
@@ -90,7 +92,7 @@ def test_basic_readme_command(cached_embeds_dir):
         ), f"No output files found in {output_dir}. Found: {[f.name for f in output_path.iterdir()]}"
 
 
-def test_steering_cli_integration(cached_embeds_dir):
+def test_steering_cli_integration(cached_embeds_dir, cached_so3_dir):
     """Test steering functionality via CLI parameters"""
     with tempfile.TemporaryDirectory() as tmp_dir:
         output_dir = os.path.join(tmp_dir, "test-steering")
@@ -119,6 +121,8 @@ def test_steering_cli_integration(cached_embeds_dir):
             output_dir,
             "--cache_embeds_dir",
             str(cached_embeds_dir),
+            "--cache_so3_dir",
+            str(cached_so3_dir),
             "--filter_samples",
             "False",
             "--steering_potentials_config",
@@ -152,7 +156,7 @@ def test_steering_cli_integration(cached_embeds_dir):
         ), f"No output files found in {output_dir}. Found: {[f.name for f in output_path.iterdir()]}"
 
 
-def test_steering_parameter_verification(cached_embeds_dir):
+def test_steering_parameter_verification(cached_embeds_dir, cached_so3_dir):
     """Test that steering parameters are actually being processed correctly"""
     with tempfile.TemporaryDirectory() as tmp_dir:
         output_dir = os.path.join(tmp_dir, "test-steering-verify")
@@ -169,6 +173,8 @@ def test_steering_parameter_verification(cached_embeds_dir):
             output_dir,
             "--cache_embeds_dir",
             str(cached_embeds_dir),
+            "--cache_so3_dir",
+            str(cached_so3_dir),
             "--filter_samples",
             "False",
             "--num_steering_particles",
@@ -200,7 +206,7 @@ def test_steering_parameter_verification(cached_embeds_dir):
         ), f"No output files found in {output_dir}. Found: {[f.name for f in output_path.iterdir()]}"
 
 
-def test_steering_with_individual_params(cached_embeds_dir):
+def test_steering_with_individual_params(cached_embeds_dir, cached_so3_dir):
     """Test steering with individual CLI parameters only (no YAML file)"""
     with tempfile.TemporaryDirectory() as tmp_dir:
         output_dir = os.path.join(tmp_dir, "test-steering-individual")
@@ -217,6 +223,8 @@ def test_steering_with_individual_params(cached_embeds_dir):
             output_dir,
             "--cache_embeds_dir",
             str(cached_embeds_dir),
+            "--cache_so3_dir",
+            str(cached_so3_dir),
             "--filter_samples",
             "False",
             "--num_steering_particles",

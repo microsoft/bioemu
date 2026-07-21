@@ -38,7 +38,7 @@ def mock_score_model(batch, t):
 def test_generate_batch():
     sequence = TEST_SEQ
     L = len(sequence)
-    sdes = {"node_orientations": DiGSO3SDE(), "pos": CosineVPSDE()}
+    sdes = {"node_orientations": DiGSO3SDE(num_sigma=10, num_omega=10, l_max=10), "pos": CosineVPSDE()}
     batch_size = 2
     seed = 42
     with open(

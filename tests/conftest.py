@@ -43,6 +43,18 @@ def cached_embeds_dir(request) -> Path:
     return cache_dir
 
 
+@pytest.fixture(scope="session")
+def cached_so3_dir(request) -> Path:
+    """Persistent SO(3) lookup-table cache shared across the pytest session.
+
+    Building the default DiGSO3SDE tables from scratch takes ~200s on CPU
+    (which dominates fresh CI runs); ``.pytest_cache/`` gives us a location
+    that survives across pytest sessions on the same checkout.
+    """
+    cache_dir = Path(request.config.cache.mkdir("bioemu_so3"))
+    return cache_dir
+
+
 @pytest.fixture()
 def sdes() -> dict[str, SDE]:
     return dict(
