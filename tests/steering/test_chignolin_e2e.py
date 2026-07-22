@@ -46,12 +46,18 @@ def load_steering_config():
 
 def test_steering_with_config_path(chignolin_sequence, cached_embeds_dir, cached_so3_dir, tmp_path):
     """Test steering by passing the steering config file as denoiser_config."""
+    # The production yaml uses N=100 and num_particles=5; dump a test-scaled
+    # copy so this variant runs in the same regime as the dict-based tests.
+    config_path = tmp_path / "physical_steering_test.yaml"
+    with open(config_path, "w") as f:
+        yaml.safe_dump(load_steering_config(), f)
+
     sample(
         sequence=chignolin_sequence,
         num_samples=TEST_NUM_SAMPLES,
         batch_size_100=TEST_BATCH_SIZE_100,
         output_dir=str(tmp_path / "config_path"),
-        denoiser_config=PHYSICAL_STEERING_CONFIG_PATH,
+        denoiser_config=str(config_path),
         cache_embeds_dir=str(cached_embeds_dir),
         cache_so3_dir=str(cached_so3_dir),
         filter_samples=False,
