@@ -30,29 +30,26 @@ def chignolin_sequence() -> str:
 
 
 @pytest.fixture(scope="session")
-def cached_embeds_dir(request) -> Path:
-    """Persistent embeddings cache shared by every test that calls ``sample()``.
+def cached_embeds_dir(tmp_path_factory) -> Path:
+    """Embeddings cache shared by every test that calls ``sample()``.
 
-    Backed by ``pytest``'s ``.pytest_cache/`` dir (already gitignored), so the
-    ColabFold MSA fetch + AlphaFold2 forward pass in
+    Ensures the ColabFold MSA fetch + AlphaFold2 forward pass in
     :func:`bioemu.get_embeds.get_colabfold_embeds` runs at most once per
-    checkout — the first test to sample any given sequence populates it and
-    every later run (including subsequent pytest sessions) reuses it.
+    pytest session — the first test to sample any given sequence populates
+    the dir and every later test in the session reuses it.
     """
-    cache_dir = Path(request.config.cache.mkdir("bioemu_embeds"))
-    return cache_dir
+    return tmp_path_factory.mktemp("bioemu_embeds")
 
 
 @pytest.fixture(scope="session")
-def cached_so3_dir(request) -> Path:
-    """Persistent SO(3) lookup-table cache shared across the pytest session.
+def cached_so3_dir(tmp_path_factory) -> Path:
+    """SO(3) lookup-table cache shared across the pytest session.
 
     Building the default DiGSO3SDE tables from scratch takes ~200s on CPU
-    (which dominates fresh CI runs); ``.pytest_cache/`` gives us a location
-    that survives across pytest sessions on the same checkout.
+    and dominates fresh CI runs; giving every ``sample()``-based test a
+    shared cache dir means the cost is paid at most once per session.
     """
-    cache_dir = Path(request.config.cache.mkdir("bioemu_so3"))
-    return cache_dir
+    return tmp_path_factory.mktemp("bioemu_so3")
 
 
 @pytest.fixture()
