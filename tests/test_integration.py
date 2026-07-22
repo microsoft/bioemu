@@ -8,7 +8,7 @@ This test verifies that:
 3. The new CLI steering integration works end-to-end
 
 Uses a session-scoped ``cached_embeds_dir`` fixture backed by
-``.pytest_cache/`` so ColabFold runs at most once per checkout, and
+``.pytest_cache/`` so ColabFold runs at most once per session, and
 disables sample filtering to skip the mdtraj-based physical validity
 checks.
 """

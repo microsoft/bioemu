@@ -5,7 +5,7 @@ These tests call the full sample() pipeline and require model weights
 ``cached_embeds_dir`` and ``cached_so3_dir`` fixtures backed by
 ``.pytest_cache/`` so the ColabFold MSA fetch + AlphaFold2 forward pass
 and the DiGSO3SDE lookup-table build (~200s on CPU) run at most once
-per checkout, and disable sample filtering to skip mdtraj-based
+per session, and disable sample filtering to skip mdtraj-based
 physical-validity checks.
 
 Adapted from the original tests/test_steering.py on main.
