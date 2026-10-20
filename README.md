@@ -1,3 +1,5 @@
+> [!WARNING]
+> This repository is no longer maintained. Please check out [BioEmu2](https://github.com/microsoft/bioemu2).
 
 <h1>
 <p align="center">
